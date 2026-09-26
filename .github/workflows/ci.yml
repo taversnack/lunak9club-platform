@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lunak9
+          POSTGRES_PASSWORD: lunak9
+          POSTGRES_DB: lunak9_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U lunak9" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: 'true'
+      APP_ENV: test
+      APP_URL: http://localhost:3000
+      DATABASE_URL: postgres://lunak9:lunak9@localhost:5432/lunak9_test
+      TEST_DATABASE_URL: postgres://lunak9:lunak9@localhost:5432/lunak9_test
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-anywhere-else-000
+      EMAIL_TRANSPORT: console
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm test:int
+      - run: pnpm exec drizzle-kit check
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - run: pnpm test:a11y
+      - run: pnpm audit --prod --audit-level high
+      - name: Secret scan (gitleaks CLI, no licence needed)
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest detect --source=/repo --no-banner --redact
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7

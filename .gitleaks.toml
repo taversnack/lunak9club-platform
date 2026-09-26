@@ -1,0 +1,14 @@
+# Extends the default gitleaks rules. Ignored paths are untracked local artefacts only.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local, git-ignored artefacts"
+paths = [
+  '''node_modules/''',
+  '''\.next/''',
+  '''\.tmp/''',
+  '''^\.env$''',
+  '''test-results/''',
+  '''playwright-report/''',
+]

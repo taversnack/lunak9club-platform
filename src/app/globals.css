@@ -1,0 +1,113 @@
+/* LunaK9 Club design tokens. Components use tokens only — never raw colours. */
+:root {
+  --color-bg: #faf6f0;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f3ece3;
+  --color-text: #2b2320;
+  --color-text-muted: #5f534c;
+  --color-border: #ddd0c2;
+  --color-primary: #7a4a2a;
+  --color-primary-hover: #5f3820;
+  --color-primary-contrast: #ffffff;
+  --color-accent: #2f6b5a;
+  --color-focus: #1f5fbf;
+  --color-success: #23613f;
+  --color-success-bg: #e5f3ea;
+  --color-warning: #7a5200;
+  --color-warning-bg: #fdf1d8;
+  --color-danger: #a3261b;
+  --color-danger-bg: #fbe7e5;
+  --color-info: #1f4f8a;
+  --color-info-bg: #e6eef9;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: Georgia, 'Times New Roman', serif;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --shadow-card: 0 1px 2px rgb(43 35 32 / 6%), 0 4px 16px rgb(43 35 32 / 6%);
+  --target-min: 44px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  line-height: 1.2;
+  margin: 0 0 var(--space-3);
+}
+h1 {
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+}
+h2 {
+  font-size: 1.3rem;
+}
+
+a {
+  color: var(--color-primary);
+  text-underline-offset: 3px;
+}
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -100px;
+  background: var(--color-surface);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  z-index: 10;
+}
+.skip-link:focus {
+  top: var(--space-4);
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790422202584,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790422207047,
+      "tag": "0001_audit_append_only_and_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790425282612,
+      "tag": "0002_customers_dogs_compliance",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790425283576,
+      "tag": "0003_seed_requirements_and_terms",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790429363289,
+      "tag": "0004_bookings",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790429364332,
+      "tag": "0005_seed_booking_settings_and_bank_holidays",
+      "breakpoints": true
+    }
+  ]
+}

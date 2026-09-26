@@ -1,0 +1,23 @@
+# Local development services. Never used in production.
+# Uploaded documents are stored on disk in .data/uploads (STORAGE_DRIVER=fs). MinIO images are no
+# longer publicly available (Docker Hub removed Sept 2026, quay.io needs a login), see ADR 0001.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lunak9
+      POSTGRES_PASSWORD: lunak9
+      POSTGRES_DB: lunak9_dev
+    ports: ['5432:5432']
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lunak9']
+      interval: 5s
+      retries: 10
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ['1025:1025', '8025:8025']
+volumes:
+  pgdata:
