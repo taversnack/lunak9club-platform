@@ -173,7 +173,13 @@ describe('vaccination date given', () => {
     ...over,
   });
   const upload = (e: ReturnType<typeof entry>) =>
-    uploadVaccinationRecord(db(), storage, carol, { dogId, fileName: 'v.pdf', bytes: PDF, entries: [e] });
+    uploadVaccinationRecord(db(), storage, carol, {
+      dogId,
+      fileName: 'v.pdf',
+      bytes: PDF,
+      entries: [e],
+      firstCourse: 'no',
+    });
 
   it('is required, not in the future and before the valid-until date', async () => {
     expect(await fieldsOf(upload(entry({ administeredOn: '' })))).toHaveProperty('administeredOn.vaccination_core');

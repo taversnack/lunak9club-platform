@@ -25,6 +25,7 @@ import { appUrl, firstNameOf, sendSafely } from '../notify';
 import { dogApprovedMessage, recordNeedsAttentionMessage } from '@/infra/email/templates';
 import { isIsoDate, londonDate } from '@/domain/time';
 import { CONSENT_KEYS, registerGaps } from '@/domain/compliance/register';
+import { isLicenceVaccination } from '@/domain/compliance/attendance';
 
 /** Owner: customers list with dog counts. Optional search by name, email or postcode. */
 export async function listCustomers(db: Db, actor: Actor, q?: string) {
@@ -143,6 +144,7 @@ export async function getDogForOwner(db: Db, actor: Actor, rawDogId: string) {
         status: complianceSubmissions.status,
         expiresOn: complianceSubmissions.expiresOn,
         administeredOn: complianceSubmissions.administeredOn,
+        primaryCourseCompletedOn: complianceSubmissions.primaryCourseCompletedOn,
         reviewReason: complianceSubmissions.reviewReason,
         submittedAt: complianceSubmissions.submittedAt,
         reviewedAt: complianceSubmissions.reviewedAt,
@@ -234,6 +236,12 @@ export const ReviewInput = z
       .optional()
       .transform((v) => (v ? v : null))
       .refine((v) => v === null || isIsoDate(v), 'Enter the date given as a real date'),
+    /** D74: Owner may correct the first-course date. Left out → unchanged; empty → cleared. */
+    primaryCourseCompletedOn: z
+      .string()
+      .trim()
+      .optional()
+      .refine((v) => !v || isIsoDate(v), 'Enter a valid date, or leave it empty'),
     version: z.coerce.number().int().positive(),
   })
   .refine((d) => d.decision === 'approve' || Boolean(d.reason), {
@@ -267,6 +275,11 @@ export async function reviewSubmission(db: Db, actor: Actor, rawId: string, inpu
             : 'This date is in the future',
       });
     }
+    if (d.primaryCourseCompletedOn && d.primaryCourseCompletedOn > londonDate(new Date())) {
+      throw new ValidationError('Please check the highlighted fields.', {
+        primaryCourseCompletedOn: 'This date is in the future',
+      });
+    }
     if (d.decision === 'approve') {
       await tx
         .update(complianceSubmissions)
@@ -285,6 +298,9 @@ export async function reviewSubmission(db: Db, actor: Actor, rawId: string, inpu
         status: d.decision === 'approve' ? 'approved' : d.decision === 'reject' ? 'rejected' : 'replacement_requested',
         expiresOn: d.expiresOn,
         administeredOn,
+        ...(d.primaryCourseCompletedOn === undefined
+          ? {}
+          : { primaryCourseCompletedOn: d.primaryCourseCompletedOn || null }),
         reviewReason: d.decision === 'approve' ? null : d.reason,
         reviewedBy: reviewer,
         reviewedAt: new Date(),
@@ -414,7 +430,7 @@ export const RequirementInput = z.object({
     .transform((s) => (s ? s.split(/[\s,]+/).map(Number) : []))
     .refine(
       (xs) => xs.every((n) => Number.isInteger(n) && n > 0 && n <= 365) && xs.length <= 5,
-      'Use up to 5 whole numbers of days, like 30, 14, 7',
+      'Use up to 5 whole numbers of days, like 60, 30, 14, 7',
     )
     .transform((xs) => [...new Set(xs)].sort((a, b) => b - a)),
 });
@@ -422,6 +438,11 @@ export const RequirementInput = z.object({
 export async function updateRequirement(db: Db, actor: Actor, key: string, input: unknown) {
   assertAuthorized(actor, 'requirements.manage');
   const d = parseInput(RequirementInput, input);
+  // Licence guidance 9.4: core and leptospirosis must always be required (D73).
+  if (isLicenceVaccination(key) && !(d.mandatory && d.blocksBooking && d.active))
+    throw new ValidationError('The licence requires this vaccination, so it must stay mandatory and block booking.', {
+      mandatory: 'Licence requirement – can’t be turned off',
+    });
   await db.transaction(async (tx) => {
     const updated = await tx
       .update(complianceRequirements)

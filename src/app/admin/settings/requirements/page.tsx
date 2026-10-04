@@ -6,6 +6,7 @@ import { requirePermission } from '@/server/session';
 import { listRequirements } from '@/server/services/owner-review';
 import { getDb } from '@/infra/db/client';
 import { updateRequirementAction } from '../../actions';
+import { isLicenceVaccination } from '@/domain/compliance/attendance';
 
 export const metadata: Metadata = { title: 'Onboarding requirements' };
 export const dynamic = 'force-dynamic';
@@ -23,18 +24,31 @@ export default async function RequirementsPage() {
           <p className={s.muted}>{r.description}</p>
           <ActionForm action={updateRequirementAction}>
             <input type="hidden" name="key" value={r.key} />
-            <Checkbox name="active" label="In use" defaultChecked={r.active} />
-            <Checkbox name="mandatory" label="Required before a dog can be approved" defaultChecked={r.mandatory} />
-            <Checkbox
-              name="blocksBooking"
-              label="Block bookings if missing or expired"
-              defaultChecked={r.blocksBooking}
-            />
+            {isLicenceVaccination(r.key) ? (
+              <>
+                <input type="hidden" name="active" value="on" />
+                <input type="hidden" name="mandatory" value="on" />
+                <input type="hidden" name="blocksBooking" value="on" />
+                <p className={s.hint}>
+                  Required by the licence: always in use, required, and blocks bookings and check-in. No override.
+                </p>
+              </>
+            ) : (
+              <>
+                <Checkbox name="active" label="In use" defaultChecked={r.active} />
+                <Checkbox name="mandatory" label="Required before a dog can be approved" defaultChecked={r.mandatory} />
+                <Checkbox
+                  name="blocksBooking"
+                  label="Block bookings if missing or expired"
+                  defaultChecked={r.blocksBooking}
+                />
+              </>
+            )}
             {r.kind === 'vaccination' ? (
               <TextField
                 name="reminderDays"
                 label="Reminder days before expiry"
-                hint="Comma separated, for example 30, 14, 7"
+                hint="Comma separated, for example 60, 30, 14, 7"
                 required
                 defaultValue={r.reminderDays.join(', ')}
               />
