@@ -83,6 +83,7 @@ export async function exportMyData(db: Db, actor: Actor) {
     incidentList,
     checks,
     requests,
+    vaccinationRows,
   ] = await Promise.all([
     db.select().from(contacts).where(eq(contacts.customerId, customer.id)),
     db.select().from(vets).where(eq(vets.customerId, customer.id)),
@@ -154,6 +155,16 @@ export async function exportMyData(db: Db, actor: Actor) {
       .from(welfareChecks)
       .where(and(inArray(welfareChecks.dogId, any(dogIds)), eq(welfareChecks.shared, true))),
     db.select().from(dataRequests).where(eq(dataRequests.customerId, customer.id)),
+    db
+      .select({
+        dogId: complianceSubmissions.dogId,
+        vaccination: complianceSubmissions.requirementKey,
+        dateGiven: complianceSubmissions.administeredOn,
+        validUntil: complianceSubmissions.expiresOn,
+        status: complianceSubmissions.status,
+      })
+      .from(complianceSubmissions)
+      .where(inArray(complianceSubmissions.dogId, any(dogIds))),
   ]);
   await recordAudit(db, { actor: me, action: 'data.exported', entityType: 'customer', entityId: customer.id });
   return {
@@ -174,6 +185,7 @@ export async function exportMyData(db: Db, actor: Actor) {
       health: health.find((h) => h.dogId === d.id) ?? null,
       behaviour: behaviour.find((b) => b.dogId === d.id) ?? null,
       permissions: perms.find((p) => p.dogId === d.id) ?? null,
+      vaccinations: vaccinationRows.filter((v) => v.dogId === d.id).map(({ dogId: _d, ...v }) => (void _d, v)),
     })),
     bookings: bookingRows,
     memberships: mems,
@@ -455,6 +467,8 @@ export async function anonymiseCustomer(db: Db, storage: StorageProvider, custom
         weightKg: null,
         microchipNumber: null,
         vetId: null,
+        agreedVetId: null,
+        vetAgreedAt: null,
         statusReason: null,
         archivedAt: sql`coalesce(${dogs.archivedAt}, now())`,
       })

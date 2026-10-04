@@ -17,6 +17,7 @@ import {
 } from '../../src/infra/db/schema';
 import { getStorage } from '../../src/infra/storage';
 import { addDays, londonDate } from '../../src/domain/time';
+import { CONSENT_KEYS } from '../../src/domain/compliance/register';
 
 const DEMO_PDF = new TextEncoder().encode('%PDF-1.4\n% Luna’s K9 Club demo vaccination record (fictional)\n%%EOF\n');
 
@@ -79,6 +80,8 @@ export async function ensureApprovedDemoDog(
       microchipNumber: '826000000000999',
       neutered: true,
       vetId: vet!.id,
+      agreedVetId: vet!.id,
+      vetAgreedAt: new Date(),
       onboardingSubmittedAt: new Date(),
       status: 'approved',
       approvedAt: new Date(),
@@ -86,11 +89,30 @@ export async function ensureApprovedDemoDog(
     })
     .returning({ id: dogs.id });
   const dogId = dog!.id;
-  await db.insert(dogHealthProfiles).values({ dogId, fleaAndWorming: 'Monthly (demo)' });
+  const monthAgo = addDays(londonDate(new Date()), -30);
+  await db.insert(dogHealthProfiles).values({
+    dogId,
+    fleaAndWorming: 'Monthly (demo)',
+    lastWormedOn: monthAgo,
+    lastFleaTreatmentOn: monthAgo,
+    exerciseRestricted: false,
+    insured: false,
+  });
   await db.insert(dogBehaviourProfiles).values({ dogId, temperament: 'Friendly (demo)', biteHistory: false });
-  await db
-    .insert(dogPermissions)
-    .values({ dogId, transport: true, photosAndSocialMedia: false, emergencyVetTreatment: true });
+  await db.insert(dogPermissions).values({
+    dogId,
+    transport: true,
+    photosAndSocialMedia: false,
+    emergencyVetTreatment: true,
+    // Demo licence consents (D69): all answered yes by the demo customer.
+    ...Object.fromEntries(
+      CONSENT_KEYS.filter((k) => k !== 'mixingUnderOneConsent').flatMap((k) => [
+        [k, true],
+        [`${k}At`, new Date()],
+        [`${k}By`, userId],
+      ]),
+    ),
+  });
 
   const key = `customers/${customer.id}/dogs/${dogId}/${randomUUID()}`;
   await getStorage().put(key, DEMO_PDF, 'application/pdf');
@@ -115,6 +137,7 @@ export async function ensureApprovedDemoDog(
       documentId: doc!.id,
       status: 'approved',
       expiresOn,
+      administeredOn: addDays(londonDate(new Date()), -65),
       submittedBy: userId,
       reviewedBy: ownerUserId,
       reviewedAt: new Date(),

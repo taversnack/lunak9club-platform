@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Stack } from '@/ui/components';
-import { ActionForm, Checkbox, RadioGroup, SubmitButton, TextArea } from '@/ui/form';
+import { ActionForm, Checkbox, RadioGroup, SubmitButton, TextArea, TextField } from '@/ui/form';
+import { CONSENT_GROUPS, consentsAsked } from '@/domain/compliance/register';
+import { londonDate } from '@/domain/time';
 import { submitOnboardingAction } from '../../../actions';
 import { loadDogPage } from '../load';
 
@@ -17,6 +19,8 @@ const b = (v: boolean | null | undefined) => (v == null ? undefined : v ? 'yes' 
 
 export default async function OnboardingPage({ params }: { params: Promise<{ dogId: string }> }) {
   const { dog, health: h, behaviour: be, permissions: p } = await loadDogPage((await params).dogId);
+  const today = londonDate(new Date());
+  const asked = new Set(consentsAsked(dog.dateOfBirth, today));
   return (
     <Card>
       <Stack>
@@ -39,11 +43,37 @@ export default async function OnboardingPage({ params }: { params: Promise<{ dog
           <TextArea name="medicalConditions" label="Medical conditions" defaultValue={h?.medicalConditions} />
           <TextArea
             name="fleaAndWorming"
-            label="Flea and worming treatment"
-            hint="What you use and when it was last given"
+            label="Flea and worming products you use"
             required
             defaultValue={h?.fleaAndWorming}
           />
+          <TextField
+            name="lastWormedOn"
+            label="Date of the last worming treatment"
+            type="date"
+            required
+            max={today}
+            defaultValue={h?.lastWormedOn}
+          />
+          <TextField
+            name="lastFleaTreatmentOn"
+            label="Date of the last flea treatment"
+            type="date"
+            required
+            max={today}
+            defaultValue={h?.lastFleaTreatmentOn}
+          />
+          <RadioGroup
+            name="exerciseRestricted"
+            label="Does your dog have any exercise restrictions?"
+            options={yn}
+            defaultValue={b(h?.exerciseRestricted)}
+          />
+          <TextArea name="exerciseRestrictions" label="If yes, what are they?" defaultValue={h?.exerciseRestrictions} />
+          <h2>Insurance</h2>
+          <RadioGroup name="insured" label="Is your dog insured?" options={yn} defaultValue={b(h?.insured)} />
+          <TextField name="insurer" label="If yes, who with?" defaultValue={h?.insurer} />
+          <TextField name="insurancePolicyNumber" label="Policy number" defaultValue={h?.insurancePolicyNumber} />
           <h2>Behaviour</h2>
           <TextArea
             name="temperament"
@@ -90,6 +120,22 @@ export default async function OnboardingPage({ params }: { params: Promise<{ dog
             options={yn}
             defaultValue={b(p?.emergencyVetTreatment)}
           />
+          <h2>Consents</h2>
+          <p className={s.hint}>Please answer each question. You can change your answers later.</p>
+          {CONSENT_GROUPS.map((g) => {
+            const questions = g.consents.filter((c) => asked.has(c.key));
+            if (!questions.length) return null;
+            return (
+              <fieldset key={g.title} className={s.fieldset}>
+                <legend className={s.label}>{g.title}</legend>
+                <div className={s.stack}>
+                  {questions.map((c) => (
+                    <RadioGroup key={c.key} name={c.key} label={c.question} options={yn} defaultValue={b(p?.[c.key])} />
+                  ))}
+                </div>
+              </fieldset>
+            );
+          })}
           <Checkbox
             name="confirmAccurate"
             label="I confirm this information is accurate and I’ll tell Luna’s K9 Club if anything changes"

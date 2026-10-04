@@ -31,7 +31,7 @@ export async function readyCustomer(db: Db, u: TestUser) {
 export async function approvedDog(db: Db, owner: TestUser, user: TestUser, name: string) {
   const today = londonDate(new Date());
   const id = await createMyDog(db, user, { ...validDog, name });
-  await saveMyDogVet(db, user, id, { practiceName: 'Vets', phone: '01483000000' });
+  await saveMyDogVet(db, user, id, { practiceName: 'Vets', phone: '01483000000', agreedVet: 'same' });
   await submitMyOnboardingForm(db, user, id, validOnboarding);
   await uploadVaccinationRecord(db, storage, user, {
     dogId: id,
@@ -40,6 +40,7 @@ export async function approvedDog(db: Db, owner: TestUser, user: TestUser, name:
     entries: ['vaccination_core', 'vaccination_leptospirosis', 'vaccination_kennel_cough'].map((k) => ({
       requirementKey: k,
       expiresOn: addDays(today, 200),
+      administeredOn: addDays(today, -30),
     })),
   });
   const subs = await db

@@ -115,7 +115,11 @@ export async function uploadVaccinationAction(_: ActionState, fd: FormData): Pro
     const entries = fd
       .getAll('covers')
       .map(String)
-      .map((key) => ({ requirementKey: key, expiresOn: String(fd.get(`expiresOn.${key}`) ?? '') }));
+      .map((key) => ({
+        requirementKey: key,
+        expiresOn: String(fd.get(`expiresOn.${key}`) ?? ''),
+        administeredOn: String(fd.get(`administeredOn.${key}`) ?? ''),
+      }));
     await uploadVaccinationRecord(getDb(), getStorage(), actor, {
       dogId,
       fileName: file.name,
