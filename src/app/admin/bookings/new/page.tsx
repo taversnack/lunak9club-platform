@@ -24,7 +24,11 @@ export default async function OwnerNewBooking() {
         <h1>Book a dog</h1>
         <p>
           Use this for trial days, phone bookings and exceptions. If the dog isn’t approved, the day is closed or full,
-          you’ll need to give a reason.
+          or kennel cough isn’t up to date, you’ll need to give a reason.
+        </p>
+        <p className={s.hint}>
+          A reason can’t override licence rules, even for a trial day: core and leptospirosis vaccinations must be on an
+          accepted, up-to-date record, and a first course of vaccinations must have finished at least 14 days before.
         </p>
         <ActionForm action={ownerBookAction}>
           <SelectField

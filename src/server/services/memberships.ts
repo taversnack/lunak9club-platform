@@ -4,7 +4,8 @@ import { and, asc, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import { bookingDogs, bookings, customers, dogs, memberships, users } from '@/infra/db/schema';
-import { checkBookableDate, fits, SESSION_LABELS, vaccinationBlockForDate, type Session } from '@/domain/booking/rules';
+import { checkBookableDate, fits, SESSION_LABELS, type Session } from '@/domain/booking/rules';
+import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
 import { changeEffectiveDate, membershipDates, validWeekdays } from '@/domain/membership/rules';
 import { bandFor } from '@/domain/pricing/engine';
 import { addDays, formatUkDate, londonDate, type IsoDate } from '@/domain/time';
@@ -403,7 +404,6 @@ export async function materialiseMemberships(
     });
     if (!dates.length) continue;
     const e = evals.get(m.dogId);
-    const vaccs = e?.items.filter((i) => i.kind === 'vaccination') ?? [];
     const ctx = await loadPricingContext(db, m.customerId, dates[0]!, dates.at(-1)!);
 
     await db.transaction(async (tx) => {
@@ -433,13 +433,11 @@ export async function materialiseMemberships(
         .values({ customerId: m.customerId, createdBy: m.requestedBy, source: 'owner' })
         .returning({ id: bookings.id });
       for (const date of todo) {
-        if (!e?.canBook || vaccinationBlockForDate(vaccs, date)) {
+        // No overrides on automatic bookings: any vaccination block skips the day (D47, D73, D74).
+        const [block] = e ? allBlocks(blocksForEvaluation(e, date)) : [];
+        if (!e?.canBook || block) {
           result.skippedBlocked++;
-          result.clashes.push({
-            dogId: m.dogId,
-            date,
-            reason: vaccinationBlockForDate(vaccs, date) ?? 'Dog can’t be booked',
-          });
+          result.clashes.push({ dogId: m.dogId, date, reason: block ?? 'Dog can’t be booked' });
           continue;
         }
         const day = days.get(date)!;

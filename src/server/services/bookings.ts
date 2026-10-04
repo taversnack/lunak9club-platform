@@ -19,7 +19,6 @@ import {
   checkBookableDate,
   fits,
   remainingFor,
-  vaccinationBlockForDate,
   type Session,
 } from '@/domain/booking/rules';
 import { addDays, londonDate, type IsoDate } from '@/domain/time';
@@ -29,6 +28,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../errors';
 import { idOrNotFound, isoDate, optionalText, parseInput } from '../validation';
 import { asUser, getMyCustomer, isProfileComplete } from './customers';
 import { evaluateDogs } from './compliance-facts';
+import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
 import { closuresBetween, consume, daysOverview, describeSession, loadSettings, lockDays } from './booking-shared';
 import { loadPricingContext, priceWith, writeSnapshot } from './pricing';
 import type { Price } from '@/domain/pricing/engine';
@@ -56,14 +56,11 @@ export async function myBookableDogs(db: Db, actor: Actor) {
       taxiAllowed: Boolean(r.transport),
       canBook: e.canBook,
       blockers: e.bookingBlockers,
-      vaccinations: e.items
-        .filter((i) => i.kind === 'vaccination')
-        .map((i) => ({
-          label: i.label,
-          expiresOn: i.expiresOn,
-          mandatory: i.mandatory,
-          blocksBooking: i.blocksBooking,
-        })),
+      /** Facts for the vaccination rules per date (D40, D73, D74). */
+      attendance: {
+        items: e.items.filter((i) => i.kind === 'vaccination'),
+        primaryCourseCompletedOn: e.primaryCourseCompletedOn,
+      },
     };
   });
 }
@@ -168,7 +165,8 @@ async function validateRequest(db: Db, actor: Actor, input: unknown, now: Date) 
     const c = checkBookableDate({ date, today, settings, closedReason: closed.get(date) });
     if (!c.ok) fields.dates = `${date}: ${c.reason}`;
     for (const dog of chosen) {
-      const block = vaccinationBlockForDate(dog.vaccinations, date);
+      // Customers can't override any vaccination block.
+      const [block] = allBlocks(blocksForEvaluation(dog.attendance, date));
       if (block) fields.dates = `${dog.name} on ${date}: ${block}`;
     }
   }
@@ -487,6 +485,10 @@ export async function acceptOffer(db: Db, actor: Actor, rawId: string, now = new
   const { bd } = await loadMyBookingDog(db, me, rawId);
   if (bd.status !== 'offered') throw new ConflictError('There’s no offer to accept for this booking.');
   if (!bd.offerExpiresAt || bd.offerExpiresAt <= now) throw new ConflictError('Sorry, this offer has lapsed.');
+  // Vaccinations are checked again when a waitlist place is taken up (D40, D73, D74).
+  const e = (await evaluateDogs(db, [bd.dogId], now)).get(bd.dogId);
+  const [block] = e ? allBlocks(blocksForEvaluation(e, bd.serviceDate)) : [];
+  if (block) throw new ConflictError(`This place can’t be accepted yet: ${block}`);
   const [snap] = await db
     .select({ totalPence: priceSnapshots.totalPence })
     .from(priceSnapshots)

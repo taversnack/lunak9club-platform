@@ -102,6 +102,7 @@ export async function evaluateDogs(db: Db, dogIds: string[], now = new Date()): 
             expiresOn: s.expiresOn,
             reviewReason: s.reviewReason,
             submittedAt: s.submittedAt,
+            primaryCourseCompletedOn: s.primaryCourseCompletedOn,
           })),
         assessments: asmts
           .filter((a) => a.dogId === d.id)

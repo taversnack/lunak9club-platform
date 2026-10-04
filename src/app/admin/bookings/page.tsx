@@ -146,7 +146,13 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
                   {r.checkedOutAt ? ` – out ${time(r.checkedOutAt)}` : ''}
                 </StatusBadge>
               </div>
-              {r.warning ? <Alert tone="warning">{r.warning}</Alert> : null}
+              {r.status === 'confirmed' && r.checkInBlocked ? (
+                <Alert tone="danger" title="Can’t be checked in">
+                  {r.checkInBlocked} Licence rules don’t allow an override.
+                </Alert>
+              ) : r.warning ? (
+                <Alert tone="warning">{r.warning}</Alert>
+              ) : null}
               {r.status === 'pending_payment' && r.offerExpiresAt ? (
                 <p className={s.hint}>Payment link sent – held until {formatDateTimeLondon(r.offerExpiresAt)}.</p>
               ) : null}
@@ -155,7 +161,33 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
               <div className={s.row} style={{ justifyContent: 'flex-start' }}>
                 {r.status === 'confirmed' ? (
                   <>
-                    <Op id={r.id} version={r.version} op="checkIn" label="Check in" variant="primary" dog={r.dogName} />
+                    {r.checkInBlocked ? null : r.checkInNeedsReason ? (
+                      <ActionForm action={attendanceAction}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <input type="hidden" name="version" value={r.version} />
+                        <input type="hidden" name="op" value="checkIn" />
+                        <TextField
+                          name="overrideReason"
+                          label={`Reason for checking ${r.dogName} in anyway`}
+                          hint="Only kennel cough can be overridden"
+                          required
+                        />
+                        <div>
+                          <SubmitButton>
+                            Check in <span className="visually-hidden">{r.dogName}</span>
+                          </SubmitButton>
+                        </div>
+                      </ActionForm>
+                    ) : (
+                      <Op
+                        id={r.id}
+                        version={r.version}
+                        op="checkIn"
+                        label="Check in"
+                        variant="primary"
+                        dog={r.dogName}
+                      />
+                    )}
                     <Op id={r.id} version={r.version} op="markNoShow" label="No-show" dog={r.dogName} />
                   </>
                 ) : null}

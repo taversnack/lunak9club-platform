@@ -114,6 +114,7 @@ describe('customer onboarding journey', () => {
       dogId: aliceDogId,
       fileName: 'evil.pdf',
       bytes: new TextEncoder().encode('<script>alert(1)</script>xxxxxxxx'),
+      firstCourse: 'no',
       entries: [{ requirementKey: 'vaccination_core', expiresOn: nextYear, administeredOn: today }],
     });
     await expect(bad).rejects.toMatchObject({ fields: { file: expect.stringMatching(/PDF or a photo/) } });
@@ -121,6 +122,7 @@ describe('customer onboarding journey', () => {
       dogId: aliceDogId,
       fileName: 'card.pdf',
       bytes: PDF,
+      firstCourse: 'no',
       entries: [
         { requirementKey: 'vaccination_core', expiresOn: addDays(today, -1), administeredOn: addDays(today, -366) },
       ],
@@ -132,6 +134,7 @@ describe('customer onboarding journey', () => {
       dogId: aliceDogId,
       fileName: 'card.pdf',
       bytes: PDF,
+      firstCourse: 'no',
       entries: [{ requirementKey: 'terms', expiresOn: nextYear, administeredOn: today }],
     });
     await expect(notVacc).rejects.toBeInstanceOf(ValidationError);
@@ -143,6 +146,7 @@ describe('customer onboarding journey', () => {
       dogId: aliceDogId,
       fileName: 'vaccination card.pdf',
       bytes: PDF,
+      firstCourse: 'no',
       entries: [
         { requirementKey: 'vaccination_core', expiresOn: nextYear, administeredOn: today },
         { requirementKey: 'vaccination_leptospirosis', expiresOn: nextYear, administeredOn: today },
@@ -161,6 +165,7 @@ describe('customer onboarding journey', () => {
       dogId: aliceDogId,
       fileName: 'kennel cough.png',
       bytes: PNG,
+      firstCourse: 'no',
       entries: [{ requirementKey: 'vaccination_kennel_cough', expiresOn: nextYear, administeredOn: today }],
     });
     const subs = await db().select().from(complianceSubmissions).where(eq(complianceSubmissions.dogId, aliceDogId));
@@ -220,6 +225,7 @@ describe('Owner review', () => {
       dogId: aliceDogId,
       fileName: 'kc.pdf',
       bytes: PDF,
+      firstCourse: 'no',
       entries: [{ requirementKey: 'vaccination_kennel_cough', expiresOn: nextYear, administeredOn: today }],
     });
     const [kc] = await db()
@@ -300,6 +306,7 @@ describe('access control and privacy', () => {
         dogId: aliceDogId,
         fileName: 'x.pdf',
         bytes: PDF,
+        firstCourse: 'no',
         entries: [{ requirementKey: 'vaccination_core', expiresOn: nextYear, administeredOn: today }],
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
