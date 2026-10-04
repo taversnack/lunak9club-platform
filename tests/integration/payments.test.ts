@@ -26,7 +26,7 @@ import {
   resumeCheckoutUrl,
   startInvoiceCheckout,
 } from '@/server/services/payments';
-import { retryCardRefund } from '@/server/services/card-refunds';
+import { ownerCardRefunds, retryCardRefund, submitPendingRefunds } from '@/server/services/card-refunds';
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
@@ -37,6 +37,14 @@ import { approvedDog, readyCustomer } from '../support/onboard';
 
 /** Simulated Stripe that also accepts "signed" test webhooks (signature must be "valid"). */
 class TestProvider extends SimulatedPaymentProvider {
+  /** Make refunds go through but lose the answer, like a timeout after Stripe created them. */
+  loseRefundAnswers = false;
+  override async refund(paymentId: string, amountPence: number, key: string, reference: string) {
+    const res = await super.refund(paymentId, amountPence, key, reference);
+    return this.loseRefundAnswers
+      ? { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' }
+      : res;
+  }
   override parseWebhook(raw: string, signature: string | null): WebhookEvent {
     if (signature !== 'valid') throw new Error('No signatures found matching the expected signature');
     return JSON.parse(raw) as WebhookEvent;
@@ -226,6 +234,38 @@ describe('automatic refunds (D20, D58)', () => {
     const [cn] = await db().select().from(creditNotes).where(eq(creditNotes.id, ok!.creditNoteId!));
     expect(cn!.refundState).toBe('refunded');
     await expect(retryCardRefund(db(), owner, failed!.id)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('a refund whose answer was lost stays pending, and the webhook settles it by our id without a second refund', async () => {
+    const date = weekdayAhead(47);
+    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    const a = await payLatest(pia.userId);
+    const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+    stripe.loseRefundAnswers = true;
+    await cancelMyBooking(db(), pia, bd!.id);
+    stripe.loseRefundAnswers = false;
+    const sent = stripe.refunds.at(-1)!;
+    const [pay] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    const [r] = await db().select().from(cardRefunds).where(eq(cardRefunds.paymentId, pay!.id));
+    expect(r).toMatchObject({ status: 'submitted', providerRefundId: null });
+    expect((await ownerCardRefunds(db(), owner)).failed.map((x) => x.r.id)).not.toContain(r!.id);
+
+    const body = JSON.stringify({
+      id: `evt_refund_${r!.id}`,
+      type: 'refund.updated',
+      objectId: sent.id,
+      refundStatus: 'succeeded',
+      refundReference: r!.id,
+    });
+    await handleWebhook(db(), body, 'valid');
+    const [settled] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
+    expect(settled).toMatchObject({ status: 'succeeded', providerRefundId: sent.id });
+    const [cn] = await db().select().from(creditNotes).where(eq(creditNotes.id, settled!.creditNoteId!));
+    expect(cn!.refundState).toBe('refunded');
+    // The safety net has nothing left to resend.
+    const count = stripe.refunds.length;
+    await submitPendingRefunds(db());
+    expect(stripe.refunds.length).toBe(count);
   });
 });
 
