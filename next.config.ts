@@ -9,6 +9,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Stop `next dev` from writing its agent-rules block into the tracked CLAUDE.md.
+  agentRules: false,
   poweredByHeader: false,
   typedRoutes: true,
   serverExternalPackages: ['pino', 'pg'],
