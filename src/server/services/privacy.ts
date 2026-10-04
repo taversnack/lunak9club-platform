@@ -199,11 +199,16 @@ export async function requestErasure(db: Db, actor: Actor, input: unknown) {
     .select({ id: dataRequests.id })
     .from(dataRequests)
     .where(and(eq(dataRequests.customerId, customer.id), eq(dataRequests.status, 'requested')));
-  if (open) throw new ConflictError('You’ve already asked to delete your account. We’ll be in touch.');
+  const already = () => new ConflictError('You’ve already asked to delete your account. We’ll be in touch.');
+  if (open) throw already();
+  // A double-submit can pass the check above twice; the partial unique index (one open request per
+  // customer, migration 0016) lets only one insert through, so the Owner gets one request and one email.
   const [row] = await db
     .insert(dataRequests)
     .values({ customerId: customer.id, customerReason: d.reason })
+    .onConflictDoNothing({ target: dataRequests.customerId, where: sql`${dataRequests.status} = 'requested'` })
     .returning({ id: dataRequests.id });
+  if (!row) throw already();
   await recordAudit(db, { actor: me, action: 'data.erasure_requested', entityType: 'data_request', entityId: row!.id });
   for (const to of await ownerEmails(db))
     await sendSafely(

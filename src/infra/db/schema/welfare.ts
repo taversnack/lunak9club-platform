@@ -1,5 +1,17 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, date, index, integer, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  check,
+  date,
+  index,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { users } from './auth';
 import { customers, dogs } from './customers';
 import { documents } from './compliance';
@@ -182,6 +194,10 @@ export const dataRequests = pgTable(
   },
   (t) => [
     index('data_requests_status_idx').on(t.status),
+    // One open request per customer: a double-submit can't create a second one.
+    uniqueIndex('data_requests_one_open_uq')
+      .on(t.customerId)
+      .where(sql`${t.status} = 'requested'`),
     check('data_requests_kind_chk', sql`${t.kind} in ('erasure')`),
     check('data_requests_status_chk', sql`${t.status} in ('requested', 'approved', 'declined', 'completed')`),
     check(

@@ -49,6 +49,8 @@ import { appUrl, firstNameOf, ownerEmails, sendSafely } from '../notify';
 import { idOrNotFound, isoDate, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
 import { queueCardRefunds, submitPendingRefunds } from './card-refunds';
+// payments.ts also imports from this module; only functions cross the cycle, used at call time.
+import { releaseOverchargingCheckouts } from './payments';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Q = Db | Tx;
@@ -619,7 +621,7 @@ export async function recordManualPayment(db: Db, actor: Actor, rawId: string, i
     throw new ValidationError('Please check the highlighted fields.', {
       receivedOn: 'The date can’t be in the future',
     });
-  return db.transaction(async (tx) => {
+  const r = await db.transaction(async (tx) => {
     const inv = await lockIssued(tx, id);
     if (inv.status === 'void') throw new ConflictError('This invoice has been cancelled with a credit note.');
     const bal = (await balances(tx, [id])).get(id)!;
@@ -645,6 +647,8 @@ export async function recordManualPayment(db: Db, actor: Actor, rawId: string, i
     });
     return r;
   });
+  await releaseOverchargingCheckouts(db, id, now);
+  return r;
 }
 
 /**
@@ -765,6 +769,7 @@ export async function issueCreditNote(db: Db, actor: Actor, rawId: string, input
     const amount = d.amount ?? lines.reduce((a, l) => a + l.amountPence, 0);
     return createCreditNoteTx(tx, actor, inv, { lines, amountPence: amount, reason: d.reason }, now);
   });
+  await releaseOverchargingCheckouts(db, id, now);
   await submitPendingRefunds(db);
   return cn;
 }

@@ -16,7 +16,7 @@ import {
   INCIDENT_KINDS,
   INCIDENT_SEVERITIES,
 } from '@/infra/db/schema';
-import { checkUpload, safeDisplayName } from '@/domain/documents/file-type';
+import { checkUpload, MAX_INCIDENT_PHOTOS, MAX_UPLOAD_BYTES, safeDisplayName } from '@/domain/documents/file-type';
 import { welfareConcerns } from '@/domain/compliance/welfare';
 import { isIsoDate, londonDate, londonInstant } from '@/domain/time';
 import { incidentMessage, welfareNoteMessage } from '@/infra/email/templates';
@@ -28,8 +28,8 @@ import { appUrl, firstNameOf, sendSafely } from '../notify';
 import { checkbox, idOrNotFound, isoDate, optionalText, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
 
-const MAX_PHOTOS = 5;
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const MAX_PHOTOS = MAX_INCIDENT_PHOTOS;
+const MAX_PHOTO_BYTES = MAX_UPLOAD_BYTES;
 
 async function dogWithOwner(db: Db, dogId: string) {
   const [row] = await db

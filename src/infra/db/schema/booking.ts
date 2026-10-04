@@ -153,6 +153,8 @@ export const bookingDogs = pgTable(
   (t) => [
     index('booking_dogs_date_idx').on(t.serviceDate, t.status),
     index('booking_dogs_customer_idx').on(t.customerId, t.serviceDate),
+    // Payment holds and releases look days up by booking (payments.ts pendingDays, releaseHolds).
+    index('booking_dogs_booking_idx').on(t.bookingId),
     // A dog can only hold one live booking (or waitlist place) per day (D38).
     uniqueIndex('booking_dogs_one_per_dog_day_uq')
       .on(t.dogId, t.serviceDate)
