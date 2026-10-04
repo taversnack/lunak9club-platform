@@ -8,6 +8,7 @@ import { setEmailProvider } from '@/infra/email/providers';
 import { FsStorageProvider } from '@/infra/storage/fs';
 import {
   accounts,
+  auditEvents,
   bookingDogs,
   complianceSubmissions,
   customers,
@@ -290,6 +291,41 @@ describe('your data (UK GDPR, D65)', () => {
     expect(done!.status).toBe('completed');
     const [u2] = await db().select().from(users).where(eq(users.id, sam.userId));
     expect(u2!.name).toBe('Former customer');
+  });
+
+  it('only anonymises customers with no sign-in or other activity for 3 years', async () => {
+    const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
+    // Joined 4 years ago, never booked; sessions long since purged. Only the audit trail remains.
+    async function oldCustomer(name: string, activity: { action: string; at: Date }[]) {
+      const u = await makeUser(db(), 'customer', name);
+      const [c] = await db()
+        .insert(customers)
+        .values({ userId: u.userId, createdAt: daysAgo(4 * 365) })
+        .returning();
+      for (const a of activity)
+        await db().insert(auditEvents).values({
+          actorType: 'user',
+          actorUserId: u.userId,
+          action: a.action,
+          entityType: 'user',
+          entityId: u.userId,
+          occurredAt: a.at,
+        });
+      return c!.id;
+    }
+    const signedIn = await oldCustomer('Returning Rae', [
+      { action: 'auth.signed_in', at: daysAgo(4 * 365) },
+      { action: 'auth.signed_in', at: daysAgo(180) },
+    ]);
+    const uploaded = await oldCustomer('Uploader Uma', [{ action: 'document.uploaded', at: daysAgo(400) }]);
+    const gone = await oldCustomer('Gone Gil', [{ action: 'auth.signed_in', at: daysAgo(4 * 365) }]);
+
+    await runRetention(db(), storage, system);
+    const anonymised = async (id: string) =>
+      (await db().select().from(customers).where(eq(customers.id, id)))[0]!.anonymisedAt !== null;
+    expect(await anonymised(signedIn)).toBe(false);
+    expect(await anonymised(uploaded)).toBe(false);
+    expect(await anonymised(gone)).toBe(true);
   });
 });
 
