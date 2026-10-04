@@ -569,7 +569,16 @@ export async function runRetention(db: Db, storage: StorageProvider, actor: Acto
     await tx.delete(verifications).where(lt(verifications.expiresAt, at(cut.technical)));
     await tx.delete(rateLimits).where(lt(rateLimits.lastRequest, at(cut.technical).getTime()));
     await tx.delete(webhookEvents).where(lt(webhookEvents.receivedAt, at(cut.technical)));
-    await tx.delete(notificationLog).where(lt(notificationLog.sentAt, at(cut.technical)));
+    // The reminder log is what stops a reminder going twice, so a vaccination reminder's row is kept
+    // while the record it was about exists (an expired record stays due for its 'expired' email).
+    await tx
+      .delete(notificationLog)
+      .where(
+        and(
+          lt(notificationLog.sentAt, at(cut.technical)),
+          sql`not exists (select 1 from compliance_submissions s where ${notificationLog.kind} = 'vaccination' and starts_with(${notificationLog.key}, 'vaccination:' || s.dog_id::text || ':' || s.requirement_key || ':' || s.expires_on::text || ':'))`,
+        ),
+      );
     await tx.delete(jobRuns).where(and(lt(jobRuns.startedAt, at(cut.technical)), ne(jobRuns.status, 'running')));
     const audit = await tx
       .delete(auditEvents)
