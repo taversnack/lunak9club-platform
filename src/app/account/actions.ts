@@ -12,6 +12,8 @@ import { uploadVaccinationRecord } from '@/server/services/documents';
 import { acceptTerms } from '@/server/services/policies';
 import { acceptOffer, cancelMyBooking, createMyBookings } from '@/server/services/bookings';
 import { startInvoiceCheckout } from '@/server/services/payments';
+import { acknowledgeIncident } from '@/server/services/welfare';
+import { requestErasure, withdrawErasureRequest } from '@/server/services/privacy';
 import type { Route } from 'next';
 import { leaveMembership, requestMembership, withdrawMembershipRequest } from '@/server/services/memberships';
 
@@ -207,5 +209,32 @@ export async function leaveMembershipAction(_: ActionState, fd: FormData): Promi
       status: 'success',
       message: `Your membership ends after ${endsOn}. Later booked days have been cancelled free of charge.`,
     };
+  });
+}
+
+// ---- Incidents and your data (Phase 7) ---------------------------------------------------
+
+export async function acknowledgeIncidentAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    await acknowledgeIncident(getDb(), actor, String(fd.get('id') ?? ''));
+    revalidatePath('/account');
+    return { status: 'success', message: 'Thank you – we’ve noted that you’ve read this.' };
+  });
+}
+
+export async function requestErasureAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    await requestErasure(getDb(), actor, obj(fd));
+    redirect('/account/data?done=requested');
+  });
+}
+
+export async function withdrawErasureAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    await withdrawErasureRequest(getDb(), actor);
+    redirect('/account/data?done=withdrawn');
   });
 }

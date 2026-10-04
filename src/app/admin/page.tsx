@@ -6,10 +6,13 @@ import { requirePermission } from '@/server/session';
 import { listRecentAuditEvents } from '@/server/queries/audit';
 import { reviewQueue } from '@/server/services/owner-review';
 import { ownerDay } from '@/server/services/owner-bookings';
-import { londonDate } from '@/domain/time';
 import { getDb } from '@/infra/db/client';
 import { formatDateTimeLondon } from '@/ui/format';
 import { billingOverview } from '@/server/services/billing';
+import { welfareOverview } from '@/server/services/welfare';
+import { expiringVaccinations } from '@/server/services/reminders';
+import { ownerDataRequests } from '@/server/services/privacy';
+import { formatUkDate, londonDate } from '@/domain/time';
 import { pounds } from '@/domain/pricing/engine';
 
 export const metadata: Metadata = { title: 'Owner dashboard' };
@@ -18,12 +21,16 @@ export const dynamic = 'force-dynamic';
 export default async function AdminHome() {
   const actor = await requirePermission('admin.access');
   const db = getDb();
-  const [events, queue, today, billing] = await Promise.all([
+  const [events, queue, today, billing, welfare, expiring, requests] = await Promise.all([
     listRecentAuditEvents(db, actor, 20),
     reviewQueue(db, actor),
     ownerDay(db, actor, londonDate(new Date())),
     billingOverview(db, actor),
+    welfareOverview(db, actor),
+    expiringVaccinations(db, actor),
+    ownerDataRequests(db, actor),
   ]);
+  const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
   return (
     <Stack>
@@ -76,6 +83,37 @@ export default async function AdminHome() {
           ) : null}
           <Link href="/admin/invoices">Open invoices</Link>
         </Card>
+      </Grid>
+      <Grid>
+        <Card aria-labelledby="incidents">
+          <h2 id="incidents">Incidents</h2>
+          <p className={s.bigNumber}>{welfare.open} open</p>
+          <p>{welfare.followUpsDue} follow-ups due</p>
+          <Link href="/admin/incidents">Open incidents</Link>
+        </Card>
+        <Card aria-labelledby="expiring">
+          <h2 id="expiring">Vaccinations expiring (30 days)</h2>
+          {expiring.length === 0 ? (
+            <Muted>None.</Muted>
+          ) : (
+            <ul className={s.list}>
+              {expiring.slice(0, 8).map((v) => (
+                <li key={`${v.dogId}-${v.label}`}>
+                  <Link href={`/admin/dogs/${v.dogId}`}>{v.dogName}</Link> – {v.label}:{' '}
+                  {v.expired ? <strong>expired {formatUkDate(v.expiresOn)}</strong> : formatUkDate(v.expiresOn)}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className={s.hint}>Customers are reminded automatically 30, 14 and 7 days before.</p>
+        </Card>
+        {waitingRequests ? (
+          <Card aria-labelledby="requests">
+            <h2 id="requests">Data requests</h2>
+            <p className={s.bigNumber}>{waitingRequests}</p>
+            <Link href="/admin/data-requests">Review requests</Link>
+          </Card>
+        ) : null}
       </Grid>
       <Card aria-labelledby="audit">
         <h2 id="audit">Recent activity</h2>

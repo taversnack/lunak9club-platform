@@ -85,6 +85,20 @@
       "when": 1790696389284,
       "tag": "0011_payments_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791119738421,
+      "tag": "0012_welfare",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791119739584,
+      "tag": "0013_welfare_locks",
+      "breakpoints": true
     }
   ]
 }

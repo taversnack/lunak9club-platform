@@ -249,23 +249,28 @@ export function FileField({
   label,
   hint,
   accept,
+  multiple,
+  required = true,
 }: {
   name: string;
   label: string;
   hint?: string;
   accept?: string;
+  multiple?: boolean;
+  required?: boolean;
 }) {
   const id = useId();
   const { error } = useField(name);
   return (
     <div className={s.field}>
-      <Label htmlFor={id} label={label} required />
+      <Label htmlFor={id} label={label} required={required} />
       <Described id={id} hint={hint} error={error} />
       <input
         id={id}
         name={name}
         type="file"
         accept={accept}
+        multiple={multiple}
         className={s.file}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy(id, hint, error)}

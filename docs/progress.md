@@ -58,7 +58,16 @@
   - Refunds (D58): automatic to card for free cancellations, approved member refunds and credits on card-paid invoices; failed refunds retried from Refunds; scheduler retries interrupted ones.
   - Webhook `/api/webhooks/stripe` with signature check and event de-duplication; return page and scheduler reconcile if a webhook is missed.
 
+- 2026-10-04 — **Phase 7 Compliance and welfare** complete:
+  - Migrations 0012–0013: incidents (+ updates, photos), daily welfare checks, reminder log, data requests; locks so licence records can't be edited or deleted except by the retention job.
+  - Incident reports (D62): always shared with the customer, photos, append-only updates, acknowledgement, follow-up dates, Owner list.
+  - Daily checks (D63): auto-shared and emailed when the licence says the owner must be told.
+  - Reminders (D66, D67): vaccinations 30/14/7 days and on expiry (+ Owner summary and dashboard list), day-before booking reminders, offer-lapsing warnings – each sent once.
+  - Retention (D64) and UK GDPR (D65): daily retention job, inactive-customer anonymisation, customer data download, deletion requests with Owner approval.
+
 ## Verification (26 Sep 2026, cloud build workspace)
+Phase 7 (4 Oct): `pnpm verify` → OVERALL PASS. 93 unit, 116 integration/authz (incl. 12 welfare/privacy), E2E incident → customer acknowledgement → daily check → data download on mobile + desktop; a11y scans on all new pages.
+
 Phase 6 (29 Sep): `pnpm verify` → OVERALL PASS. 88 unit, 104 integration/authz (incl. 10 payments), E2E pays for bookings, an Owner-made booking and an invoice through the simulated card page on mobile + desktop; a11y scans pass.
 
 Phase 5 (29 Sep): `pnpm verify` → OVERALL PASS. 84 unit (incl. billing rules), 94 integration/authz (incl. 19 billing), E2E incl. draft → approve → send → customer PDF on mobile + desktop, a11y scans on all new pages.
@@ -75,7 +84,7 @@ Phase 2: `pnpm verify` → OVERALL PASS. 33 unit, 39 integration/authz (incl. S3
 Not yet run on the Owner's Mac — see README "First-time setup".
 
 ## Current
-- Phase 6 done; awaiting Owner review and a Stripe test account (O13). Next: Phase 7 (compliance automation – vaccination expiry reminders, incidents, welfare notes, retention).
+- Phase 7 done; awaiting Owner review. Next: Phase 8 (hardening and launch).
 
 ## Decisions
 - See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed).
@@ -94,4 +103,4 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Staff Manager/Staff roles not created (D13) — permission map ready.
 
 ## Next
-- Phase 7: compliance automation – vaccination expiry reminders (30/14/7 days, D11), incident reports, welfare notes, data retention and the booking/waitlist reminder emails.
+- Phase 8: hardening and launch – security review, backups and a tested restore, error monitoring, performance and accessibility pass, hosting decision (O6, O12, O13), go-live checklist.

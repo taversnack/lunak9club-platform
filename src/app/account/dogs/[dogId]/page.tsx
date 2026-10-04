@@ -1,6 +1,13 @@
 import type { Metadata, Route } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
+import { requirePermission } from '@/server/session';
+import { getDb } from '@/infra/db/client';
+import { myDogWelfare, myIncidents } from '@/server/services/welfare';
+import { CONCERN_LABELS } from '@/domain/compliance/welfare';
+import { formatDateTimeLondon } from '@/ui/format';
+import { ATE_LABELS, DRINKING_LABELS, INCIDENT_KIND_LABELS, MOOD_LABELS } from '@/ui/welfare-labels';
+
 import { Alert, buttonClass, Card, Stack, StatusBadge } from '@/ui/components';
 import { ITEM_LABELS, OVERALL_LABELS, type ChecklistItem } from '@/domain/compliance/evaluate';
 import { formatUkDate } from '@/domain/time';
@@ -43,6 +50,12 @@ export default async function DogPage({
   const { dogId } = await params;
   const { saved } = await searchParams;
   const { dog, evaluation, submissions, vet } = await loadDogPage(dogId);
+  const actor = await requirePermission('account.access');
+  const [dogIncidents, notes] = await Promise.all([
+    myIncidents(getDb(), actor, { dogId: dog.id }),
+    myDogWelfare(getDb(), actor, dog.id),
+  ]);
+  const unread = dogIncidents.filter((i) => !i.acknowledgedAt);
   const overall = OVERALL_LABELS[evaluation.overall];
   return (
     <Stack>
@@ -62,6 +75,14 @@ export default async function DogPage({
       {evaluation.overall === 'ready_for_approval' ? (
         <Alert tone="info">Everything is in. We’ll review {dog.name} and let you know.</Alert>
       ) : null}
+
+      {unread.map((i) => (
+        <Alert key={i.id} tone="warning" title={`Please read: incident report for ${dog.name}`}>
+          <Link href={`/account/incidents/${i.id}`}>
+            {INCIDENT_KIND_LABELS[i.kind]} on {formatDateTimeLondon(i.occurredAt)}
+          </Link>
+        </Alert>
+      ))}
 
       <Card aria-labelledby="checklist">
         <h2 id="checklist">Onboarding checklist</h2>
@@ -164,6 +185,42 @@ export default async function DogPage({
           </div>
         )}
       </Card>
+      {dogIncidents.length || notes.length ? (
+        <Card aria-labelledby="day-care">
+          <h2 id="day-care">From day care</h2>
+          {dogIncidents.length ? (
+            <>
+              <h3>Incident reports</h3>
+              <ul className={s.list}>
+                {dogIncidents.map((i) => (
+                  <li key={i.id}>
+                    <Link href={`/account/incidents/${i.id}`}>
+                      {INCIDENT_KIND_LABELS[i.kind]} – {formatDateTimeLondon(i.occurredAt)}
+                    </Link>
+                    {i.acknowledgedAt ? '' : ' (not read yet)'}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {notes.length ? (
+            <>
+              <h3>Notes from our team</h3>
+              <ul className={s.list}>
+                {notes.map((n) => (
+                  <li key={n.id}>
+                    <strong>{formatUkDate(n.serviceDate)}</strong>: {ATE_LABELS[n.ate]} · {DRINKING_LABELS[n.drinking]}{' '}
+                    · {MOOD_LABELS[n.mood]}
+                    {n.concerns.length ? ` · ${n.concerns.map((c) => CONCERN_LABELS[c]).join(', ')}` : ''}
+                    {n.medicationGiven ? ` · Medication given: ${n.medicationGiven}` : ''}
+                    {n.note ? <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{n.note}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </Card>
+      ) : null}
     </Stack>
   );
 }

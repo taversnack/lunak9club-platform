@@ -68,6 +68,8 @@ export const documents = pgTable(
     sizeBytes: integer().notNull(),
     sha256: text().notNull(),
     scanStatus: text().notNull().default('not_scanned'),
+    /** compliance = vaccination records etc.; incident = photos attached to an incident report. */
+    purpose: text().$type<'compliance' | 'incident'>().notNull().default('compliance'),
     uploadedBy: text()
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),

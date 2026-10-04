@@ -69,7 +69,7 @@ test('Owner sees the booking on the day, books a trial and checks a dog in and o
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
   await page.goto(`/admin/bookings?date=${bookedIso}`);
-  await expect(page.getByRole('link', { name: 'Biscuit' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Biscuit', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Taxi run', exact: true })).toContainText('Biscuit');
   await axe(page);
 

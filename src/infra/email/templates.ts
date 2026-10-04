@@ -296,3 +296,122 @@ export function cardRefundMessage(
     ),
   };
 }
+
+// Compliance and welfare (Phase 7). Like all emails: no health, behaviour or incident details –
+// just enough to prompt the customer to sign in (D33).
+export function vaccinationReminderMessage(
+  to: string,
+  firstName: string,
+  p: { dogName: string; expired: boolean; dateText: string },
+  url: string,
+): EmailMessage {
+  const title = p.expired ? `${p.dogName}'s records need updating` : `Please update ${p.dogName}'s records`;
+  const body = p.expired
+    ? `A vaccination record for ${p.dogName} expired on ${p.dateText}, so we can't accept bookings after that date until a new record is uploaded.`
+    : `A vaccination record for ${p.dogName} runs out on ${p.dateText}. Please upload the new record before then so ${p.dogName} can keep coming to day care.`;
+  return {
+    to,
+    template: p.expired ? 'compliance.vaccination-expired' : 'compliance.vaccination-reminder',
+    subject: `${BRAND}: ${title.charAt(0).toLowerCase()}${title.slice(1)}`,
+    text: `Hi ${firstName},\n\n${body} Sign in to see which record:\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(body)}</p>${button(url, 'Update records')}`,
+      '',
+    ),
+  };
+}
+
+export function bookingReminderMessage(to: string, firstName: string, ls: BookingLine[], url: string): EmailMessage {
+  const l = lines(ls);
+  return {
+    to,
+    template: 'booking.reminder',
+    subject: `${BRAND}: see you tomorrow`,
+    text: `Hi ${firstName},\n\nA reminder of tomorrow's day care:\n${l.text}\n\nNeed to change something? Please call us.\n${url}`,
+    html: layout(
+      'See you tomorrow',
+      `<p>Hi ${escapeHtml(firstName)},</p><p>A reminder of tomorrow's day care:</p>${l.html}<p>Need to change something? Please call us.</p>${button(url, 'See your bookings')}`,
+      '',
+    ),
+  };
+}
+
+export function offerLapsingMessage(
+  to: string,
+  firstName: string,
+  line: BookingLine,
+  untilText: string,
+  url: string,
+): EmailMessage {
+  const l = lines([line]);
+  return {
+    to,
+    template: 'booking.offer-lapsing',
+    subject: `${BRAND}: your place offer ends soon`,
+    text: `Hi ${firstName},\n\nWe're still holding this place for you until ${untilText}:\n${l.text}\n\nAccept it here before then:\n${url}`,
+    html: layout(
+      'Your place offer ends soon',
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We're still holding this place for you until ${escapeHtml(untilText)}:</p>${l.html}${button(url, 'Accept the place')}`,
+      '',
+    ),
+  };
+}
+
+export function incidentMessage(
+  to: string,
+  firstName: string,
+  p: { dogName: string; update: boolean },
+  url: string,
+): EmailMessage {
+  const title = p.update ? `An update about ${p.dogName}` : `Something happened at day care today – ${p.dogName}`;
+  const body = p.update
+    ? `We've added an update to an incident report about ${p.dogName}.`
+    : `We've written an incident report about ${p.dogName} so you know exactly what happened and what we did.`;
+  return {
+    to,
+    template: p.update ? 'welfare.incident-update' : 'welfare.incident',
+    subject: `${BRAND}: ${title}`,
+    text: `Hi ${firstName},\n\n${body} Please sign in to read it. If you have any questions, just call us.\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(body)} Please sign in to read it. If you have any questions, just call us.</p>${button(url, 'Read the report')}`,
+      '',
+    ),
+  };
+}
+
+export function welfareNoteMessage(to: string, firstName: string, dogName: string, url: string): EmailMessage {
+  const title = `A note about ${dogName} today`;
+  return {
+    to,
+    template: 'welfare.note',
+    subject: `${BRAND}: ${title.toLowerCase()}`,
+    text: `Hi ${firstName},\n\nWe noticed something about ${dogName} today that we'd like you to know about. Please sign in to read our note:\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We noticed something about ${escapeHtml(dogName)} today that we'd like you to know about.</p>${button(url, 'Read the note')}`,
+      '',
+    ),
+  };
+}
+
+export function erasureDecisionMessage(
+  to: string,
+  firstName: string,
+  p: { approved: boolean; retainUntilText: string | null; reason: string | null },
+): EmailMessage {
+  const title = p.approved ? 'Your account has been closed' : 'About your request to delete your account';
+  const body = p.approved
+    ? p.retainUntilText
+      ? `We've closed your account and you can no longer sign in. The law requires us to keep some records (your dog's day care register and invoices) for a set time; we'll delete or anonymise them by ${p.retainUntilText}, and we won't use them for anything else.`
+      : `We've closed your account and removed your personal details. Invoices are kept for 6 years as the law requires.`
+    : `We couldn't close your account yet. ${p.reason ?? ''}`.trim();
+  return {
+    to,
+    template: p.approved ? 'data.erasure-approved' : 'data.erasure-declined',
+    subject: `${BRAND}: ${title.toLowerCase()}`,
+    text: `Hi ${firstName},\n\n${body}`,
+    html: layout(title, `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(body)}</p>`, ''),
+  };
+}

@@ -31,6 +31,15 @@ import {
 import { runBillingNow } from '@/server/services/jobs';
 import { retryCardRefund } from '@/server/services/card-refunds';
 import {
+  addIncidentUpdate,
+  recordWelfareCheck,
+  reportIncident,
+  setIncidentStatus,
+  setWelfareShared,
+} from '@/server/services/welfare';
+import { decideErasure } from '@/server/services/privacy';
+import { getStorage } from '@/infra/storage';
+import {
   addClosure,
   checkIn,
   checkOut,
@@ -357,5 +366,76 @@ export async function retryCardRefundAction(_: ActionState, fd: FormData): Promi
     const actor = await requirePermission('refunds.manage');
     await retryCardRefund(getDb(), actor, String(fd.get('id') ?? ''));
     redirect('/admin/refunds?done=retried');
+  });
+}
+
+// ---- Welfare, incidents and data requests (Phase 7) -------------------------------------
+
+export async function reportIncidentAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('incidents.manage');
+    const files = fd.getAll('photos').filter((f): f is File => f instanceof File && f.size > 0);
+    const photos = await Promise.all(
+      files.map(async (f) => ({ fileName: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })),
+    );
+    const id = await reportIncident(getDb(), getStorage(), actor, obj(fd), photos);
+    redirect(`/admin/incidents/${id}?done=reported`);
+  });
+}
+
+export async function incidentUpdateAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('incidents.manage');
+    const id = String(fd.get('id') ?? '');
+    await addIncidentUpdate(getDb(), actor, id, obj(fd));
+    redirect(`/admin/incidents/${id}?done=updated`);
+  });
+}
+
+export async function incidentStatusAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('incidents.manage');
+    const id = String(fd.get('id') ?? '');
+    const close = fd.get('close') === '1';
+    await setIncidentStatus(getDb(), actor, id, close);
+    redirect(`/admin/incidents/${id}?done=${close ? 'closed' : 'reopened'}`);
+  });
+}
+
+export async function welfareCheckAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('welfare.manage');
+    const r = await recordWelfareCheck(getDb(), actor, {
+      ...obj(fd),
+      concerns: fd.getAll('concerns').filter((v): v is string => typeof v === 'string'),
+    });
+    const dogId = String(fd.get('dogId') ?? '');
+    revalidatePath(`/admin/dogs/${dogId}`);
+    return {
+      status: 'success',
+      message: r.autoShared
+        ? 'Check saved. Because it records something the customer must be told about, it’s been shared and they’ve been emailed.'
+        : r.shared
+          ? 'Check saved and shared with the customer.'
+          : 'Check saved.',
+    };
+  });
+}
+
+export async function welfareShareAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('welfare.manage');
+    await setWelfareShared(getDb(), actor, String(fd.get('id') ?? ''), fd.get('shared') === '1');
+    revalidatePath(`/admin/dogs/${String(fd.get('dogId') ?? '')}`);
+    return { status: 'success', message: fd.get('shared') === '1' ? 'Shared with the customer.' : 'No longer shared.' };
+  });
+}
+
+export async function decideErasureAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('data_requests.manage');
+    const approve = fd.get('decision') === 'approve';
+    const r = await decideErasure(getDb(), getStorage(), actor, String(fd.get('id') ?? ''), approve, obj(fd));
+    redirect(`/admin/data-requests?done=${approve ? (r.completed ? 'erased' : 'closed') : 'declined'}`);
   });
 }

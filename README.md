@@ -74,6 +74,13 @@ First E2E run on a new machine: `pnpm exec playwright install chromium`.
   4. Pay with Stripe's test card `4242 4242 4242 4242`, any future expiry, any CVC.
 - Live keys (`sk_live_`) are refused unless `APP_ENV=production`.
 
+## Welfare, incidents and your data
+
+- Owner → **Incidents**: report an incident (customer is always emailed and reads it in their account); add updates; close it.
+- Owner → a dog's page or the day view → **Daily check**: food, water, toileting, mood, medication. Changes in drinking or signs of distress are shared with the customer automatically.
+- Customer → **Your data**: download everything we hold, or ask to delete the account (Owner → **Data requests**).
+- Scheduled: vaccination reminders 08:00, booking reminders 17:00, offer warnings every tick, retention 03:00.
+
 ## Invoices and scheduled jobs
 
 - Owner → **Business**: fill in the registered company name, company number and registered office before sending real invoices. `pnpm db:seed` fills blanks with obvious DEMO values for local testing only.

@@ -17,6 +17,9 @@ import {
 import { materialiseMemberships } from './memberships';
 import { reconcileOpenCheckouts, releaseExpiredCheckouts } from './payments';
 import { submitPendingRefunds } from './card-refunds';
+import { sendBookingReminders, sendOfferWarnings, sendVaccinationReminders } from './reminders';
+import { runRetention } from './privacy';
+import { getStorage } from '@/infra/storage';
 
 type RunOutcome = { job: string; key: string; status: 'ran' | 'skipped' | 'failed'; summary?: unknown };
 
@@ -61,6 +64,9 @@ async function once(db: Db, job: string, key: string, fn: () => Promise<Record<s
  * - 01:00 daily: book membership days ahead (D47)
  * - 02:00 daily: refresh membership invoice drafts and raise any missed refund requests
  * - from the draft day (25th): email the Owner once that next month's drafts are ready
+ * - 03:00 daily: retention schedule (D64)
+ * - 08:00 daily: vaccination reminders (D66); 17:00 daily: tomorrow's booking reminders (D67)
+ * - every tick: waitlist offers about to lapse (D67)
  * - every tick: send approved invoices whose send time has come (28th 09:00, D24) and
  *   payment reminders that are due (15:30 on day 4, D25)
  */
@@ -97,6 +103,13 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
     );
   }
 
+  // Compliance and welfare (Phase 7): reminders and the retention schedule.
+  if (time >= '03:00') out.push(await once(db, 'retention', today, () => runRetention(db, getStorage(), actor, now)));
+  if (time >= '08:00')
+    out.push(await once(db, 'vaccination-reminders', today, () => sendVaccinationReminders(db, actor, now)));
+  if (time >= '17:00') out.push(await once(db, 'booking-reminders', today, () => sendBookingReminders(db, actor, now)));
+  const offerWarnings = await sendOfferWarnings(db, actor, now);
+
   const sent = await sendDueInvoices(db, actor, now);
   const reminders = await sendPaymentReminders(db, actor, now);
   // Card payments (D6, D58): catch paid-but-unconfirmed checkouts, free lapsed holds, retry refunds.
@@ -112,6 +125,7 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
     checkoutsPaid: reconciled.paid,
     holdsReleased: holds.released,
     refunds,
+    offerWarnings: offerWarnings.sent,
   };
 }
 

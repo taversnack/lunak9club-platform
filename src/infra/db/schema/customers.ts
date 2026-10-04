@@ -23,6 +23,8 @@ export const customers = pgTable('customers', {
   town: text(),
   postcode: text(),
   archivedAt: timestamp({ withTimezone: true }),
+  /** Personal details removed (retention or an approved erasure request, D64/D65). */
+  anonymisedAt: timestamp({ withTimezone: true }),
   ...timestamps,
 });
 

@@ -17,12 +17,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <Link href="/admin/invoices">Invoices</Link>
         <Link href="/admin/refunds">Refunds</Link>
         <Link href="/admin/reviews">Reviews</Link>
+        <Link href="/admin/incidents">Incidents</Link>
         <Link href="/admin/customers">Customers</Link>
         <Link href="/admin/settings/availability">Opening</Link>
         <Link href="/admin/settings/pricing">Prices</Link>
         <Link href="/admin/settings/requirements">Requirements</Link>
         <Link href="/admin/settings/terms">Terms</Link>
         <Link href="/admin/settings/business">Business</Link>
+        <Link href="/admin/data-requests">Data requests</Link>
         <SignOutButton />
       </nav>
       {children}

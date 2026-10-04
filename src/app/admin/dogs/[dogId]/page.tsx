@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import s from '@/ui/ui.module.css';
-import { Alert, Card, Muted, Stack, StatusBadge } from '@/ui/components';
+import { dogWelfare } from '@/server/services/welfare';
+import { INCIDENT_KIND_LABELS, SEVERITY_LABELS, SEVERITY_TONE } from '@/ui/welfare-labels';
+import { Alert, buttonClass, Card, Muted, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, RadioGroup, SelectField, SubmitButton, TextArea, TextField } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDogForOwner } from '@/server/services/owner-review';
@@ -34,6 +36,8 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
   const pending = d.submissions.filter((x) => x.status === 'pending_review');
   const history = d.submissions.filter((x) => x.status !== 'pending_review');
   const today = londonDate(new Date());
+  const welfare = await dogWelfare(getDb(), actor, dogId);
+  const lastCheck = welfare.checks[0];
 
   return (
     <Stack>
@@ -276,6 +280,41 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
             <dd>{txt(d.behaviour?.emergencyInstructions)}</dd>
           </dl>
         </div>
+      </Card>
+
+      <Card aria-labelledby="welfare">
+        <div className={s.row}>
+          <h2 id="welfare">Welfare and incidents</h2>
+          <div className={s.row}>
+            <Link href={`/admin/dogs/${dogId}/check`} className={buttonClass('secondary')}>
+              Daily check
+            </Link>
+            <Link href={`/admin/incidents/new?dogId=${dogId}`} className={buttonClass('secondary')}>
+              Report an incident
+            </Link>
+          </div>
+        </div>
+        <p>
+          {lastCheck
+            ? `Last daily check: ${formatUkDate(lastCheck.serviceDate)}${lastCheck.concerns.length ? ' (with concerns)' : ''}.`
+            : 'No daily checks yet.'}{' '}
+          <Link href={`/admin/dogs/${dogId}/check`}>See all checks</Link>
+        </p>
+        {welfare.incidents.length === 0 ? (
+          <Muted>No incidents.</Muted>
+        ) : (
+          <ul className={s.list}>
+            {welfare.incidents.map((i) => (
+              <li key={i.id}>
+                <Link href={`/admin/incidents/${i.id}`}>
+                  {INCIDENT_KIND_LABELS[i.kind]} – {formatUkDate(londonDate(i.occurredAt))}
+                </Link>{' '}
+                <StatusBadge tone={SEVERITY_TONE[i.severity]!}>{SEVERITY_LABELS[i.severity]}</StatusBadge>
+                {i.status === 'open' ? ' · open' : ''}
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
       <Card aria-labelledby="history">

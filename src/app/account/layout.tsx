@@ -19,6 +19,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
         <Link href="/account/profile">Your details</Link>
         <Link href="/account/contacts">Contacts</Link>
         <Link href="/account/terms">Terms</Link>
+        <Link href="/account/data">Your data</Link>
         <SignOutButton />
       </nav>
       {children}

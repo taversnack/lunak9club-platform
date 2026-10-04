@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
+import { checksForDay } from '@/server/services/welfare';
 import { formatDateTimeLondon } from '@/ui/format';
 import { Alert, buttonClass, Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, Checkbox, SubmitButton, TextArea, TextField } from '@/ui/form';
@@ -64,7 +65,7 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
   const sp = await searchParams;
   const today = londonDate(new Date());
   const date = sp.date && isIsoDate(sp.date) ? sp.date : today;
-  const day = await ownerDay(getDb(), actor, date);
+  const [day, checks] = await Promise.all([ownerDay(getDb(), actor, date), checksForDay(getDb(), actor, date)]);
   return (
     <Stack>
       <div className={s.row}>
@@ -165,6 +166,17 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
                   <Op id={r.id} version={r.version} op="undoAttendance" label="Undo" dog={r.dogName} />
                 ) : null}
               </div>
+              {r.status === 'attended' || r.status === 'confirmed' ? (
+                <p className={s.hint}>
+                  <Link href={`/admin/dogs/${r.dogId}/check?date=${date}&bookingDog=${r.id}`}>
+                    Daily check <span className="visually-hidden">for {r.dogName}</span>
+                  </Link>
+                  {checks.get(r.dogId) ? ` (${checks.get(r.dogId)} done)` : ''} ·{' '}
+                  <Link href={`/admin/incidents/new?dogId=${r.dogId}&date=${date}&bookingDog=${r.id}`}>
+                    Report an incident <span className="visually-hidden">for {r.dogName}</span>
+                  </Link>
+                </p>
+              ) : null}
               <details>
                 <summary>Notes and cancellation</summary>
                 <ActionForm action={internalNoteAction}>

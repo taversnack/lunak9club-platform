@@ -6,3 +6,4 @@ export * from './compliance';
 export * from './booking';
 export * from './pricing';
 export * from './billing';
+export * from './welfare';
