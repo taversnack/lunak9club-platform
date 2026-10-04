@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Db } from '../../src/infra/db/client';
 import { userRoles, users } from '../../src/infra/db/schema';
 import type { Actor } from '../../src/server/policy/authorize';
+import { addDays, londonDate } from '../../src/domain/time';
 
 export type TestUser = Extract<Actor, { kind: 'user' }> & { email: string };
 
@@ -26,12 +27,26 @@ export const validDog = {
   neutered: 'yes',
 };
 
+const monthAgo = addDays(londonDate(new Date()), -30);
+
 export const validOnboarding = {
   fleaAndWorming: 'Monthly spot-on, last 1 September',
+  lastWormedOn: monthAgo,
+  lastFleaTreatmentOn: monthAgo,
+  exerciseRestricted: 'no',
+  insured: 'yes',
+  insurer: 'Petplan',
+  insurancePolicyNumber: 'PP-123456',
   temperament: 'Friendly and playful',
   biteHistory: 'no',
   transport: 'yes',
   photosAndSocialMedia: 'no',
   emergencyVetTreatment: 'yes',
+  feedingConsent: 'yes',
+  feedingWithOthersConsent: 'no',
+  cratingConsent: 'yes',
+  parasiteTreatmentConsent: 'yes',
+  medicationConsent: 'yes',
+  groupWalksConsent: 'yes',
   confirmAccurate: 'on',
 };

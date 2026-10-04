@@ -108,6 +108,8 @@ export const complianceSubmissions = pgTable(
       .references(() => documents.id, { onDelete: 'restrict' }),
     status: text().$type<SubmissionStatus>().notNull().default('pending_review'),
     expiresOn: date({ mode: 'string' }).notNull(),
+    /** Date the vaccination was given (licence para 25(1)(h), D68). Null on records sent before migration 0014. */
+    administeredOn: date({ mode: 'string' }),
     submittedBy: text()
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
@@ -131,6 +133,10 @@ export const complianceSubmissions = pgTable(
     check(
       'compliance_submissions_status_chk',
       sql`${t.status} in ('pending_review', 'approved', 'rejected', 'replacement_requested', 'superseded')`,
+    ),
+    check(
+      'compliance_submissions_administered_chk',
+      sql`${t.administeredOn} is null or ${t.administeredOn} <= ${t.expiresOn}`,
     ),
     check(
       'compliance_submissions_reason_chk',

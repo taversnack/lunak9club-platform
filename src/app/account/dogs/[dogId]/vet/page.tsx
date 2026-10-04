@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Stack } from '@/ui/components';
-import { ActionForm, SubmitButton, TextArea, TextField } from '@/ui/form';
+import { ActionForm, RadioGroup, SubmitButton, TextArea, TextField } from '@/ui/form';
 import { saveVetAction } from '../../../actions';
 import { loadDogPage } from '../load';
 
@@ -10,7 +10,8 @@ export const metadata: Metadata = { title: 'Vet details' };
 export const dynamic = 'force-dynamic';
 
 export default async function VetPage({ params }: { params: Promise<{ dogId: string }> }) {
-  const { dog, vet } = await loadDogPage((await params).dogId);
+  const { dog, vet, agreedVet } = await loadDogPage((await params).dogId);
+  const choice = dog.agreedVetId ? (dog.agreedVetId === dog.vetId ? 'same' : 'other') : undefined;
   return (
     <Card>
       <Stack>
@@ -31,6 +32,33 @@ export default async function VetPage({ params }: { params: Promise<{ dogId: str
             defaultValue={vet?.phone}
           />
           <TextArea name="address" label="Practice address" defaultValue={vet?.address} />
+          <RadioGroup
+            name="agreedVet"
+            label="Which vet should we use in an emergency?"
+            options={[
+              { value: 'same', label: 'This practice' },
+              { value: 'other', label: 'A different practice' },
+            ]}
+            defaultValue={choice}
+          />
+          <fieldset className={s.fieldset}>
+            <legend className={s.label}>If a different practice</legend>
+            <div className={s.stack}>
+              <TextField
+                name="agreedPracticeName"
+                label="Emergency practice name"
+                defaultValue={agreedVet?.practiceName}
+              />
+              <TextField
+                name="agreedPhone"
+                label="Emergency practice phone number"
+                type="tel"
+                inputMode="tel"
+                defaultValue={agreedVet?.phone}
+              />
+              <TextArea name="agreedAddress" label="Emergency practice address" defaultValue={agreedVet?.address} />
+            </div>
+          </fieldset>
           <div>
             <SubmitButton>Save vet details</SubmitButton>
           </div>

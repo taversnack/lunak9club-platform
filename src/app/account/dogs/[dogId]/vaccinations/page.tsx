@@ -5,6 +5,7 @@ import { Card, Stack } from '@/ui/components';
 import { ActionForm, FieldError, FileField, SubmitButton, TextField } from '@/ui/form';
 import { uploadVaccinationAction } from '../../../actions';
 import { loadDogPage } from '../load';
+import { londonDate } from '@/domain/time';
 
 export const metadata: Metadata = { title: 'Upload a vaccination record' };
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,7 @@ export const dynamic = 'force-dynamic';
 export default async function VaccinationsPage({ params }: { params: Promise<{ dogId: string }> }) {
   const { dog, evaluation } = await loadDogPage((await params).dogId);
   const vaccines = evaluation.items.filter((i) => i.kind === 'vaccination');
+  const today = londonDate(new Date());
   return (
     <Card>
       <Stack>
@@ -32,11 +34,10 @@ export default async function VaccinationsPage({ params }: { params: Promise<{ d
             accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
           />
           <fieldset className={s.fieldset}>
-            <legend className={s.label}>
-              Which vaccinations does this record show, and when are they valid until?
-            </legend>
+            <legend className={s.label}>Which vaccinations does this record show?</legend>
             <span className={s.hint}>
-              Tick each one and enter the date it’s valid until (the “next due” date on the card).
+              Tick each one and enter the date it was given and the date it’s valid until (the “next due” date on the
+              card).
             </span>
             <FieldError name="entries" />
             {vaccines.map((v) => (
@@ -45,6 +46,13 @@ export default async function VaccinationsPage({ params }: { params: Promise<{ d
                   <input type="checkbox" name="covers" value={v.key} />
                   <span>{v.label}</span>
                 </label>
+                <TextField
+                  name={`administeredOn.${v.key}`}
+                  label={`${v.label}: date given`}
+                  type="date"
+                  required
+                  max={today}
+                />
                 <TextField name={`expiresOn.${v.key}`} label={`${v.label}: valid until`} type="date" required />
               </div>
             ))}

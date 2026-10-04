@@ -15,7 +15,8 @@ import { logger } from '@/infra/logger';
 import { ownerReviewWaitingMessage } from '@/infra/email/templates';
 import { appUrl, ownerEmails, sendSafely } from '../notify';
 
-export type VaccinationEntry = { requirementKey: string; expiresOn: string };
+/** `administeredOn` is the date the vaccination was given (licence para 25(1)(h), D68). */
+export type VaccinationEntry = { requirementKey: string; expiresOn: string; administeredOn: string };
 
 export type UploadInput = {
   dogId: string;
@@ -64,6 +65,13 @@ export async function uploadVaccinationRecord(
       fields[`expiresOn.${e.requirementKey}`] = 'This date has already passed – the vaccination has expired';
     else if (e.expiresOn > addDays(today, 365 * 4))
       fields[`expiresOn.${e.requirementKey}`] = 'Check this date – it is more than 4 years away';
+    const given = `administeredOn.${e.requirementKey}`;
+    if (!isIsoDate(e.administeredOn ?? '')) fields[given] = 'Enter the date the vaccination was given';
+    else if (e.administeredOn > today) fields[given] = 'This date is in the future';
+    else if (dog.dateOfBirth && e.administeredOn < dog.dateOfBirth)
+      fields[given] = 'This date is before your dog was born';
+    else if (isIsoDate(e.expiresOn) && e.administeredOn > e.expiresOn)
+      fields[given] = 'The date given must be before the valid-until date';
   }
   if (Object.keys(fields).length || !check.ok)
     throw new ValidationError('Please check the highlighted fields.', fields);
@@ -106,6 +114,7 @@ export async function uploadVaccinationRecord(
           requirementKey: e.requirementKey,
           documentId: doc!.id,
           expiresOn: e.expiresOn,
+          administeredOn: e.administeredOn,
           submittedBy: actor.userId,
         })),
       );

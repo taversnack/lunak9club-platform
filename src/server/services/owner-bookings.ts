@@ -8,7 +8,7 @@ import {
   sessionStartInstant,
   startBookingCheckout,
 } from './payments';
-import { and, asc, eq, gte, inArray } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import {
@@ -675,17 +675,27 @@ export async function emergencyCsv(db: Db, actor: Actor, date: IsoDate) {
       : Promise.resolve([]),
     dogIds.length
       ? db
-          .select({ dogId: dogs.id, practice: vets.practiceName, phone: vets.phone })
+          .select({
+            dogId: dogs.id,
+            vetId: dogs.vetId,
+            agreedVetId: dogs.agreedVetId,
+            id: vets.id,
+            practice: vets.practiceName,
+            phone: vets.phone,
+          })
           .from(dogs)
-          .innerJoin(vets, eq(vets.id, dogs.vetId))
+          .innerJoin(vets, or(eq(vets.id, dogs.vetId), eq(vets.id, dogs.agreedVetId)))
           .where(inArray(dogs.id, dogIds))
       : Promise.resolve([]),
   ]);
   await recordAudit(db, { actor, action: 'export.emergency_list', entityType: 'service_day', entityId: date });
   return csv([
-    ['Date', 'Dog', 'Customer', 'Customer phone', 'Emergency contacts', 'Vet', 'Vet phone'],
+    ['Date', 'Dog', 'Customer', 'Customer phone', 'Emergency contacts', 'Vet', 'Vet phone', 'Agreed emergency vet'],
     ...day.booked.map((r) => {
-      const v = vs.find((x) => x.dogId === r.dogId);
+      const v = vs.find((x) => x.dogId === r.dogId && x.id === x.vetId);
+      // Agreed emergency vet (D70): "Same as vet", another practice, or blank if not recorded yet.
+      const a = vs.find((x) => x.dogId === r.dogId && x.id === x.agreedVetId);
+      const agreed = !a ? '' : a.id === a.vetId ? 'Same as vet' : `${a.practice} ${a.phone}`;
       return [
         date,
         r.dogName,
@@ -697,6 +707,7 @@ export async function emergencyCsv(db: Db, actor: Actor, date: IsoDate) {
           .join('; '),
         v?.practice ?? '',
         v?.phone ?? '',
+        agreed,
       ];
     }),
   ]);
