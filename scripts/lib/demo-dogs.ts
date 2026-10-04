@@ -18,7 +18,7 @@ import {
 import { getStorage } from '../../src/infra/storage';
 import { addDays, londonDate } from '../../src/domain/time';
 
-const DEMO_PDF = new TextEncoder().encode('%PDF-1.4\n% LunaK9 Club demo vaccination record (fictional)\n%%EOF\n');
+const DEMO_PDF = new TextEncoder().encode('%PDF-1.4\n% Luna’s K9 Club demo vaccination record (fictional)\n%%EOF\n');
 
 /**
  * Give a demo customer a fully onboarded, approved dog so bookings can be tried straight away.

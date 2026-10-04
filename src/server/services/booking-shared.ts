@@ -52,7 +52,7 @@ export async function daysOverview(db: Q, dates: IsoDate[], settings: Settings, 
       .where(
         and(
           inArray(bookingDogs.serviceDate, dates),
-          inArray(bookingDogs.status, ['confirmed', 'attended', 'no_show', 'offered', 'waitlisted']),
+          inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'attended', 'no_show', 'offered', 'waitlisted']),
         ),
       ),
   ]);
@@ -98,7 +98,7 @@ export async function lockDays(tx: Tx, dates: IsoDate[], settings: Settings, now
     .where(
       and(
         inArray(bookingDogs.serviceDate, sorted),
-        inArray(bookingDogs.status, ['confirmed', 'attended', 'no_show', 'offered']),
+        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'attended', 'no_show', 'offered']),
       ),
     );
   const out = new Map<IsoDate, { used: { am: number; pm: number; taxi: number }; cap: Capacity }>();

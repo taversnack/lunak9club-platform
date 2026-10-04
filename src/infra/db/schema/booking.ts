@@ -96,6 +96,8 @@ export const SESSIONS = ['full', 'am', 'pm'] as const;
 export type Session = (typeof SESSIONS)[number];
 export const BOOKING_STATUSES = [
   'confirmed',
+  /** Place held while the customer pays (D6); the hold ends at offer_expires_at. */
+  'pending_payment',
   'waitlisted',
   'offered',
   'cancelled',
@@ -124,12 +126,16 @@ export const bookingDogs = pgTable(
       .references(() => serviceDays.serviceDate, { onDelete: 'restrict' }),
     session: text().$type<Session>().notNull(),
     taxi: boolean().notNull().default(false),
+    /** standard (ad hoc / extra day), membership (created from a membership) or trial. */
+    kind: text().$type<'standard' | 'membership' | 'trial'>().notNull().default('standard'),
+    membershipId: uuid(),
     status: text().$type<BookingStatus>().notNull(),
     /** Customer-visible note (e.g. "collect at 5pm"). */
     customerNote: text(),
     /** Owner-only note. Never shown to customers. */
     internalNote: text(),
     overrideReason: text(),
+    /** When a waitlist offer, or a place held for payment, lapses. */
     offerExpiresAt: timestamp({ withTimezone: true }),
     cancelledAt: timestamp({ withTimezone: true }),
     cancelledBy: text().references(() => users.id, { onDelete: 'set null' }),
@@ -150,13 +156,18 @@ export const bookingDogs = pgTable(
     // A dog can only hold one live booking (or waitlist place) per day (D38).
     uniqueIndex('booking_dogs_one_per_dog_day_uq')
       .on(t.dogId, t.serviceDate)
-      .where(sql`${t.status} in ('confirmed', 'waitlisted', 'offered', 'attended', 'no_show')`),
+      .where(sql`${t.status} in ('confirmed', 'pending_payment', 'waitlisted', 'offered', 'attended', 'no_show')`),
     check('booking_dogs_session_chk', sql`${t.session} in ('full', 'am', 'pm')`),
+    check('booking_dogs_kind_chk', sql`${t.kind} in ('standard', 'membership', 'trial')`),
+    index('booking_dogs_membership_idx').on(t.membershipId),
     check(
       'booking_dogs_status_chk',
-      sql`${t.status} in ('confirmed', 'waitlisted', 'offered', 'cancelled', 'attended', 'no_show', 'rejected')`,
+      sql`${t.status} in ('confirmed', 'pending_payment', 'waitlisted', 'offered', 'cancelled', 'attended', 'no_show', 'rejected')`,
     ),
-    check('booking_dogs_offer_chk', sql`${t.status} <> 'offered' or ${t.offerExpiresAt} is not null`),
+    check(
+      'booking_dogs_offer_chk',
+      sql`${t.status} not in ('offered', 'pending_payment') or ${t.offerExpiresAt} is not null`,
+    ),
     check('booking_dogs_cancel_chk', sql`${t.status} <> 'cancelled' or ${t.cancelledAt} is not null`),
     check('booking_dogs_checkout_chk', sql`${t.checkedOutAt} is null or ${t.checkedInAt} is not null`),
   ],

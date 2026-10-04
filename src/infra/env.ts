@@ -8,7 +8,7 @@ const EnvSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 characters'),
   BETTER_AUTH_URL: z.url().optional(),
   EMAIL_TRANSPORT: z.enum(['smtp', 'file', 'console']).default('console'),
-  EMAIL_FROM: z.string().default('LunaK9 Club <no-reply@lunak9club.test>'),
+  EMAIL_FROM: z.string().default("Luna's K9 Club <no-reply@lunak9club.test>"),
   EMAIL_SANDBOX: z.enum(['0', '1']).default('1'),
   SMTP_HOST: z.string().default('localhost'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
@@ -23,6 +23,12 @@ const EnvSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_FORCE_PATH_STYLE: z.enum(['0', '1']).default('1'),
+  /** Card payments: 'simulated' (development/tests) or 'stripe'. */
+  PAYMENTS_DRIVER: z.enum(['simulated', 'stripe']).default('simulated'),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  /** Shared secret for the scheduler calling /api/jobs/tick. Unset = endpoint disabled. */
+  CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters').optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug']).default('info'),
 });
 

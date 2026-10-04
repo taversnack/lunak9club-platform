@@ -33,6 +33,7 @@ import { AuthorizationError } from '@/server/policy/authorize';
 import { addDays, londonDate } from '@/domain/time';
 import { isoWeekday } from '@/domain/booking/rules';
 import { MemoryEmailProvider } from '../support/memory-email';
+import { payOpenCheckouts } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
 import { FsStorageProvider } from '@/infra/storage/fs';
 import { uploadVaccinationRecord } from '@/server/services/documents';
@@ -141,11 +142,22 @@ describe('customer booking', () => {
       taxi: true,
     });
     expect(r.outcomes.map((o) => o.outcome)).toEqual(['confirmed', 'confirmed', 'confirmed', 'confirmed']);
+    // Places are held until paid (D6), then confirmed with a receipt.
+    expect(r.checkoutUrl).toMatch(/\/dev\/checkout\//);
+    const held = await db().select().from(bookingDogs).where(eq(bookingDogs.serviceDate, d1));
+    expect(
+      held.filter((h) => h.dogId === aliceDog || h.dogId === aliceDog2).every((h) => h.status === 'pending_payment'),
+    ).toBe(true);
+    await payOpenCheckouts(db());
+    const paid = await db().select().from(bookingDogs).where(eq(bookingDogs.serviceDate, d1));
+    expect(
+      paid.filter((h) => h.dogId === aliceDog || h.dogId === aliceDog2).every((h) => h.status === 'confirmed'),
+    ).toBe(true);
     expect(
       mail.lastTo(
         (await db().execute<{ email: string }>(sql`select email from users where id = ${alice.userId}`)).rows[0]!.email,
       )?.template,
-    ).toBe('booking.summary');
+    ).toBe('payment.received');
     const again = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [d1], session: 'am', taxi: false });
     expect(again.outcomes[0]).toMatchObject({ outcome: 'skipped', reason: 'Already booked' });
   });
@@ -233,7 +245,7 @@ describe('capacity and concurrency', () => {
     expect(outcomes.filter((o) => o === 'waitlisted')).toHaveLength(10);
     const [count] = (
       await db().execute<{ n: number }>(
-        sql`select count(*)::int as n from booking_dogs where service_date = ${date} and status = 'confirmed'`,
+        sql`select count(*)::int as n from booking_dogs where service_date = ${date} and status in ('confirmed', 'pending_payment')`,
       )
     ).rows;
     expect(count!.n).toBe(2);
@@ -334,7 +346,9 @@ describe('waitlist offers', () => {
       /lapsed/,
     );
     await expect(acceptOffer(db(), bob, waiting!.id)).rejects.toBeInstanceOf(NotFoundError);
-    await acceptOffer(db(), alice, waiting!.id);
+    const accepted = await acceptOffer(db(), alice, waiting!.id);
+    expect(accepted.checkoutUrl).toBeTruthy();
+    await payOpenCheckouts(db());
     const [done] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, waiting!.id));
     expect(done!.status).toBe('confirmed');
   });
@@ -344,13 +358,15 @@ describe('cancellations', () => {
   it('is free 48 hours or more ahead and late (charged) inside 48 hours', async () => {
     const date = weekdayAhead(10);
     await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
+    await payOpenCheckouts(db());
     const [bd] = await db()
       .select()
       .from(bookingDogs)
       .where(
         and(eq(bookingDogs.dogId, bobDog), eq(bookingDogs.serviceDate, date), eq(bookingDogs.status, 'confirmed')),
       );
-    expect(await cancelMyBooking(db(), bob, bd!.id)).toEqual({ late: false });
+    // Paid by card and cancelled 48 h+ ahead → refunded to the card (D20).
+    expect(await cancelMyBooking(db(), bob, bd!.id)).toEqual({ late: false, refundedPence: 5000 });
 
     const soon = addDays(today, 1);
     await db().insert(serviceDays).values({ serviceDate: soon }).onConflictDoNothing();
@@ -364,7 +380,10 @@ describe('cancellations', () => {
         sql`insert into booking_dogs (booking_id, customer_id, dog_id, service_date, session, status) select ${b!.id}, customer_id, id, ${soon}, 'full', 'confirmed' from dogs where id = ${bobDog} returning id`,
       )
     ).rows;
-    expect(await cancelMyBooking(db(), bob, late!.id, new Date(Date.now() - 3 * 86_400_000))).toEqual({ late: false });
+    expect(await cancelMyBooking(db(), bob, late!.id, new Date(Date.now() - 3 * 86_400_000))).toEqual({
+      late: false,
+      refundedPence: 0,
+    });
 
     // Tomorrow is always inside 48 hours of the session start → late, still cancelled.
     const tomorrow = addDays(today, 1);
@@ -374,7 +393,8 @@ describe('cancellations', () => {
       session: 'full',
       overrideReason: 'test: may be a closed day',
     });
-    expect(await cancelMyBooking(db(), bob, id)).toEqual({ late: true });
+    await payOpenCheckouts(db());
+    expect(await cancelMyBooking(db(), bob, id)).toEqual({ late: true, refundedPence: 0 });
     const [row] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, id));
     expect(row).toMatchObject({ status: 'cancelled', lateCancellation: true });
   });
@@ -415,6 +435,7 @@ describe('Owner day operations', () => {
       session: 'full',
       overrideReason: 'Trial day' + (isOpen ? '' : ' (weekend test)'),
     });
+    await payOpenCheckouts(db());
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, id));
     expect(bd!.overrideReason).toContain('Trial day');
     await expect(checkOut(db(), owner, id, { version: bd!.version })).rejects.toBeInstanceOf(ConflictError);

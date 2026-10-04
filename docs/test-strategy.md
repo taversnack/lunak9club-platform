@@ -58,3 +58,19 @@
 | CSV exports escaped against formula injection and audited; customers get 404 | `bookings.test.ts`, `booking.spec.ts` |
 | Customer never sees Owner notes or other customers' bookings | `bookings.test.ts › access control` |
 | End-to-end booking with estimate, free cancellation, Owner day view, check-in/out; axe on every page | `booking.spec.ts` |
+
+## Phase 4 acceptance criteria → tests
+
+| Criterion | Test |
+|---|---|
+| Website prices: ad hoc £50/£25, 1–3 days £48/£24, 4–5 days £45/£22.50, taxi included | `pricing-engine.test.ts › pricing matrix` |
+| Band boundary 3 vs 4 days; trial-day bands; rounding; multi-dog discount when configured | `pricing-engine.test.ts` |
+| Customer rates: dog-specific > customer-wide > membership > ad hoc; start/end dates | `pricing-engine.test.ts`, `pricing-memberships.test.ts` |
+| Price books effective-dated, never overlap (DB), future only, removable before start | `pricing-memberships.test.ts › scheduled price changes` |
+| Price locked at booking; snapshots immutable; later price changes don't alter them | `pricing-memberships.test.ts` |
+| Membership request validation, approval books days ahead at member rate, skips closures, idempotent | `pricing-memberships.test.ts › memberships` |
+| Full days waitlisted and reported, never overbooked | `pricing-memberships.test.ts` |
+| Change/leave from next allowed 1st (20th rule), later days cancelled free | `pricing-engine.test.ts › membership rules`, `pricing-memberships.test.ts` |
+| Members' extra days at member rate; other dogs at ad hoc | `pricing-memberships.test.ts` |
+| Customers can't manage prices/memberships of others | `pricing-memberships.test.ts` |
+| End-to-end: prices shown, request, Owner approval, member-rate bookings; axe on each page | `membership.spec.ts` |

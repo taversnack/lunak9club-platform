@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
+import { formatDateTimeLondon } from '@/ui/format';
 import { Alert, buttonClass, Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, Checkbox, SubmitButton, TextArea, TextField } from '@/ui/form';
 import { requirePermission } from '@/server/session';
@@ -21,6 +22,7 @@ export const dynamic = 'force-dynamic';
 
 const STATUS: Record<string, { tone: 'info' | 'success' | 'warning' | 'danger'; text: string }> = {
   confirmed: { tone: 'info', text: 'Expected' },
+  pending_payment: { tone: 'warning', text: 'Awaiting payment' },
   attended: { tone: 'success', text: 'Checked in' },
   no_show: { tone: 'danger', text: 'No-show' },
   offered: { tone: 'warning', text: 'Offer held' },
@@ -144,6 +146,9 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
                 </StatusBadge>
               </div>
               {r.warning ? <Alert tone="warning">{r.warning}</Alert> : null}
+              {r.status === 'pending_payment' && r.offerExpiresAt ? (
+                <p className={s.hint}>Payment link sent – held until {formatDateTimeLondon(r.offerExpiresAt)}.</p>
+              ) : null}
               {r.overrideReason ? <p className={s.hint}>Override: {r.overrideReason}</p> : null}
               {r.customerNote ? <p className={s.hint}>Customer note: {r.customerNote}</p> : null}
               <div className={s.row} style={{ justifyContent: 'flex-start' }}>
@@ -175,7 +180,7 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
                     <SubmitButton variant="secondary">Save note</SubmitButton>
                   </div>
                 </ActionForm>
-                {r.status === 'confirmed' || r.status === 'offered' ? (
+                {r.status === 'confirmed' || r.status === 'offered' || r.status === 'pending_payment' ? (
                   <ActionForm action={ownerCancelAction}>
                     <input type="hidden" name="id" value={r.id} />
                     <input type="hidden" name="version" value={r.version} />

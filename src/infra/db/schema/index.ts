@@ -4,3 +4,5 @@ export * from './audit';
 export * from './customers';
 export * from './compliance';
 export * from './booking';
+export * from './pricing';
+export * from './billing';

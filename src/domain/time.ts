@@ -37,3 +37,30 @@ export function formatUkDate(date: IsoDate): string {
     new Date(`${date}T00:00:00Z`),
   );
 }
+
+/** The instant at which the Europe/London wall clock shows `date` `hh:mm` (handles BST/GMT). */
+export function londonInstant(date: IsoDate, hhmm: string): Date {
+  const [h, m] = hhmm.split(':').map(Number) as [number, number];
+  const guess = new Date(`${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00Z`);
+  const offsetFor = (instant: Date) => {
+    const tz = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', timeZoneName: 'longOffset' })
+      .formatToParts(instant)
+      .find((p) => p.type === 'timeZoneName')?.value;
+    const match = tz?.match(/GMT([+-])(\d{2}):(\d{2})/);
+    return match ? (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3])) : 0;
+  };
+  // London is UTC+0 or UTC+1; one correction step is enough, a second handles the changeover edge.
+  let instant = new Date(guess.getTime() - offsetFor(guess) * 60_000);
+  instant = new Date(guess.getTime() - offsetFor(instant) * 60_000);
+  return instant;
+}
+
+/** HH:MM on the Europe/London clock. */
+export function londonTime(instant: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: LONDON,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(instant);
+}

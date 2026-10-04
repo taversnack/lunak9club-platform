@@ -8,6 +8,11 @@ import { getCustomerForOwner } from '@/server/services/owner-review';
 import { NotFoundError } from '@/server/errors';
 import { getDb } from '@/infra/db/client';
 import { OVERALL_LABELS } from '@/domain/compliance/evaluate';
+import { ActionForm, SelectField, SubmitButton, TextField } from '@/ui/form';
+import { listCustomerRates } from '@/server/services/pricing';
+import { formatPounds } from '@/domain/booking/rules';
+import { formatUkDate, londonDate } from '@/domain/time';
+import { addCustomerRateAction, endCustomerRateAction } from '../../actions';
 
 export const metadata: Metadata = { title: 'Customer' };
 export const dynamic = 'force-dynamic';
@@ -22,6 +27,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ custo
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
+  const rates = await listCustomerRates(getDb(), actor, customerId);
+  const today = londonDate(new Date());
   const addr = [c.customer.addressLine1, c.customer.addressLine2, c.customer.town, c.customer.postcode]
     .filter(Boolean)
     .join(', ');
@@ -79,6 +86,65 @@ export default async function CustomerPage({ params }: { params: Promise<{ custo
             })}
           </ul>
         )}
+      </Card>
+      <Card aria-labelledby="rates">
+        <h2 id="rates">Agreed prices</h2>
+        <p className={s.hint}>
+          Special prices for this customer take priority over membership and ad hoc prices for bookings made while they
+          apply.
+        </p>
+        {rates.length === 0 ? (
+          <Muted>None – standard prices apply.</Muted>
+        ) : (
+          <ul className={s.list}>
+            {rates.map(({ rate, dogName }) => (
+              <li key={rate.id} className={s.listItem}>
+                <span>
+                  {formatPounds(rate.fullDayPence)} full day
+                  {rate.halfDayPence != null ? `, ${formatPounds(rate.halfDayPence)} half day` : ''} ·{' '}
+                  {dogName ?? 'all dogs'} · {formatUkDate(rate.startsOn)}
+                  {rate.endsOn ? ` to ${formatUkDate(rate.endsOn)}` : ' onwards'} · {rate.reason}
+                </span>
+                {rate.endsOn === null || rate.endsOn > today ? (
+                  <ActionForm action={endCustomerRateAction}>
+                    <input type="hidden" name="id" value={rate.id} />
+                    <input type="hidden" name="customerId" value={c.customer.id} />
+                    <SubmitButton variant="secondary">
+                      End <span className="visually-hidden">rate {rate.reason}</span>
+                    </SubmitButton>
+                  </ActionForm>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        <h3>Add an agreed price</h3>
+        <ActionForm action={addCustomerRateAction}>
+          <input type="hidden" name="customerId" value={c.customer.id} />
+          <SelectField
+            name="dogId"
+            label="Dog"
+            required={false}
+            options={[
+              { value: 'all', label: 'All their dogs' },
+              ...c.dogs.map((d) => ({ value: d.id, label: d.name })),
+            ]}
+            defaultValue="all"
+          />
+          <TextField name="fullDay" label="Full day (£)" inputMode="decimal" required />
+          <TextField
+            name="halfDay"
+            label="Half day (£)"
+            inputMode="decimal"
+            hint="Leave blank to use the usual half-day percentage"
+          />
+          <TextField name="startsOn" label="From" type="date" required defaultValue={today} />
+          <TextField name="endsOn" label="Until" type="date" hint="Leave blank for no end date" />
+          <TextField name="reason" label="Reason (the customer sees this on their booking)" required />
+          <div>
+            <SubmitButton variant="secondary">Add price</SubmitButton>
+          </div>
+        </ActionForm>
       </Card>
     </Stack>
   );

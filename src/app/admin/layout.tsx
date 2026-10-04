@@ -13,11 +13,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <nav aria-label="Owner" className={s.subnav}>
         <Link href="/admin">Dashboard</Link>
         <Link href="/admin/bookings">Bookings</Link>
+        <Link href="/admin/memberships">Memberships</Link>
+        <Link href="/admin/invoices">Invoices</Link>
+        <Link href="/admin/refunds">Refunds</Link>
         <Link href="/admin/reviews">Reviews</Link>
         <Link href="/admin/customers">Customers</Link>
         <Link href="/admin/settings/availability">Opening</Link>
+        <Link href="/admin/settings/pricing">Prices</Link>
         <Link href="/admin/settings/requirements">Requirements</Link>
         <Link href="/admin/settings/terms">Terms</Link>
+        <Link href="/admin/settings/business">Business</Link>
         <SignOutButton />
       </nav>
       {children}

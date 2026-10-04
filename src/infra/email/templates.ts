@@ -1,24 +1,28 @@
 import type { EmailMessage } from './types';
 
-const BRAND = 'LunaK9 Club';
+const BRAND = 'Luna’s K9 Club';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-function layout(title: string, bodyHtml: string): string {
-  return `<!doctype html><html lang="en-GB"><body style="font-family:system-ui,sans-serif;background:#faf6f0;color:#2b2320;padding:24px">
-<div style="max-width:520px;margin:auto;background:#fff;border-radius:12px;padding:28px">
-<p style="font-weight:700;color:#7a4a2a;margin:0 0 16px">${BRAND}</p>
+function layout(
+  title: string,
+  bodyHtml: string,
+  footer = "If you didn't ask for this, you can ignore this email.",
+): string {
+  return `<!doctype html><html lang="en-GB"><body style="font-family:system-ui,sans-serif;background:#f7f5f2;color:#273039;padding:24px">
+<div style="max-width:520px;margin:auto;background:#fff;border-top:4px solid #283039;padding:28px">
+<p style="font-weight:700;color:#283039;letter-spacing:.04em;margin:0 0 16px">${BRAND}</p>
 <h1 style="font-size:20px;margin:0 0 12px">${escapeHtml(title)}</h1>
 ${bodyHtml}
-<p style="font-size:13px;color:#6b5f58;margin-top:24px">If you didn't ask for this, you can ignore this email.</p>
+${footer ? `<p style="font-size:13px;color:#4f5660;margin-top:24px">${escapeHtml(footer)}</p>` : ''}
 </div></body></html>`;
 }
 
 function button(url: string, label: string): string {
-  return `<p><a href="${escapeHtml(url)}" style="display:inline-block;background:#7a4a2a;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">${escapeHtml(label)}</a></p>
-<p style="font-size:13px;color:#6b5f58">Or copy this link: ${escapeHtml(url)}</p>`;
+  return `<p><a href="${escapeHtml(url)}" style="display:inline-block;background:#dfc8ad;color:#273039;font-weight:700;padding:12px 20px;text-decoration:none">${escapeHtml(label)}</a></p>
+<p style="font-size:13px;color:#4f5660">Or copy this link: ${escapeHtml(url)}</p>`;
 }
 
 // Emails deliberately contain no sensitive details; the portal is the source of truth.
@@ -56,7 +60,7 @@ export function recordNeedsAttentionMessage(to: string, firstName: string, dogNa
   return {
     to,
     template: 'compliance.needs-attention',
-    subject: `LunaK9 Club: an update is needed for ${dogName}`,
+    subject: `Luna’s K9 Club: an update is needed for ${dogName}`,
     text: `Hi ${firstName},\n\nWe've looked at the records you sent for ${dogName} and need something updated. Please sign in to see what's needed:\n${url}`,
     html: layout(
       title,
@@ -70,11 +74,11 @@ export function dogApprovedMessage(to: string, firstName: string, dogName: strin
   return {
     to,
     template: 'compliance.dog-approved',
-    subject: `LunaK9 Club: ${dogName} is approved for day care`,
-    text: `Hi ${firstName},\n\nGreat news – ${dogName} is approved for day care at LunaK9 Club. Sign in to see your dog's page:\n${url}`,
+    subject: `Luna’s K9 Club: ${dogName} is approved for day care`,
+    text: `Hi ${firstName},\n\nGreat news – ${dogName} is approved for day care at Luna’s K9 Club. Sign in to see your dog's page:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>Great news – ${escapeHtml(dogName)} is approved for day care at LunaK9 Club.</p>${button(url, 'Sign in')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Great news – ${escapeHtml(dogName)} is approved for day care at Luna’s K9 Club.</p>${button(url, 'Sign in')}`,
     ),
   };
 }
@@ -83,7 +87,7 @@ export function ownerReviewWaitingMessage(to: string, url: string): EmailMessage
   return {
     to,
     template: 'owner.review-waiting',
-    subject: 'LunaK9 Club: new records to review',
+    subject: 'Luna’s K9 Club: new records to review',
     text: `A customer has sent new records to review:\n${url}`,
     html: layout(
       'New records to review',
@@ -107,7 +111,7 @@ export function bookingSummaryMessage(to: string, firstName: string, ls: Booking
   return {
     to,
     template: 'booking.summary',
-    subject: 'LunaK9 Club: your booking',
+    subject: 'Luna’s K9 Club: your booking',
     text: `Hi ${firstName},\n\nHere's a summary of your booking:\n${l.text}\n\nYou can see or cancel bookings here:\n${url}`,
     html: layout(
       'Your booking',
@@ -121,7 +125,7 @@ export function bookingCancelledMessage(to: string, firstName: string, line: Boo
   return {
     to,
     template: 'booking.cancelled',
-    subject: 'LunaK9 Club: booking cancelled',
+    subject: 'Luna’s K9 Club: booking cancelled',
     text: `Hi ${firstName},\n\nThis booking has been cancelled:\n${l.text}\n\n${url}`,
     html: layout(
       'Booking cancelled',
@@ -141,11 +145,154 @@ export function waitlistOfferMessage(
   return {
     to,
     template: 'booking.waitlist-offer',
-    subject: 'LunaK9 Club: a place is available',
+    subject: 'Luna’s K9 Club: a place is available',
     text: `Hi ${firstName},\n\nA place has come up:\n${l.text}\n\nWe'll hold it for ${hours} hours. Sign in to accept it:\n${url}`,
     html: layout(
       'A place is available',
       `<p>Hi ${escapeHtml(firstName)},</p><p>A place has come up:</p>${l.html}<p>We'll hold it for ${hours} hours.</p>${button(url, 'Accept the place')}`,
+    ),
+  };
+}
+
+// Invoices (D24, D25). Invoice number, amount and due date only; details stay in the portal.
+export type InvoiceSummary = { number: string; amountText: string; dueText: string; periodText: string };
+
+export function invoiceIssuedMessage(to: string, firstName: string, inv: InvoiceSummary, url: string): EmailMessage {
+  const title = `Invoice ${inv.number}`;
+  return {
+    to,
+    template: 'invoice.issued',
+    subject: `${BRAND}: invoice ${inv.number} for ${inv.periodText}`,
+    text: `Hi ${firstName},\n\nYour invoice ${inv.number} for ${inv.periodText} is ready. Amount: ${inv.amountText}. Please pay by ${inv.dueText}.\n\nSee the invoice here:\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Your invoice for ${escapeHtml(inv.periodText)} is ready.</p><p><strong>Amount:</strong> ${escapeHtml(inv.amountText)}<br><strong>Please pay by:</strong> ${escapeHtml(inv.dueText)}</p>${button(url, 'See your invoice')}`,
+      '',
+    ),
+  };
+}
+
+export function paymentReminderMessage(to: string, firstName: string, inv: InvoiceSummary, url: string): EmailMessage {
+  const title = `Reminder: invoice ${inv.number}`;
+  return {
+    to,
+    template: 'invoice.reminder',
+    subject: `${BRAND}: reminder – invoice ${inv.number} is due ${inv.dueText}`,
+    text: `Hi ${firstName},\n\nA quick reminder that invoice ${inv.number} (${inv.amountText} still to pay) is due on ${inv.dueText}. If you've already paid, thank you – please ignore this.\n\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>A quick reminder that invoice ${escapeHtml(inv.number)} is due on ${escapeHtml(inv.dueText)}.</p><p><strong>Still to pay:</strong> ${escapeHtml(inv.amountText)}</p><p>If you've already paid, thank you – please ignore this.</p>${button(url, 'See your invoice')}`,
+      '',
+    ),
+  };
+}
+
+export function refundDecisionMessage(
+  to: string,
+  firstName: string,
+  d: { approved: boolean; dayText: string; amountText: string; reason?: string | null },
+  url: string,
+): EmailMessage {
+  const title = d.approved ? 'Refund approved' : 'Refund not approved';
+  const body = d.approved
+    ? `We've approved a refund of ${d.amountText} for ${d.dayText}.`
+    : `We couldn't approve a refund for ${d.dayText}.${d.reason ? ` Reason: ${d.reason}` : ''}`;
+  return {
+    to,
+    template: d.approved ? 'refund.approved' : 'refund.declined',
+    subject: `${BRAND}: ${title.toLowerCase()}`,
+    text: `Hi ${firstName},\n\n${body}\n\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(body)}</p>${button(url, 'See your invoices')}`,
+      '',
+    ),
+  };
+}
+
+export function ownerBillingMessage(to: string, subject: string, body: string, url: string): EmailMessage {
+  return {
+    to,
+    template: 'owner.billing',
+    subject: `${BRAND}: ${subject}`,
+    text: `${body}\n\n${url}`,
+    html: layout(subject, `<p>${escapeHtml(body)}</p>${button(url, 'Open invoices')}`, ''),
+  };
+}
+
+// Card payments (D6, D59). Amounts and invoice numbers only – never card details.
+export function paymentReceivedMessage(
+  to: string,
+  firstName: string,
+  p: { amountText: string; forText: string; number: string | null },
+  url: string,
+): EmailMessage {
+  const title = 'Payment received – thank you';
+  const ref = p.number ? ` (invoice ${p.number})` : '';
+  return {
+    to,
+    template: 'payment.received',
+    subject: `${BRAND}: payment received${p.number ? ` – ${p.number}` : ''}`,
+    text: `Hi ${firstName},\n\nWe've received your card payment of ${p.amountText} for ${p.forText}${ref}. Your receipt is in your account:\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We've received your card payment of <strong>${escapeHtml(p.amountText)}</strong> for ${escapeHtml(p.forText)}${escapeHtml(ref)}.</p>${button(url, 'See your receipt')}`,
+      '',
+    ),
+  };
+}
+
+export function paymentLinkMessage(
+  to: string,
+  firstName: string,
+  p: { amountText: string; forText: string; untilText: string },
+  url: string,
+): EmailMessage {
+  const title = 'Please pay to confirm your booking';
+  return {
+    to,
+    template: 'payment.link',
+    subject: `${BRAND}: please pay to confirm your booking`,
+    text: `Hi ${firstName},\n\nWe've held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to confirm it – after that the place is released.\n\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We've held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to confirm it. After that the place is released.</p>${button(url, 'Pay by card')}`,
+      '',
+    ),
+  };
+}
+
+export function holdReleasedMessage(to: string, firstName: string, forText: string, url: string): EmailMessage {
+  const title = 'Booking not completed';
+  return {
+    to,
+    template: 'payment.hold-released',
+    subject: `${BRAND}: booking not completed`,
+    text: `Hi ${firstName},\n\nWe didn't receive payment in time for ${forText}, so the place has been released. You can book again here:\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We didn't receive payment in time for ${escapeHtml(forText)}, so the place has been released.</p>${button(url, 'Book again')}`,
+      '',
+    ),
+  };
+}
+
+export function cardRefundMessage(
+  to: string,
+  firstName: string,
+  p: { amountText: string; forText: string },
+  url: string,
+): EmailMessage {
+  const title = 'Refund on its way';
+  return {
+    to,
+    template: 'payment.refund',
+    subject: `${BRAND}: refund of ${p.amountText}`,
+    text: `Hi ${firstName},\n\nWe've refunded ${p.amountText} to your card for ${p.forText}. It usually appears within 5–10 working days.\n\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We've refunded <strong>${escapeHtml(p.amountText)}</strong> to your card for ${escapeHtml(p.forText)}. It usually appears within 5–10 working days.</p>${button(url, 'See your invoices')}`,
+      '',
     ),
   };
 }

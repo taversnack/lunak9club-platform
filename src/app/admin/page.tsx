@@ -9,6 +9,8 @@ import { ownerDay } from '@/server/services/owner-bookings';
 import { londonDate } from '@/domain/time';
 import { getDb } from '@/infra/db/client';
 import { formatDateTimeLondon } from '@/ui/format';
+import { billingOverview } from '@/server/services/billing';
+import { pounds } from '@/domain/pricing/engine';
 
 export const metadata: Metadata = { title: 'Owner dashboard' };
 export const dynamic = 'force-dynamic';
@@ -16,10 +18,11 @@ export const dynamic = 'force-dynamic';
 export default async function AdminHome() {
   const actor = await requirePermission('admin.access');
   const db = getDb();
-  const [events, queue, today] = await Promise.all([
+  const [events, queue, today, billing] = await Promise.all([
     listRecentAuditEvents(db, actor, 20),
     reviewQueue(db, actor),
     ownerDay(db, actor, londonDate(new Date())),
+    billingOverview(db, actor),
   ]);
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
   return (
@@ -60,7 +63,18 @@ export default async function AdminHome() {
         </Card>
         <Card aria-labelledby="money">
           <h2 id="money">Invoices</h2>
-          <Muted>Draft, unpaid and overdue invoices will appear here.</Muted>
+          <p className={s.bigNumber}>{pounds(billing.duePence)} owed</p>
+          <p>
+            {billing.drafts} to check · {billing.scheduled} waiting to send · {billing.unpaid} unpaid ·{' '}
+            <strong>{billing.overdue} overdue</strong> · {billing.refundRequests} refund requests
+          </p>
+          {billing.missingDetails.length ? (
+            <p>
+              <StatusBadge tone="warning">Business details missing</StatusBadge>{' '}
+              <Link href="/admin/settings/business">Add them</Link>
+            </p>
+          ) : null}
+          <Link href="/admin/invoices">Open invoices</Link>
         </Card>
       </Grid>
       <Card aria-labelledby="audit">

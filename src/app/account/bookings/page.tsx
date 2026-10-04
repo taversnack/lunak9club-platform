@@ -6,7 +6,9 @@ import { ActionForm, SubmitButton } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { myBookings } from '@/server/services/bookings';
-import { SESSION_LABELS } from '@/domain/booking/rules';
+import { myOpenCheckouts } from '@/server/services/payments';
+import { pounds } from '@/domain/pricing/engine';
+import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
 import { formatDateTimeLondon } from '@/ui/format';
 import { acceptOfferAction } from '../actions';
@@ -16,6 +18,7 @@ export const dynamic = 'force-dynamic';
 
 const STATUS: Record<string, { tone: 'info' | 'success' | 'warning' | 'danger'; text: string }> = {
   confirmed: { tone: 'success', text: 'Booked' },
+  pending_payment: { tone: 'warning', text: 'Awaiting payment' },
   waitlisted: { tone: 'info', text: 'On the waitlist' },
   offered: { tone: 'warning', text: 'Place offered' },
   attended: { tone: 'success', text: 'Attended' },
@@ -31,7 +34,10 @@ export default async function BookingsPage({
 }) {
   const actor = await requirePermission('account.access');
   const sp = await searchParams;
-  const { upcoming, past } = await myBookings(getDb(), actor);
+  const [{ upcoming, past }, checkouts] = await Promise.all([
+    myBookings(getDb(), actor),
+    myOpenCheckouts(getDb(), actor),
+  ]);
   const offers = upcoming.filter((b) => b.offerLive);
   return (
     <Stack>
@@ -51,9 +57,45 @@ export default async function BookingsPage({
         <Alert tone={sp.cancelled === 'late' ? 'warning' : 'success'} title="Booking cancelled">
           {sp.cancelled === 'late'
             ? 'This was less than 48 hours before, so the day is still charged.'
-            : 'No charge for this cancellation.'}
+            : sp.cancelled === 'refunded'
+              ? 'We’ve refunded this day to your card. It usually appears within 5–10 working days.'
+              : 'No charge for this cancellation.'}
         </Alert>
       ) : null}
+      {sp.payment === 'paid' ? (
+        <Alert tone="success" title="Payment received – you’re booked">
+          Thank you. We’ve emailed your receipt; you can also find it under Invoices.
+        </Alert>
+      ) : null}
+      {sp.payment === 'processing' ? (
+        <Alert tone="info" title="Checking your payment">
+          We haven’t had confirmation from the card company yet. This page will show your booking as soon as it arrives
+          – please don’t pay twice.
+        </Alert>
+      ) : null}
+      {sp.payment === 'cancelled' ? (
+        <Alert tone="warning" title="Payment not finished">
+          Your places are still held for a short while. Pay below to keep them, or cancel them.
+        </Alert>
+      ) : null}
+      {sp.payment === 'expired' ? (
+        <Alert tone="info" title="That payment link has ended">
+          The time to pay ran out, so the places were released. You can book again.
+        </Alert>
+      ) : null}
+      {checkouts.map((c) => (
+        <Alert key={c.id} tone="warning" title={`Waiting for payment: ${pounds(c.amountPence)}`}>
+          <p>
+            {c.description.replace(/^Luna’s K9 Club – /, '')}. Held until {formatDateTimeLondon(c.expiresAt)}, then
+            released.
+          </p>
+          <p>
+            <a className={buttonClass('primary')} href={`/api/payments/pay/${c.id}`}>
+              Pay {pounds(c.amountPence)} by card
+            </a>
+          </p>
+        </Alert>
+      ))}
       {offers.map((o) => (
         <Alert key={o.id} tone="warning" title={`A place is available for ${o.dogName}`}>
           <p>
@@ -78,6 +120,7 @@ export default async function BookingsPage({
                   <th scope="col">Date</th>
                   <th scope="col">Dog</th>
                   <th scope="col">Session</th>
+                  <th scope="col">Price</th>
                   <th scope="col">Status</th>
                   <th scope="col">
                     <span className="visually-hidden">Actions</span>
@@ -92,7 +135,9 @@ export default async function BookingsPage({
                     <td>
                       {SESSION_LABELS[b.session]}
                       {b.taxi ? ' + taxi' : ''}
+                      {b.kind === 'membership' ? <div className={s.hint}>Membership day</div> : null}
                     </td>
+                    <td>{b.pricePence != null ? formatPounds(b.pricePence) : '–'}</td>
                     <td>
                       <StatusBadge tone={STATUS[b.status]!.tone}>
                         {b.status === 'offered' && !b.offerLive ? 'Offer lapsed' : STATUS[b.status]!.text}

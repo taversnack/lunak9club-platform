@@ -75,7 +75,7 @@ describe('evaluateDogCompliance', () => {
     expect(e.allMandatoryMet).toBe(true);
     expect(e.overall).toBe('ready_for_approval');
     expect(e.canBook).toBe(false);
-    expect(e.bookingBlockers[0]).toMatch(/approved by LunaK9 Club/);
+    expect(e.bookingBlockers[0]).toMatch(/approved by Luna’s K9 Club/);
   });
 
   it('approved with everything valid can book', () => {

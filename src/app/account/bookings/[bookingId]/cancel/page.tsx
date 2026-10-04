@@ -29,13 +29,19 @@ export default async function CancelPage({ params }: { params: Promise<{ booking
           <strong>{b.dogName}</strong> – {formatUkDate(b.serviceDate)}, {SESSION_LABELS[b.session]}
           {b.taxi ? ' with taxi' : ''}
         </p>
-        {charged ? (
+        {b.status === 'pending_payment' ? (
+          <Alert tone="info">
+            This hasn’t been paid yet, so there’s nothing to pay. Every place held for the same payment is released.
+          </Alert>
+        ) : charged ? (
           <Alert tone="warning" title="This day will still be charged">
-            It’s less than {freeCancellationHours} hours before the session starts, so cancelling now doesn’t cancel the
-            charge.
+            It’s less than {freeCancellationHours} hours before the session starts, so there’s no refund.
           </Alert>
         ) : (
-          <Alert tone="success">No charge – you’re cancelling more than {freeCancellationHours} hours before.</Alert>
+          <Alert tone="success">
+            No charge – you’re cancelling more than {freeCancellationHours} hours before. If you’ve paid for this day by
+            card, it’s refunded to your card{b.kind === 'membership' ? ' once Luna’s K9 Club has checked it' : ''}.
+          </Alert>
         )}
         <ActionForm action={cancelBookingAction}>
           <input type="hidden" name="bookingId" value={b.id} />

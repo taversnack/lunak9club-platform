@@ -65,7 +65,7 @@ export function SignInForm({ notice }: { notice?: 'reset' | 'verified' }) {
           <Link href="/forgot-password">Forgotten your password?</Link>
         </p>
         <p>
-          New to LunaK9 Club? <Link href="/register">Create an account</Link>
+          New to Luna’s K9 Club? <Link href="/register">Create an account</Link>
         </p>
       </Stack>
     </form>

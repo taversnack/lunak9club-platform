@@ -28,7 +28,7 @@ function createAuth() {
       .catch((err: unknown) => logger.error({ err: String(err), action }, 'audit write failed'));
 
   return betterAuth({
-    appName: 'LunaK9 Club',
+    appName: 'Luna’s K9 Club',
     baseURL: e.BETTER_AUTH_URL ?? e.APP_URL,
     secret: e.BETTER_AUTH_SECRET,
     trustedOrigins: [e.APP_URL],

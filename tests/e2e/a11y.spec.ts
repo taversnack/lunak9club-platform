@@ -38,7 +38,13 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
   test('customer account pages', async ({ page }) => {
     await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
     await expect(page).toHaveURL(/\/account$/);
-    for (const path of ['/account/profile', '/account/contacts', '/account/terms', '/account/dogs/new']) {
+    for (const path of [
+      '/account/profile',
+      '/account/contacts',
+      '/account/terms',
+      '/account/dogs/new',
+      '/account/invoices',
+    ]) {
       await page.goto(path);
       await scan(page);
     }
@@ -52,6 +58,9 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
       '/admin/customers',
       '/admin/settings/requirements',
       '/admin/settings/terms',
+      '/admin/invoices',
+      '/admin/refunds',
+      '/admin/settings/business',
     ]) {
       await page.goto(path);
       await scan(page);

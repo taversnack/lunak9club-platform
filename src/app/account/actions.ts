@@ -11,6 +11,17 @@ import { createMyDog, saveMyDogVet, submitMyOnboardingForm, updateMyDogDetails }
 import { uploadVaccinationRecord } from '@/server/services/documents';
 import { acceptTerms } from '@/server/services/policies';
 import { acceptOffer, cancelMyBooking, createMyBookings } from '@/server/services/bookings';
+import { startInvoiceCheckout } from '@/server/services/payments';
+import type { Route } from 'next';
+import { leaveMembership, requestMembership, withdrawMembershipRequest } from '@/server/services/memberships';
+
+export async function payInvoiceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    const { url } = await startInvoiceCheckout(getDb(), actor, String(fd.get('invoiceId') ?? ''));
+    redirect(url as Route);
+  });
+}
 
 const obj = (fd: FormData) => Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === 'string'));
 
@@ -128,6 +139,8 @@ export async function confirmBookingAction(_: ActionState, fd: FormData): Promis
     });
     const n = (k: string) => r.outcomes.filter((o) => o.outcome === k).length;
     revalidatePath('/account/bookings');
+    // Priced places are held while the customer pays on the card payment page (D6).
+    if (r.checkoutUrl) redirect(r.checkoutUrl as Route);
     redirect(`/account/bookings?booked=${n('confirmed')}&waitlisted=${n('waitlisted')}&skipped=${n('skipped')}`);
   });
 }
@@ -135,17 +148,64 @@ export async function confirmBookingAction(_: ActionState, fd: FormData): Promis
 export async function cancelBookingAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
     const actor = await requirePermission('account.access');
-    const { late } = await cancelMyBooking(getDb(), actor, String(fd.get('bookingId') ?? ''));
+    const { late, refundedPence } = await cancelMyBooking(getDb(), actor, String(fd.get('bookingId') ?? ''));
     revalidatePath('/account/bookings');
-    redirect(`/account/bookings?cancelled=${late ? 'late' : 'free'}`);
+    redirect(`/account/bookings?cancelled=${late ? 'late' : refundedPence ? 'refunded' : 'free'}`);
   });
 }
 
 export async function acceptOfferAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
     const actor = await requirePermission('account.access');
-    await acceptOffer(getDb(), actor, String(fd.get('bookingId') ?? ''));
+    const r = await acceptOffer(getDb(), actor, String(fd.get('bookingId') ?? ''));
     revalidatePath('/account/bookings');
+    if (r.checkoutUrl) redirect(r.checkoutUrl as Route);
     return { status: 'success', message: 'Place accepted – see you then!' };
+  });
+}
+
+// ---- Memberships (Phase 4) -----------------------------------------------------
+
+export async function requestMembershipAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    const changeOf = String(fd.get('changeOf') ?? '') || undefined;
+    const r = await requestMembership(
+      getDb(),
+      actor,
+      { ...obj(fd), weekdays: fd.getAll('weekdays').map(String) },
+      { changeOf },
+    );
+    revalidatePath('/account/membership');
+    return {
+      status: 'success',
+      message: changeOf
+        ? `Thanks – we’ll confirm your new days, starting ${r.startsOn}.`
+        : 'Thanks – we’ll review your membership request and email you.',
+    };
+  });
+}
+
+export async function withdrawMembershipAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    await withdrawMembershipRequest(getDb(), actor, String(fd.get('id') ?? ''));
+    revalidatePath('/account/membership');
+    return { status: 'success', message: 'Request withdrawn.' };
+  });
+}
+
+export async function leaveMembershipAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    if (fd.get('confirm') !== 'on') {
+      return { status: 'error', message: 'Tick the box to confirm.', fields: { confirm: 'Tick to confirm' } };
+    }
+    const { endsOn } = await leaveMembership(getDb(), actor, String(fd.get('id') ?? ''));
+    revalidatePath('/account/membership');
+    return {
+      status: 'success',
+      message: `Your membership ends after ${endsOn}. Later booked days have been cancelled free of charge.`,
+    };
   });
 }

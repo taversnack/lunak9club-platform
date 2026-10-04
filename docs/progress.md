@@ -29,7 +29,44 @@
   - Owner: day view (capacity, dogs, warnings, taxi run, waitlist, per-day capacity, notes, cancel), week and month views, book a dog with audited overrides, check-in/out/no-show/undo, opening settings and closures, CSV exports (formula-injection safe, audited).
   - Seed: approved demo dogs Biscuit (Casey) and Rex (Jordan).
 
+- 2026-09-26 — **Phase 4 Pricing and memberships** complete:
+  - Migrations 0006–0007: price_books (no overlaps, DB-enforced), customer_rates, memberships, price_snapshots (locked by trigger), booking_dogs.kind + membership_id.
+  - Pure pricing engine (`src/domain/pricing/engine.ts`): website prices, half day 50%, taxi included, trial bands, customer rates (dog-specific > customer-wide > membership > ad hoc), optional multi-dog discount, plain-English explanations.
+  - Every booking (customer, Owner, membership) stores its price snapshot; later price changes never alter it.
+  - Memberships: customer requests → Owner approves/declines → days booked 60 days ahead at the member rate (full days waitlisted and reported); change of days / leaving from the next allowed 1st (20th rule); Owner can end on a chosen day.
+  - Screens: customer Membership page (prices, request, change, leave), prices on review and bookings pages; Owner Memberships, Prices (schedule/remove price lists), agreed prices on customer page, trial-day pricing on Book a dog.
+
+- 2026-09-26 — **Re-theme** to match lunak9club.co.uk (D50): navy header/footer with the site logo (`public/brand/lunak9-logo.png`), sand primary buttons, Raleway self-hosted, square corners, home-page hero. Colours adjusted for WCAG AA.
+
+- 2026-09-29 — **Phase 5 Invoicing** complete:
+  - Renamed to Luna’s K9 Club throughout (D51). Not VAT registered.
+  - Migrations 0008–0009: business settings, gap-free number sequences, invoices, lines, payments, credit notes, refund requests, job runs; triggers lock sent invoices, lines, payments and credit notes.
+  - Membership drafts per customer and month from locked price snapshots, rebuilt nightly; approval refuses if the total changed (D54). Next-month invoices sent on the 28th 09:00, joining invoices immediately (D55). Numbers LK9DOUGIE-01… (D52).
+  - Due in 5 days, one reminder at 15:30 on day 4, overdue shown on the dashboard (D24, D25, O11).
+  - Refund requests raised automatically for free cancellations of invoiced member days; Owner approves (credit note) or declines; money to return listed under Refunds (D56). Credit notes LK9DOUGIE-CN-01….
+  - Manual payment recording with a reason (card payments arrive in Phase 6, D53).
+  - Invoice PDF (branded, company disclosures, "not registered for VAT"), invoice/reminder/refund emails, CSV export per month.
+  - Screens: Owner Invoices, invoice detail, Refunds, Settings → Business, dashboard billing card; customer Invoices and invoice detail.
+  - Scheduler: `/api/jobs/tick` (CRON_SECRET) and `pnpm jobs:tick`; daily jobs run once (D57). Nightly membership book-ahead now included.
+
+- 2026-09-29 — **Phase 6 Card payments** complete:
+  - Payment adapter: Stripe Checkout (GBP) and a simulated provider for development/tests; live keys refused outside production.
+  - Migrations 0010–0011: checkout attempts, card refunds (locked), webhook events (idempotent), `pending_payment` bookings, booking invoices.
+  - Pay at booking (D6, D60): places held 31 min while paying, counted against capacity, confirmed on payment with a paid LK9DOUGIE- invoice and receipt email; lapsed holds released by the scheduler; late payments for a taken place refunded automatically. Waitlist offers accepted → pay.
+  - Owner bookings (D59): payment link emailed, place held up to 24 h.
+  - Invoices: Pay by card button; overpayments refunded automatically.
+  - Refunds (D58): automatic to card for free cancellations, approved member refunds and credits on card-paid invoices; failed refunds retried from Refunds; scheduler retries interrupted ones.
+  - Webhook `/api/webhooks/stripe` with signature check and event de-duplication; return page and scheduler reconcile if a webhook is missed.
+
 ## Verification (26 Sep 2026, cloud build workspace)
+Phase 6 (29 Sep): `pnpm verify` → OVERALL PASS. 88 unit, 104 integration/authz (incl. 10 payments), E2E pays for bookings, an Owner-made booking and an invoice through the simulated card page on mobile + desktop; a11y scans pass.
+
+Phase 5 (29 Sep): `pnpm verify` → OVERALL PASS. 84 unit (incl. billing rules), 94 integration/authz (incl. 19 billing), E2E incl. draft → approve → send → customer PDF on mobile + desktop, a11y scans on all new pages.
+
+Re-theme: `pnpm verify` → OVERALL PASS (axe contrast checks on every page, mobile + desktop).
+
+Phase 4: `pnpm verify` → OVERALL PASS. 70 unit (incl. pricing matrix), 75 integration/authz, 36 E2E + 24 a11y runs.
+
 Phase 3: `pnpm verify` → OVERALL PASS. 45 unit, 58 integration/authz, 32 E2E + 24 a11y runs (mobile + desktop), axe scans on every new booking page.
 
 Phase 2: `pnpm verify` → OVERALL PASS. 33 unit, 39 integration/authz (incl. S3 adapter against a local S3 server), 24 E2E + 24 a11y runs across mobile and desktop.
@@ -38,14 +75,16 @@ Phase 2: `pnpm verify` → OVERALL PASS. 33 unit, 39 integration/authz (incl. S3
 Not yet run on the Owner's Mac — see README "First-time setup".
 
 ## Current
-- Awaiting Owner review of Phase 3. Next: Phase 4 (pricing engine + memberships).
+- Phase 6 done; awaiting Owner review and a Stripe test account (O13). Next: Phase 7 (compliance automation – vaccination expiry reminders, incidents, welfare notes, retention).
 
 ## Decisions
 - See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed).
 
 ## Risks / known issues
-- Bookings confirm without payment until Phase 6 (D35); memberships arrive in Phase 4.
-- No reminder emails yet (booking reminders, offer expiry) — needs the scheduled-jobs runner (Phase 5/7).
+- Nothing calls the scheduler in production yet (O12) – decide with hosting (O6).
+- Card payments tested against the simulated provider and Stripe’s SDK types only; needs a run with real Stripe test keys (O13).
+- Checking in a dog whose Owner-made booking is still awaiting payment isn’t possible – the customer pays first (or the Owner cancels and rebooks at £0 with a customer rate).
+- Booking reminders and waitlist-offer expiry emails not yet sent (scheduler exists now; Phase 7).
 - No virus scanning of uploads (D30) — decide before launch.
 - Terms are a placeholder (D34) — solicitor-reviewed text needed.
 - CI skips the S3 adapter test (no S3 server in CI); covered locally.
@@ -55,4 +94,4 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Staff Manager/Staff roles not created (D13) — permission map ready.
 
 ## Next
-- Phase 4: effective-dated price books, membership plans (weekly pattern, member rates, recurring bookings), quote snapshots replacing the interim estimate, customer-specific rates.
+- Phase 7: compliance automation – vaccination expiry reminders (30/14/7 days, D11), incident reports, welfare notes, data retention and the booking/waitlist reminder emails.

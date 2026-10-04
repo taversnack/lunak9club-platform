@@ -3,7 +3,6 @@ import {
   availabilityLabel,
   cancellationTerms,
   checkBookableDate,
-  estimatePence,
   fits,
   isoWeekday,
   londonInstant,
@@ -131,12 +130,5 @@ describe('vaccinations by date', () => {
   it('allows dates up to and including expiry, then blocks', () => {
     expect(vaccinationBlockForDate(v, '2026-10-15')).toBeNull();
     expect(vaccinationBlockForDate(v, '2026-10-16')).toBe('Core vaccinations runs out before this date.');
-  });
-});
-
-describe('estimate', () => {
-  it('uses the ad hoc rate per dog per day', () => {
-    expect(estimatePence('full', 2, 3)).toBe(30000);
-    expect(estimatePence('am', 1, 1)).toBe(2500);
   });
 });

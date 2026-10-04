@@ -32,6 +32,16 @@ describe('authorize', () => {
     expect(authorize(customerA, 'customer.self.update')).toEqual({ allowed: false, reason: 'forbidden' });
   });
 
+  it('keeps billing to the Owner; customers read only their own invoices', () => {
+    for (const p of ['invoices.manage', 'refunds.manage', 'jobs.run'] as const) {
+      expect(authorize(owner, p).allowed).toBe(true);
+      expect(authorize(customerA, p).allowed).toBe(false);
+    }
+    expect(authorize(customerA, 'invoices.self.read', { ownerUserId: 'a1' }).allowed).toBe(true);
+    expect(authorize(customerA, 'invoices.self.read', { ownerUserId: 'b1' }).allowed).toBe(false);
+    expect(authorize(customerA, 'invoices.self.read').allowed).toBe(false);
+  });
+
   it('grants nothing for unknown roles', () => {
     const odd: Actor = { kind: 'user', userId: 'x', roles: ['superadmin', 'root'], emailVerified: true };
     for (const p of PERMISSIONS) expect(authorize(odd, p).allowed).toBe(false);

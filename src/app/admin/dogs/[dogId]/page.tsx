@@ -249,7 +249,7 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
       <Card aria-labelledby="health">
         <div className={s.sensitive} style={{ paddingLeft: 'var(--space-3)' }}>
           <h2 id="health">Health and behaviour</h2>
-          <p className={s.hint}>Sensitive – for LunaK9 Club use only. Your viewing of this page is recorded.</p>
+          <p className={s.hint}>Sensitive – for Luna’s K9 Club use only. Your viewing of this page is recorded.</p>
           <dl className={s.dl}>
             <dt>Allergies</dt>
             <dd>{txt(d.health?.allergies)}</dd>

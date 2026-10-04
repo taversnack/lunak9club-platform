@@ -78,6 +78,7 @@ export default async function ReviewPage({
                 <th scope="col">Date</th>
                 <th scope="col">Dog</th>
                 <th scope="col">What will happen</th>
+                <th scope="col">Price</th>
               </tr>
             </thead>
             <tbody>
@@ -89,19 +90,30 @@ export default async function ReviewPage({
                     <StatusBadge tone={outcome[l.outcome].tone}>{outcome[l.outcome].text}</StatusBadge>
                     {l.reason && l.outcome === 'skipped' ? <span className={s.hint}> {l.reason}</span> : null}
                   </td>
+                  <td>
+                    {l.price && l.outcome !== 'skipped' ? (
+                      <>
+                        {formatPounds(l.price.totalPence)}
+                        <div className={s.hint}>{l.price.explanation}</div>
+                      </>
+                    ) : (
+                      '–'
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <p>
-          Estimated cost for {confirmed.length} booked {confirmed.length === 1 ? 'day' : 'days'}:{' '}
-          <span className={s.total}>{formatPounds(preview.estimatePence)}</span>
+          Total for {confirmed.length} booked {confirmed.length === 1 ? 'day' : 'days'}:{' '}
+          <span className={s.total}>{formatPounds(preview.totalPence)}</span>
         </p>
         <p className={s.hint}>
-          Estimate at our ad hoc rate. Waitlisted days are only charged if you accept a place. You can cancel free of
-          charge up to {preview.freeCancellationHours} hours before the session starts; later cancellations and no-shows
-          are charged in full.
+          Prices are fixed when you book. You pay by card when you book; your places are held for 30 minutes while you
+          pay. Waitlisted days are only charged if you accept a place. Cancel {preview.freeCancellationHours} hours or
+          more before the session starts for a full refund to your card; later cancellations and no-shows are charged in
+          full.
         </p>
       </Card>
       {confirmed.length === 0 && !lines.some((l) => l.outcome === 'waitlisted') ? (
@@ -121,7 +133,9 @@ export default async function ReviewPage({
           <input type="hidden" name="ifFull" value={request.ifFull} />
           <TextArea name="customerNote" label="Anything we should know for these days?" rows={2} />
           <div className={s.row} style={{ justifyContent: 'flex-start' }}>
-            <SubmitButton pendingText="Booking…">Confirm booking</SubmitButton>
+            <SubmitButton pendingText="Booking…">
+              {preview.totalPence > 0 ? `Continue to payment (${formatPounds(preview.totalPence)})` : 'Confirm booking'}
+            </SubmitButton>
             <Link href="/account/book">Change</Link>
           </div>
         </ActionForm>

@@ -47,12 +47,27 @@ export default async function OwnerNewBooking() {
             ]}
           />
           <Checkbox name="taxi" label="Dog taxi" />
+          <Checkbox name="trial" label="This is a trial day" />
+          <RadioGroup
+            name="trialBand"
+            label="If it’s a trial day, charge at"
+            defaultValue="ad_hoc"
+            options={[
+              { value: 'ad_hoc', label: 'Ad hoc rate' },
+              { value: 'low', label: '1–3 days a week rate' },
+              { value: 'high', label: '4–5 days a week rate' },
+            ]}
+          />
           <TextArea
             name="overrideReason"
             label="Reason for any override"
             hint="For example “Trial day” or “Agreed extra place”"
             rows={2}
           />
+          <p className={s.hint}>
+            If the day has a price, the customer is emailed a card payment link and the place is held for up to 24 hours
+            (or until the session starts). Unpaid places are released automatically.
+          </p>
           <div>
             <SubmitButton>Book</SubmitButton>
           </div>

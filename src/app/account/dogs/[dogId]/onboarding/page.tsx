@@ -24,7 +24,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ dog
           <Link href={`/account/dogs/${dog.id}`}>{dog.name}</Link> › Onboarding form
         </p>
         <h1>{dog.name}’s onboarding form</h1>
-        <p>This helps us look after {dog.name} safely. Only LunaK9 Club can see these answers.</p>
+        <p>This helps us look after {dog.name} safely. Only Luna’s K9 Club can see these answers.</p>
         <ActionForm action={submitOnboardingAction}>
           <input type="hidden" name="dogId" value={dog.id} />
           <h2>Health</h2>
@@ -73,7 +73,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ dog
           <h2>Permissions</h2>
           <RadioGroup
             name="transport"
-            label="May we collect and drop off your dog in the LunaK9 Club dog taxi?"
+            label="May we collect and drop off your dog in the Luna’s K9 Club dog taxi?"
             options={yn}
             defaultValue={b(p?.transport)}
           />
@@ -92,7 +92,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ dog
           />
           <Checkbox
             name="confirmAccurate"
-            label="I confirm this information is accurate and I’ll tell LunaK9 Club if anything changes"
+            label="I confirm this information is accurate and I’ll tell Luna’s K9 Club if anything changes"
           />
           <div>
             <SubmitButton pendingText="Sending…">Send onboarding form</SubmitButton>

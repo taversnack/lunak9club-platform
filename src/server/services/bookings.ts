@@ -1,14 +1,22 @@
 import 'server-only';
+import { raiseRefundRequests } from './billing';
+import { submitPendingRefunds } from './card-refunds';
+import {
+  CUSTOMER_HOLD_MINUTES,
+  holdUntil,
+  refundBookingDayTx,
+  releaseBookingHold,
+  startBookingCheckout,
+} from './payments';
 import { and, asc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
-import { bookingDogs, bookings, customers, dogPermissions, dogs, users } from '@/infra/db/schema';
+import { bookingDogs, bookings, customers, dogPermissions, dogs, priceSnapshots, users } from '@/infra/db/schema';
 import {
   availabilityLabel,
   calendarDates,
   cancellationTerms,
   checkBookableDate,
-  estimatePence,
   fits,
   remainingFor,
   vaccinationBlockForDate,
@@ -22,6 +30,8 @@ import { idOrNotFound, isoDate, optionalText, parseInput } from '../validation';
 import { asUser, getMyCustomer, isProfileComplete } from './customers';
 import { evaluateDogs } from './compliance-facts';
 import { closuresBetween, consume, daysOverview, describeSession, loadSettings, lockDays } from './booking-shared';
+import { loadPricingContext, priceWith, writeSnapshot } from './pricing';
+import type { Price } from '@/domain/pricing/engine';
 import { appUrl, firstNameOf, sendSafely } from '../notify';
 import { bookingCancelledMessage, bookingSummaryMessage, type BookingLine } from '@/infra/email/templates';
 
@@ -80,7 +90,7 @@ export async function bookingCalendar(db: Db, actor: Actor, now = new Date()) {
         and(
           eq(bookingDogs.customerId, customer.id),
           inArray(bookingDogs.serviceDate, dates),
-          inArray(bookingDogs.status, ['confirmed', 'waitlisted', 'offered']),
+          inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'waitlisted', 'offered']),
         ),
       ),
   ]);
@@ -122,6 +132,7 @@ export type BookingOutcome = {
   date: IsoDate;
   outcome: 'confirmed' | 'waitlisted' | 'skipped';
   reason?: string;
+  price?: Price;
 };
 
 /**
@@ -165,7 +176,7 @@ async function validateRequest(db: Db, actor: Actor, input: unknown, now: Date) 
   return { d, me, customer, settings, session, dates, chosen };
 }
 
-/** Dry run for the review step: what would happen right now, and the estimated cost. Reserves nothing. */
+/** Dry run for the review step: what would happen right now, and the price of each dog-day. Reserves nothing. */
 export async function previewMyBookings(db: Db, actor: Actor, input: unknown, now = new Date()) {
   const { d, customer, settings, session, dates, chosen } = await validateRequest(db, actor, input, now);
   const overview = await daysOverview(db, dates, settings, now);
@@ -176,38 +187,39 @@ export async function previewMyBookings(db: Db, actor: Actor, input: unknown, no
       and(
         eq(bookingDogs.customerId, customer.id),
         inArray(bookingDogs.serviceDate, dates),
-        inArray(bookingDogs.status, ['confirmed', 'waitlisted', 'offered', 'attended', 'no_show']),
+        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'waitlisted', 'offered', 'attended', 'no_show']),
       ),
     );
+  const ctx = await loadPricingContext(db, customer.id, dates[0]!, dates.at(-1)!);
+  const otherDogsOn = await liveDogCounts(db, customer.id, dates);
   const lines: BookingOutcome[] = [];
   for (const date of dates) {
     const o = overview.get(date)!;
     const used = { ...o.used };
+    let idx = otherDogsOn.get(date) ?? 0;
     for (const dog of chosen) {
       if (existing.some((e) => e.dogId === dog.id && e.serviceDate === date)) {
         lines.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'skipped', reason: 'Already booked' });
         continue;
       }
       const f = fits(session, d.taxi, used, o.cap);
+      const price = priceWith(ctx, { dogId: dog.id, date, session, taxi: d.taxi, dogIndexOnDate: idx });
+      const reason = f.reason === 'taxi_full' ? 'Taxi is full' : 'Full';
       if (f.ok) {
         consume(used, session, d.taxi);
-        lines.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'confirmed' });
+        idx++;
+        lines.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'confirmed', price });
+      } else if (d.ifFull === 'waitlist') {
+        lines.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'waitlisted', reason, price });
       } else {
-        lines.push({
-          dogId: dog.id,
-          dogName: dog.name,
-          date,
-          outcome: d.ifFull === 'waitlist' ? 'waitlisted' : 'skipped',
-          reason: f.reason === 'taxi_full' ? 'Taxi is full' : 'Full',
-        });
+        lines.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'skipped', reason });
       }
     }
   }
-  const confirmed = lines.filter((l) => l.outcome === 'confirmed').length;
   return {
     request: { ...d, dates },
     lines,
-    estimatePence: estimatePence(session, 1, confirmed),
+    totalPence: lines.filter((l) => l.outcome === 'confirmed').reduce((sum, l) => sum + (l.price?.totalPence ?? 0), 0),
     freeCancellationHours: settings.freeCancellationHours,
   };
 }
@@ -220,6 +232,10 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
   const { d, me, customer, settings, session, dates, chosen } = await validateRequest(db, actor, input, now);
 
   const outcomes: BookingOutcome[] = [];
+  const ctx = await loadPricingContext(db, customer.id, dates[0]!, dates.at(-1)!);
+  // Priced places are held while the customer pays (D6); free ones are confirmed straight away.
+  const hold = holdUntil(now, CUSTOMER_HOLD_MINUTES);
+  let bookingId = '';
   await db.transaction(async (tx) => {
     const days = await lockDays(tx, dates, settings, now);
     const existing = await tx
@@ -232,7 +248,7 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
             chosen.map((c) => c.id),
           ),
           inArray(bookingDogs.serviceDate, dates),
-          inArray(bookingDogs.status, ['confirmed', 'waitlisted', 'offered', 'attended', 'no_show']),
+          inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'waitlisted', 'offered', 'attended', 'no_show']),
         ),
       );
     const [booking] = await tx
@@ -240,8 +256,11 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
       .values({ customerId: customer.id, createdBy: me.userId, source: 'customer' })
       .returning({ id: bookings.id });
     const toInsert: (typeof bookingDogs.$inferInsert)[] = [];
+    const prices: Price[] = [];
+    const otherDogsOn = await liveDogCounts(tx, customer.id, dates);
     for (const date of dates) {
       const day = days.get(date)!;
+      let idx = otherDogsOn.get(date) ?? 0;
       for (const dog of chosen) {
         if (existing.some((e) => e.dogId === dog.id && e.serviceDate === date)) {
           outcomes.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'skipped', reason: 'Already booked' });
@@ -257,31 +276,32 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
           taxi: d.taxi,
           customerNote: d.customerNote,
         };
+        const price = priceWith(ctx, { dogId: dog.id, date, session, taxi: d.taxi, dogIndexOnDate: idx });
+        const reason = f.reason === 'taxi_full' ? 'Taxi is full' : 'Full';
         if (f.ok) {
           consume(day.used, session, d.taxi);
-          toInsert.push({ ...base, status: 'confirmed' });
-          outcomes.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'confirmed' });
+          idx++;
+          toInsert.push(
+            price.totalPence > 0
+              ? { ...base, status: 'pending_payment', offerExpiresAt: hold }
+              : { ...base, status: 'confirmed' },
+          );
+          prices.push(price);
+          outcomes.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'confirmed', price });
         } else if (d.ifFull === 'waitlist') {
           toInsert.push({ ...base, status: 'waitlisted' });
-          outcomes.push({
-            dogId: dog.id,
-            dogName: dog.name,
-            date,
-            outcome: 'waitlisted',
-            reason: f.reason === 'taxi_full' ? 'Taxi is full' : 'Full',
-          });
+          prices.push(price);
+          outcomes.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'waitlisted', reason, price });
         } else {
-          outcomes.push({
-            dogId: dog.id,
-            dogName: dog.name,
-            date,
-            outcome: 'skipped',
-            reason: f.reason === 'taxi_full' ? 'Taxi is full' : 'Full',
-          });
+          outcomes.push({ dogId: dog.id, dogName: dog.name, date, outcome: 'skipped', reason });
         }
       }
     }
-    if (toInsert.length) await tx.insert(bookingDogs).values(toInsert);
+    bookingId = booking!.id;
+    if (toInsert.length) {
+      const ids = await tx.insert(bookingDogs).values(toInsert).returning({ id: bookingDogs.id });
+      for (let i = 0; i < ids.length; i++) await writeSnapshot(tx, ids[i]!.id, prices[i]!);
+    }
     await recordAudit(tx, {
       actor: me,
       action: 'booking.created',
@@ -297,7 +317,13 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
     });
   });
 
-  const booked = outcomes.filter((o) => o.outcome !== 'skipped');
+  const checkout = await startBookingCheckout(
+    db,
+    { bookingId, customerId: customer.id, createdBy: me.userId, expiresAt: hold },
+    now,
+  );
+  // With a payment to make, the confirmation email follows the payment; only waitlist places are emailed now.
+  const booked = outcomes.filter((o) => (checkout ? o.outcome === 'waitlisted' : o.outcome !== 'skipped'));
   if (booked.length) {
     const lines: BookingLine[] = booked.map((o) => ({
       dogName: o.dogName,
@@ -309,8 +335,29 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
   }
   return {
     outcomes,
-    estimatePence: estimatePence(session, 1, outcomes.filter((o) => o.outcome === 'confirmed').length),
+    totalPence: outcomes
+      .filter((o) => o.outcome === 'confirmed')
+      .reduce((sum, o) => sum + (o.price?.totalPence ?? 0), 0),
+    checkoutUrl: checkout?.url ?? null,
+    holdUntil: checkout ? hold : null,
   };
+}
+
+/** How many of this customer's dogs already hold a place on each date (for multi-dog discounts). */
+async function liveDogCounts(db: Pick<Db, 'select'>, customerId: string, dates: IsoDate[]) {
+  const rows = await db
+    .select({ serviceDate: bookingDogs.serviceDate })
+    .from(bookingDogs)
+    .where(
+      and(
+        eq(bookingDogs.customerId, customerId),
+        inArray(bookingDogs.serviceDate, dates),
+        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'attended', 'offered']),
+      ),
+    );
+  const m = new Map<IsoDate, number>();
+  for (const r of rows) m.set(r.serviceDate, (m.get(r.serviceDate) ?? 0) + 1);
+  return m;
 }
 
 export async function contactOf(db: Db, userId: string) {
@@ -334,16 +381,19 @@ export async function myBookings(db: Db, actor: Actor, now = new Date()) {
       lateCancellation: bookingDogs.lateCancellation,
       customerNote: bookingDogs.customerNote,
       version: bookingDogs.version,
+      kind: bookingDogs.kind,
       dogName: dogs.name,
+      pricePence: priceSnapshots.totalPence,
     })
     .from(bookingDogs)
     .innerJoin(dogs, eq(dogs.id, bookingDogs.dogId))
+    .leftJoin(priceSnapshots, eq(priceSnapshots.bookingDogId, bookingDogs.id))
     .where(and(eq(bookingDogs.customerId, customer.id), gte(bookingDogs.serviceDate, addDays(today, -30))))
     .orderBy(asc(bookingDogs.serviceDate), asc(dogs.name));
   const withTerms = rows.map((r) => ({
     ...r,
     offerLive: r.status === 'offered' && r.offerExpiresAt !== null && r.offerExpiresAt > now,
-    cancellable: ['confirmed', 'waitlisted', 'offered'].includes(r.status) && r.serviceDate > today,
+    cancellable: ['confirmed', 'pending_payment', 'waitlisted', 'offered'].includes(r.status) && r.serviceDate > today,
     late: cancellationTerms(now, r.serviceDate, r.session, settings).late,
   }));
   return {
@@ -375,10 +425,17 @@ export async function cancelMyBooking(db: Db, actor: Actor, rawId: string, now =
   const { bd, dogName } = await loadMyBookingDog(db, me, rawId);
   const settings = await loadSettings(db);
   const today = londonDate(now);
-  if (!['confirmed', 'waitlisted', 'offered'].includes(bd.status))
+  if (!['confirmed', 'pending_payment', 'waitlisted', 'offered'].includes(bd.status))
     throw new ConflictError('This booking can’t be cancelled.');
   if (bd.serviceDate <= today) throw new ConflictError('Bookings for today can’t be cancelled online. Please call us.');
+  if (bd.status === 'pending_payment') {
+    // Not paid yet: cancelling releases every place held for that payment.
+    await releaseBookingHold(db, bd.bookingId, 'Cancelled by the customer before paying', now);
+    await recordAudit(db, { actor: me, action: 'booking.hold_cancelled', entityType: 'booking_dog', entityId: bd.id });
+    return { late: false, refundedPence: 0 };
+  }
   const late = bd.status === 'confirmed' && cancellationTerms(now, bd.serviceDate, bd.session, settings).late;
+  let refundedPence = 0;
   await db.transaction(async (tx) => {
     const updated = await tx
       .update(bookingDogs)
@@ -392,6 +449,10 @@ export async function cancelMyBooking(db: Db, actor: Actor, rawId: string, now =
       .where(and(eq(bookingDogs.id, bd.id), eq(bookingDogs.version, bd.version)))
       .returning({ id: bookingDogs.id });
     if (!updated.length) throw new ConflictError('This booking changed. Please reload.');
+    if (!late) {
+      await raiseRefundRequests(tx, { bookingDogIds: [bd.id] });
+      refundedPence = await refundBookingDayTx(tx, bd.id, `Cancelled 48 hours or more ahead: ${dogName}`, now);
+    }
     await recordAudit(tx, {
       actor: me,
       action: 'booking.cancelled',
@@ -413,22 +474,43 @@ export async function cancelMyBooking(db: Db, actor: Actor, rawId: string, now =
       appUrl('/account/bookings'),
     ),
   );
-  return { late };
+  await submitPendingRefunds(db);
+  return { late, refundedPence };
 }
 
-/** Customer accepts a waitlist offer while it's still held for them. */
+/**
+ * Customer accepts a waitlist offer while it's still held for them. Membership days are billed on
+ * the monthly invoice; any other priced day is held for payment (D6) and the checkout URL returned.
+ */
 export async function acceptOffer(db: Db, actor: Actor, rawId: string, now = new Date()) {
   const me = asUser(actor);
   const { bd } = await loadMyBookingDog(db, me, rawId);
   if (bd.status !== 'offered') throw new ConflictError('There’s no offer to accept for this booking.');
   if (!bd.offerExpiresAt || bd.offerExpiresAt <= now) throw new ConflictError('Sorry, this offer has lapsed.');
+  const [snap] = await db
+    .select({ totalPence: priceSnapshots.totalPence })
+    .from(priceSnapshots)
+    .where(eq(priceSnapshots.bookingDogId, bd.id));
+  const needsPayment = bd.kind !== 'membership' && (snap?.totalPence ?? 0) > 0;
+  const hold = holdUntil(now, CUSTOMER_HOLD_MINUTES);
   await db.transaction(async (tx) => {
     const updated = await tx
       .update(bookingDogs)
-      .set({ status: 'confirmed', offerExpiresAt: null, version: bd.version + 1 })
+      .set(
+        needsPayment
+          ? { status: 'pending_payment', offerExpiresAt: hold, version: bd.version + 1 }
+          : { status: 'confirmed', offerExpiresAt: null, version: bd.version + 1 },
+      )
       .where(and(eq(bookingDogs.id, bd.id), eq(bookingDogs.version, bd.version), eq(bookingDogs.status, 'offered')))
       .returning({ id: bookingDogs.id });
     if (!updated.length) throw new ConflictError('This booking changed. Please reload.');
     await recordAudit(tx, { actor: me, action: 'booking.offer_accepted', entityType: 'booking_dog', entityId: bd.id });
   });
+  if (!needsPayment) return { checkoutUrl: null };
+  const checkout = await startBookingCheckout(
+    db,
+    { bookingId: bd.bookingId, customerId: bd.customerId, createdBy: me.userId, expiresAt: hold },
+    now,
+  );
+  return { checkoutUrl: checkout?.url ?? null };
 }

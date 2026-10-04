@@ -9,8 +9,18 @@
 }
 
 .header {
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-brand-navy);
+  color: var(--color-brand-navy-text);
+  border-bottom: 3px solid var(--color-brand-sand);
+}
+.header a {
+  color: var(--color-brand-navy-text);
+}
+.header a:hover {
+  color: var(--color-brand-sand);
+}
+.header :focus-visible {
+  outline-color: var(--color-brand-sand);
 }
 .headerInner {
   display: flex;
@@ -20,11 +30,39 @@
   min-height: 64px;
 }
 .brand {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.2rem;
-  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) 0;
   text-decoration: none;
+}
+.brand img {
+  display: block;
+  height: 52px;
+  width: auto;
+}
+.footer {
+  padding: var(--space-5) 0;
+  background: var(--color-brand-navy);
+  color: var(--color-brand-navy-text);
+  font-size: 0.9rem;
+}
+.footer p {
+  margin: 0;
+}
+.hero {
+  background: var(--color-brand-navy);
+  color: var(--color-brand-navy-text);
+  text-align: center;
+  padding: var(--space-7) var(--space-4);
+  margin: calc(-1 * var(--space-6)) 0 var(--space-5);
+}
+.hero h1 {
+  color: var(--color-surface);
+  letter-spacing: 0.02em;
+}
+.hero img {
+  height: auto;
+  max-width: 100%;
 }
 .nav {
   display: flex;
@@ -33,6 +71,7 @@
   flex-wrap: wrap;
 }
 .main {
+  flex: 1 0 auto;
   padding: var(--space-6) 0 var(--space-7);
 }
 
@@ -67,7 +106,8 @@
   border-radius: var(--radius-md);
   border: 2px solid transparent;
   font: inherit;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   cursor: pointer;
   text-decoration: none;
 }
@@ -77,12 +117,14 @@
   cursor: not-allowed;
 }
 .primary {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
+  background: var(--color-cta);
+  color: var(--color-cta-text);
+  border-color: var(--color-cta);
 }
 .primary:hover:not([disabled]) {
-  background: var(--color-primary-hover);
-  color: var(--color-primary-contrast);
+  background: var(--color-cta-hover);
+  border-color: var(--color-cta-hover);
+  color: var(--color-cta-text);
 }
 .secondary {
   background: var(--color-surface);

@@ -13,6 +13,8 @@ export default async function AccountLayout({ children }: { children: React.Reac
         <Link href="/account">Overview</Link>
         <Link href="/account/book">Book</Link>
         <Link href="/account/bookings">Bookings</Link>
+        <Link href="/account/membership">Membership</Link>
+        <Link href="/account/invoices">Invoices</Link>
         <Link href="/account/dogs/new">Add a dog</Link>
         <Link href="/account/profile">Your details</Link>
         <Link href="/account/contacts">Contacts</Link>

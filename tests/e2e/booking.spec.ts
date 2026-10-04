@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_OWNER, signIn, signOut } from './helpers';
+import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -34,12 +34,15 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   await page.getByRole('button', { name: 'Check price and availability' }).click();
 
   await expect(page.getByRole('heading', { name: 'Check your booking' })).toBeVisible();
-  await expect(page.getByText('£100.00')).toBeVisible();
+  await expect(page.getByText('£100.00', { exact: true })).toBeVisible();
   await expect(page.getByText('Place available')).toHaveCount(2);
   await axe(page);
-  await page.getByRole('button', { name: 'Confirm booking' }).click();
-  await expect(page.getByText('Booking confirmed')).toBeVisible();
-  await expect(page.getByText('2 booked')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue to payment (£100.00)' }).click();
+  // Simulated card page stands in for Stripe in tests (PAYMENTS_DRIVER=simulated).
+  await expect(page.getByRole('heading', { name: 'Test card payment' })).toBeVisible();
+  await axe(page);
+  await page.getByRole('button', { name: 'Pay £100.00 with a test card' }).click();
+  await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
   await axe(page);
 
   const row = page.getByRole('row').filter({ hasText: 'Biscuit' }).first();
@@ -51,7 +54,7 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   await expect(page.getByRole('heading', { name: 'Cancel this booking?' })).toBeVisible();
   await expect(page.getByText(/No charge/)).toBeVisible();
   await page.getByRole('button', { name: 'Yes, cancel booking' }).click();
-  await expect(page.getByText('No charge for this cancellation.')).toBeVisible();
+  await expect(page.getByText(/refunded this day to your card/)).toBeVisible();
   await expect(page.getByText('Cancelled').first()).toBeVisible();
 });
 
@@ -80,6 +83,25 @@ test('Owner sees the booking on the day, books a trial and checks a dog in and o
   await page.getByLabel('Reason for any override').fill('E2E trial');
   await page.getByRole('button', { name: 'Book' }).click();
   await expect(page).toHaveURL(/\/admin\/bookings\?date=/);
+  const dayUrl = page.url();
+  await expect(page.getByText(/Payment link sent/).first()).toBeVisible();
+  await signOut(page);
+
+  // The customer pays from their bookings page (the emailed link goes to the same place).
+  const customer = info.project.name === 'mobile' ? DEMO_CUSTOMER_2 : DEMO_CUSTOMER;
+  await signIn(page, customer.email, customer.password);
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto('/account/bookings');
+  await expect(page.getByText(/Waiting for payment/)).toBeVisible();
+  await axe(page);
+  await page.getByRole('link', { name: /Pay £\d+\.\d\d by card/ }).click();
+  await page.getByRole('button', { name: /with a test card/ }).click();
+  await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
+  await signOut(page);
+
+  await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto(dayUrl);
   const item = page
     .getByRole('listitem')
     .filter({ has: page.getByRole('link', { name: dog.name, exact: true }) })

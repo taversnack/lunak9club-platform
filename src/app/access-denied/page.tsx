@@ -11,7 +11,7 @@ export default function AccessDenied() {
       <Card>
         <Stack>
           <h1>You don&apos;t have access to this page</h1>
-          <p>If you think this is a mistake, please contact LunaK9 Club.</p>
+          <p>If you think this is a mistake, please contact Luna’s K9 Club.</p>
           <p>
             <Link href="/dashboard">Go to your dashboard</Link>
           </p>

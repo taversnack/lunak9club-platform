@@ -1,4 +1,4 @@
-# LunaK9 Club Platform — guidance for Claude
+# Luna’s K9 Club Platform — guidance for Claude
 
 UK doggy daycare platform: **booking & attendance**, **invoicing & payments**, **compliance & welfare**.
 Single business, single site. Staff role at launch: **Owner** only (plus Customer).
@@ -14,13 +14,14 @@ Next.js App Router · TypeScript strict · pnpm · PostgreSQL (Drizzle + SQL mig
 | `pnpm dev` | Run app (needs `docker compose up -d` for Postgres and Mailpit) |
 | `pnpm db:generate` / `pnpm db:migrate` / `pnpm db:seed` | Create migration / apply locally / seed demo data |
 | `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm test:int` · `pnpm test:e2e` · `pnpm test:a11y` | Quality checks |
+| `pnpm jobs:tick` | Run one scheduler tick locally (`JOBS_NOW=… ` to rehearse a date) |
 | `pnpm verify` | Everything CI runs; must pass before a phase is called done |
 
 ## Layout
 ```
 src/app/          routes, server actions (thin: validate → authorize → call domain)
 src/domain/       pure TS: pricing, capacity, booking, billing, compliance (no Next/Drizzle imports)
-src/infra/        adapters: db, auth, email, storage (later: stripe, pdf, jobs)
+src/infra/        adapters: db, auth, email, storage, pdf, payments (Stripe + simulated)
 src/server/services/  use cases: take (db, actor, input), validate with Zod, authorise, transact, audit
 src/server/policy authorize(actor, action, resource) — the only permission check
 src/ui/           design system components
@@ -28,7 +29,7 @@ tests/            unit, integration (real Postgres), authz, e2e
 ```
 
 ## Conventions
-- Tables snake_case plural; TS camelCase. Money columns `*_minor` as `bigint` pence. Never floats for money.
+- Tables snake_case plural; TS camelCase. Money columns are integer pence named `*_pence`. Never floats for money.
 - Service dates are SQL `date` in `Europe/London` (`service_date`); instants are `timestamptz` UTC.
 - UI copy: plain UK English, `en-GB`, GBP. Never show status by colour alone.
 - Zod validation at every server boundary. No `any` without a comment explaining why.

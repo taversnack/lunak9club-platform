@@ -1,4 +1,4 @@
-import { addDays, daysBetween, type IsoDate } from '../time';
+import { addDays, daysBetween, londonInstant, type IsoDate } from '../time';
 
 /** Pure booking rules (D35–D43). No I/O; all times are evaluated in Europe/London. */
 
@@ -33,21 +33,7 @@ export function isoWeekday(date: IsoDate): number {
 }
 
 /** The UTC instant of a London wall-clock time on a date (handles GMT/BST). */
-export function londonInstant(date: IsoDate, hhmm: string): Date {
-  const [h, m] = hhmm.split(':').map(Number) as [number, number];
-  const guess = new Date(`${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00Z`);
-  const offsetFor = (instant: Date) => {
-    const tz = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', timeZoneName: 'longOffset' })
-      .formatToParts(instant)
-      .find((p) => p.type === 'timeZoneName')?.value;
-    const match = tz?.match(/GMT([+-])(\d{2}):(\d{2})/);
-    return match ? (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3])) : 0;
-  };
-  // London is UTC+0 or UTC+1; one correction step is enough, a second handles the changeover edge.
-  let instant = new Date(guess.getTime() - offsetFor(guess) * 60_000);
-  instant = new Date(guess.getTime() - offsetFor(instant) * 60_000);
-  return instant;
-}
+export { londonInstant };
 
 export type DateCheck = { ok: true } | { ok: false; reason: string };
 
@@ -80,7 +66,9 @@ export function usage(rows: readonly UsageRow[], now: Date): { am: number; pm: n
       r.status === 'confirmed' ||
       r.status === 'attended' ||
       r.status === 'no_show' ||
-      (r.status === 'offered' && r.offerExpiresAt !== null && r.offerExpiresAt > now);
+      ((r.status === 'offered' || r.status === 'pending_payment') &&
+        r.offerExpiresAt !== null &&
+        r.offerExpiresAt > now);
     if (!holds) continue;
     if (r.session !== 'pm') am++;
     if (r.session !== 'am') pm++;
@@ -142,11 +130,6 @@ export function vaccinationBlockForDate(vaccinations: readonly VaccinationFact[]
     if (v.expiresOn < date) return `${v.label} runs out before this date.`;
   }
   return null;
-}
-
-/** D43: interim estimate in pence at the ad hoc rate until the pricing engine lands. */
-export function estimatePence(session: Session, dogCount: number, dateCount: number): number {
-  return (session === 'full' ? 5000 : 2500) * dogCount * dateCount;
 }
 
 export function formatPounds(pence: number): string {

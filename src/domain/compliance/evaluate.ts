@@ -222,7 +222,7 @@ export function evaluateDogCompliance(input: EvaluateInput): Evaluation {
         ? 'Bookings for this dog are paused. Please contact us.'
         : input.dog.status === 'rejected'
           ? 'We are unable to offer day care for this dog at the moment.'
-          : 'Your dog needs to be approved by LunaK9 Club before booking.',
+          : 'Your dog needs to be approved by Luna’s K9 Club before booking.',
     );
   }
   for (const i of items) {

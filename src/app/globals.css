@@ -1,15 +1,22 @@
-/* LunaK9 Club design tokens. Components use tokens only — never raw colours. */
+/* Luna’s K9 Club design tokens. Components use tokens only — never raw colours. */
 :root {
-  --color-bg: #faf6f0;
+  /* Palette taken from lunak9club.co.uk, darkened where needed to meet WCAG AA. */
+  --color-brand-navy: #283039;
+  --color-brand-navy-text: #f4efe8;
+  --color-brand-sand: #dfc8ad;
+  --color-bg: #f7f5f2;
   --color-surface: #ffffff;
-  --color-surface-muted: #f3ece3;
-  --color-text: #2b2320;
-  --color-text-muted: #5f534c;
-  --color-border: #ddd0c2;
-  --color-primary: #7a4a2a;
-  --color-primary-hover: #5f3820;
+  --color-surface-muted: #f1ebe3;
+  --color-text: #273039;
+  --color-text-muted: #4f5660;
+  --color-border: #ddd3c6;
+  --color-primary: #8a5a2b;
+  --color-primary-hover: #6b4420;
   --color-primary-contrast: #ffffff;
-  --color-accent: #2f6b5a;
+  --color-cta: #dfc8ad;
+  --color-cta-hover: #cdb08c;
+  --color-cta-text: #273039;
+  --color-accent: #c18a54;
   --color-focus: #1f5fbf;
   --color-success: #23613f;
   --color-success-bg: #e5f3ea;
@@ -20,11 +27,12 @@
   --color-info: #1f4f8a;
   --color-info-bg: #e6eef9;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-display: Georgia, 'Times New Roman', serif;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  --font-sans:
+    'Raleway', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Raleway', ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 4px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -48,10 +56,14 @@ html {
 
 body {
   margin: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
   font-size: 1rem;
+  font-variant-numeric: lining-nums tabular-nums;
   line-height: 1.55;
 }
 
@@ -59,6 +71,8 @@ h1,
 h2,
 h3 {
   font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--color-text);
   line-height: 1.2;
   margin: 0 0 var(--space-3);
 }

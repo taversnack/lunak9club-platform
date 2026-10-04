@@ -5,7 +5,31 @@ import { runAction, type ActionState } from '@/server/action';
 import { requirePermission } from '@/server/session';
 import { recordAssessment, reviewSubmission, setDogStatus, updateRequirement } from '@/server/services/owner-review';
 import { publishTerms } from '@/server/services/policies';
+import {
+  addCustomerRate,
+  endCustomerRate,
+  removeScheduledPriceBook,
+  schedulePriceBook,
+} from '@/server/services/pricing';
+import {
+  approveMembership,
+  declineMembership,
+  materialiseMemberships,
+  ownerEndMembership,
+} from '@/server/services/memberships';
 import { redirect } from 'next/navigation';
+import {
+  approveInvoice,
+  decideRefund,
+  issueCreditNote,
+  markCreditRefunded,
+  recordManualPayment,
+  resendInvoice,
+  unapproveInvoice,
+  updateBusinessSettings,
+} from '@/server/services/billing';
+import { runBillingNow } from '@/server/services/jobs';
+import { retryCardRefund } from '@/server/services/card-refunds';
 import {
   addClosure,
   checkIn,
@@ -162,5 +186,176 @@ export async function bookingSettingsAction(_: ActionState, fd: FormData): Promi
     await updateBookingSettings(getDb(), actor, { ...obj(fd), openWeekdays: fd.getAll('openWeekdays').map(String) });
     revalidatePath('/admin/settings/availability');
     return { status: 'success', message: 'Settings saved.' };
+  });
+}
+
+// ---- Pricing and memberships (Phase 4) -----------------------------------------------
+
+export async function schedulePricesAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('pricing.manage');
+    await schedulePriceBook(getDb(), actor, obj(fd));
+    revalidatePath('/admin/settings/pricing');
+    return { status: 'success', message: 'New prices scheduled. Existing bookings keep their prices.' };
+  });
+}
+
+export async function removePricesAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('pricing.manage');
+    await removeScheduledPriceBook(getDb(), actor, String(fd.get('id') ?? ''));
+    revalidatePath('/admin/settings/pricing');
+    return { status: 'success', message: 'Scheduled prices removed.' };
+  });
+}
+
+export async function addCustomerRateAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('pricing.manage');
+    const customerId = String(fd.get('customerId') ?? '');
+    await addCustomerRate(getDb(), actor, customerId, obj(fd));
+    revalidatePath(`/admin/customers/${customerId}`);
+    return { status: 'success', message: 'Rate added.' };
+  });
+}
+
+export async function endCustomerRateAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('pricing.manage');
+    await endCustomerRate(getDb(), actor, String(fd.get('id') ?? ''));
+    revalidatePath(`/admin/customers/${String(fd.get('customerId') ?? '')}`);
+    return { status: 'success', message: 'Rate ended.' };
+  });
+}
+
+export async function approveMembershipAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('memberships.manage');
+    const r = await approveMembership(getDb(), actor, String(fd.get('id') ?? ''), obj(fd));
+    revalidatePath('/admin/memberships');
+    redirect(`/admin/memberships?approved=${r.booked}&waitlisted=${r.waitlisted}&blocked=${r.skippedBlocked}`);
+  });
+}
+
+export async function declineMembershipAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('memberships.manage');
+    await declineMembership(getDb(), actor, String(fd.get('id') ?? ''), obj(fd));
+    revalidatePath('/admin/memberships');
+    redirect('/admin/memberships?declined=1');
+  });
+}
+
+export async function endMembershipAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('memberships.manage');
+    await ownerEndMembership(getDb(), actor, String(fd.get('id') ?? ''), obj(fd));
+    revalidatePath('/admin/memberships');
+    return { status: 'success', message: 'Membership end date set; later days cancelled free of charge.' };
+  });
+}
+
+export async function bookAheadAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('memberships.manage');
+    const r = await materialiseMemberships(getDb(), actor);
+    revalidatePath('/admin/memberships');
+    return {
+      status: 'success',
+      message: `Booked ${r.booked} new membership days${r.waitlisted ? `, ${r.waitlisted} waitlisted (full)` : ''}${r.skippedBlocked ? `, ${r.skippedBlocked} not booked (vaccination or approval)` : ''}.`,
+    };
+  });
+}
+
+// ---- Invoices and refunds (Phase 5) ---------------------------------------------------
+
+export async function approveInvoiceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('invoices.manage');
+    const id = String(fd.get('id') ?? '');
+    const r = await approveInvoice(getDb(), actor, id, obj(fd));
+    revalidatePath('/admin/invoices');
+    redirect(`/admin/invoices/${id}?done=${r.sentNow ? 'sent' : 'scheduled'}`);
+  });
+}
+
+export async function unapproveInvoiceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('invoices.manage');
+    const id = String(fd.get('id') ?? '');
+    await unapproveInvoice(getDb(), actor, id, obj(fd));
+    redirect(`/admin/invoices/${id}?done=unapproved`);
+  });
+}
+
+export async function resendInvoiceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('invoices.manage');
+    await resendInvoice(getDb(), actor, String(fd.get('id') ?? ''));
+    return { status: 'success', message: 'Invoice emailed to the customer again.' };
+  });
+}
+
+export async function recordPaymentAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('invoices.manage');
+    const id = String(fd.get('id') ?? '');
+    await recordManualPayment(getDb(), actor, id, obj(fd));
+    redirect(`/admin/invoices/${id}?done=payment`);
+  });
+}
+
+export async function creditInvoiceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('invoices.manage');
+    const id = String(fd.get('id') ?? '');
+    await issueCreditNote(getDb(), actor, id, {
+      ...obj(fd),
+      lineIds: fd.getAll('lineIds').filter((v): v is string => typeof v === 'string'),
+    });
+    redirect(`/admin/invoices/${id}?done=credited`);
+  });
+}
+
+export async function runBillingNowAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('invoices.manage');
+    const r = await runBillingNow(getDb(), actor);
+    revalidatePath('/admin/invoices');
+    redirect(`/admin/invoices?ran=1&drafts=${r.drafts}&sent=${r.sent}&reminders=${r.reminders}`);
+  });
+}
+
+export async function decideRefundAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('refunds.manage');
+    const approve = fd.get('decision') === 'approve';
+    await decideRefund(getDb(), actor, String(fd.get('id') ?? ''), approve, obj(fd));
+    redirect(`/admin/refunds?done=${approve ? 'approved' : 'declined'}`);
+  });
+}
+
+export async function markRefundedAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('refunds.manage');
+    await markCreditRefunded(getDb(), actor, String(fd.get('id') ?? ''), obj(fd));
+    redirect('/admin/refunds?done=refunded');
+  });
+}
+
+export async function updateBusinessSettingsAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('settings.manage');
+    await updateBusinessSettings(getDb(), actor, obj(fd));
+    revalidatePath('/admin/settings/business');
+    return { status: 'success', message: 'Business details saved.' };
+  });
+}
+
+export async function retryCardRefundAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('refunds.manage');
+    await retryCardRefund(getDb(), actor, String(fd.get('id') ?? ''));
+    redirect('/admin/refunds?done=retried');
   });
 }
