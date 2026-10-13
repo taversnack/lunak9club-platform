@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
+import { unconfirmedMembers } from '@/server/services/membership-workflow';
+import { formatMonth } from '@/domain/billing/rules';
 import { requirePermission } from '@/server/session';
 import { listRecentAuditEvents } from '@/server/queries/audit';
 import { reviewQueue } from '@/server/services/owner-review';
@@ -21,7 +23,8 @@ export const dynamic = 'force-dynamic';
 export default async function AdminHome() {
   const actor = await requirePermission('admin.access');
   const db = getDb();
-  const [events, queue, today, billing, welfare, expiring, requests] = await Promise.all([
+  const thisMonth = londonDate(new Date()).slice(0, 7);
+  const [events, queue, today, billing, welfare, expiring, requests, unconfirmed] = await Promise.all([
     listRecentAuditEvents(db, actor, 20),
     reviewQueue(db, actor),
     ownerDay(db, actor, londonDate(new Date())),
@@ -29,6 +32,7 @@ export default async function AdminHome() {
     welfareOverview(db, actor),
     expiringVaccinations(db, actor),
     ownerDataRequests(db, actor),
+    unconfirmedMembers(db, actor, thisMonth),
   ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
@@ -107,6 +111,19 @@ export default async function AdminHome() {
           )}
           <p className={s.hint}>Customers are reminded automatically 30, 14 and 7 days before.</p>
         </Card>
+        {unconfirmed.length ? (
+          <Card aria-labelledby="unconfirmed">
+            <h2 id="unconfirmed">Membership days not confirmed ({formatMonth(thisMonth)})</h2>
+            <ul className={s.list}>
+              {unconfirmed.map((u) => (
+                <li key={u.customerId}>
+                  <Link href={`/admin/customers/${u.customerId}#membership`}>{u.name}</Link>
+                </li>
+              ))}
+            </ul>
+            <p className={s.hint}>Their days are kept. You can confirm for them from their customer page.</p>
+          </Card>
+        ) : null}
         {waitingRequests ? (
           <Card aria-labelledby="requests">
             <h2 id="requests">Data requests</h2>
