@@ -24,6 +24,16 @@
 
 **Ordering note (13 Oct 2026):** 0019 is a provisional number, regenerated on `dev3/fix-review-lows` after merging `main` at 0015. It must land **after** Developer 2's 0016 and Developer 1's 0017 (0018 is provisionally Developer 3's last-sign-in migration). Whichever PR merges first takes the next free number on main, so if main has moved on, regenerate just before this PR goes ready: delete `0019_review_lows.sql`, `meta/0019_snapshot.json` and its `_journal.json` entry, run `pnpm db:generate --name review_lows`, renumber, then paste the comments and the duplicate-clean-up `DELETE` back in before the unique index.
 
+**0016_booking_approvals (generated 13 Oct 2026 after 0015 / PR #4 merged to main):** `pnpm db:generate --name booking_approvals`, with the data step hand-added after the old check is dropped and **before** the new check constraints are recreated:
+
+```sql
+UPDATE "booking_dogs" SET "status" = 'waitlisted', "offer_expires_at" = NULL WHERE "status" = 'offered';
+```
+
+| Migration | Purpose | Data impact | Rollback / recovery | Destructive |
+|---|---|---|---|---|
+| 0016_booking_approvals | `approval_requests` (status check, `last_error`/`last_error_at` for a failed approval attempt, status/created index, one pending request per type + subject); booking_dogs status `requested`/`rejected` added and `offered` removed (checks and live/place partial indexes recreated); offer check limited to `pending_payment`; drop `booking_settings.waitlist_offer_hours` | Converts any `offered` rows to `waitlisted` (D84); drops one settings column | Drop `approval_requests`; restore the previous checks/indexes once no `requested`/`rejected` rows exist (cancel them first); re-add `waitlist_offer_hours integer NOT NULL DEFAULT 12` and set it back to the previous value from the audit log/backup. Converted offers can't be told apart afterwards – take a backup first | Yes (drops a column) |
+
 **0021_membership_workflow (Developer 1, regenerated 13 Oct 2026 after main reached 0020):** first drafted as 0017; renumbered because 0016, 0018–0020 merged first. Additive only.
 
 | Migration | Purpose | Data impact | Rollback / recovery | Destructive |
