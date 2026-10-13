@@ -1,4 +1,5 @@
 import { daysBetween, type IsoDate } from '../time';
+import { isLicenceVaccination } from './attendance';
 
 /**
  * Pure onboarding/compliance evaluation for one dog (D10, D11, D31).
@@ -23,6 +24,8 @@ export type SubmissionFact = {
   expiresOn: IsoDate;
   reviewReason: string | null;
   submittedAt: Date;
+  /** Date the dog's first (primary) course finished, if the customer said this record is one (D74). */
+  primaryCourseCompletedOn?: IsoDate | null;
 };
 
 export type AssessmentFact = {
@@ -91,7 +94,11 @@ export type Evaluation = {
   canBook: boolean;
   /** Customer-facing reasons a booking would be blocked. */
   bookingBlockers: string[];
+  /** The same, without vaccination items (those are judged per date by `domain/compliance/attendance`). */
+  otherBlockers: string[];
   overall: OverallStatus;
+  /** Latest primary-course completion date on an approved vaccination record, if any (D74). */
+  primaryCourseCompletedOn: IsoDate | null;
 };
 
 const latest = <T extends { submittedAt?: Date; recordedAt?: Date }>(xs: T[]): T | undefined =>
@@ -161,7 +168,11 @@ function assessmentItem(key: string, assessments: readonly AssessmentFact[]): Pi
 }
 
 export function evaluateDogCompliance(input: EvaluateInput): Evaluation {
-  const reqs = [...input.requirements];
+  // Licence vaccinations (guidance 9.4) are always mandatory and always block booking (D73),
+  // whatever the requirement settings say.
+  const reqs = input.requirements.map((r) =>
+    r.kind === 'vaccination' && isLicenceVaccination(r.key) ? { ...r, mandatory: true, blocksBooking: true } : r,
+  );
   const items: ChecklistItem[] = reqs.map((req) => {
     const base = {
       key: req.key,
@@ -225,10 +236,16 @@ export function evaluateDogCompliance(input: EvaluateInput): Evaluation {
           : 'Your dog needs to be approved by Luna’s K9 Club before booking.',
     );
   }
+  const otherBlockers = [...bookingBlockers];
   for (const i of items) {
     if (i.blocksBooking && i.mandatory && !valid(i.state)) {
-      if (i.state === 'expired') bookingBlockers.push(`${i.label} has expired.`);
-      else if (input.dog.status === 'approved') bookingBlockers.push(`${i.label}: ${i.action ?? 'waiting for review'}`);
+      let msg: string | null = null;
+      if (i.state === 'expired') msg = `${i.label} has expired.`;
+      else if (input.dog.status === 'approved') msg = `${i.label}: ${i.action ?? 'waiting for review'}`;
+      if (msg) {
+        bookingBlockers.push(msg);
+        if (i.kind !== 'vaccination') otherBlockers.push(msg);
+      }
     }
   }
   const canBook = bookingBlockers.length === 0;
@@ -246,7 +263,13 @@ export function evaluateDogCompliance(input: EvaluateInput): Evaluation {
   else if (items.every((i) => i.state === 'to_do' || i.state === 'waiting_for_us')) overall = 'not_started';
   else overall = 'in_progress';
 
-  return { items, allMandatoryMet, canBook, bookingBlockers, overall };
+  const primaryDates = input.submissions
+    .filter((s) => s.status === 'approved' && s.primaryCourseCompletedOn)
+    .map((s) => s.primaryCourseCompletedOn!)
+    .sort();
+  const primaryCourseCompletedOn = primaryDates.at(-1) ?? null;
+
+  return { items, allMandatoryMet, canBook, bookingBlockers, otherBlockers, overall, primaryCourseCompletedOn };
 }
 
 export const OVERALL_LABELS: Record<OverallStatus, { text: string; tone: 'info' | 'success' | 'warning' | 'danger' }> =

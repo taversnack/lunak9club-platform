@@ -71,6 +71,13 @@
   - Owner: dog page shows the new fields with “Missing” text badges for older dogs, “Answered by [name] on [date]” for consents, the agreed vet, and date given in review/history (correctable at review). Emergency list CSV adds the agreed vet.
   - Privacy: values never in audit metadata (sanitiser extended), logs (redaction paths extended) or emails; included in the customer data download; removed by anonymisation (agreed vet cleared, consent rows incl. “answered by” deleted).
 
+- 2026-10-04 — **Vaccination compliance (licence guidance 9.4)** – branch `dev1/vaccination-compliance`:
+  - D73: core (DHP) and leptospirosis problems (missing, waiting for review, not accepted, new copy needed, expired, running out before the date) are hard blocks with no override at every booking path – customer, Owner (including trial days), membership book-ahead, accepting a waitlist place – and at a new check-in gate. Kennel cough stays overridable with a reason (kept on the booking at check-in, audited without details). Licence vaccinations can't be made optional in settings. Pure rules in `src/domain/compliance/attendance.ts`.
+  - D74: upload asks “Is this your dog’s first course of vaccinations?” and the date it finished; stored as `compliance_submissions.primary_course_completed_on`, correctable by the Owner at review; blocks attendance until 14 days after. Customer sees the earliest start date.
+  - D75/D66: reminders 60/30/14/7 days (default changed; rows still on 30/14/7 updated, Owner-edited rows kept).
+  - Migration: `0015_vaccination_compliance` (nullable column, default change, guarded UPDATE), after Developer 2's `0014_dog_register_fields`; branch stacked on `dev2/dog-register-fields` (PR #3). The first-course date is separate from the per-vaccination date given (D68).
+  - Docs: D11, D40, D42, D66 amended; D73–D75 added; O15 closed; O16 (titre certificates) opened.
+
 ## Verification (26 Sep 2026, cloud build workspace)
 Phase 7 (4 Oct): `pnpm verify` → OVERALL PASS. 93 unit, 116 integration/authz (incl. 12 welfare/privacy), E2E incident → customer acknowledgement → daily check → data download on mobile + desktop; a11y scans on all new pages.
 
@@ -110,7 +117,9 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Staff Manager/Staff roles not created (D13) — permission map ready.
 - Web-form consent as “written consent” not yet confirmed by the Owner and council (D71).
 - Register answers are overwritten (with when/who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72, brief recommendation 1).
-- The 2-week primary-course rule (O15) isn’t enforced, although the date given is now recorded.
+
+- Follow-ups from the vaccination compliance work: (1) licence guidance 23.1 / brief D42 note – require a screening (meet-and-greet) record at check-in, not built yet; (2) titre certificates for DHP not supported (O16); (3) the retention job clears the reminder log after 90 days, so an "expired" reminder can be sent again ~90 days later – assigned to Developer 3; (4) the customer data download doesn't include vaccination record details.
+- `storage.test.ts` now skips cleanly when `moto_server` (local S3) isn't installed (PR #1, merged into main and into this branch's base); it no longer fails `pnpm test:int` on the shared build box.
 
 ## Next
 - Phase 8: hardening and launch – security review, backups and a tested restore, error monitoring, performance and accessibility pass, hosting decision (O6, O12, O13), go-live checklist.
