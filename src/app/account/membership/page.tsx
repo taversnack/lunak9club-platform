@@ -18,7 +18,6 @@ import {
   confirmOfferAction,
   leaveMembershipAction,
   requestMembershipDaysAction,
-  withdrawApprovalAction,
   withdrawMembershipAction,
 } from '../actions';
 
@@ -188,12 +187,12 @@ export default async function MembershipPage() {
                 {pending ? (
                   <Stack>
                     <p className={s.hint}>{pending.summary}</p>
-                    <ActionForm action={withdrawApprovalAction}>
-                      <input type="hidden" name="id" value={pending.id} />
-                      <SubmitButton variant="secondary">
+                    <p>
+                      <Link href={`/account/requests/${pending.id}/withdraw`}>
                         Withdraw request <span className="visually-hidden">for {d.name}</span>
-                      </SubmitButton>
-                    </ActionForm>
+                      </Link>{' '}
+                      · <Link href="/account/requests">Your requests</Link>
+                    </p>
                   </Stack>
                 ) : (
                   <details>

@@ -12,7 +12,7 @@ import { pounds } from '@/domain/pricing/engine';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
 import { formatDateTimeLondon } from '@/ui/format';
-import { withdrawApprovalAction, withdrawRequestAction } from '../actions';
+import { withdrawRequestAction } from '../actions';
 import { myApprovalRequests, myPendingApprovals } from '@/server/services/approvals';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 
@@ -156,10 +156,8 @@ export default async function BookingsPage({
       {moves.map((m) => (
         <Alert key={m.id} tone="info" title="Move waiting for approval">
           <p>{m.summary}</p>
-          <ActionForm action={withdrawApprovalAction}>
-            <input type="hidden" name="id" value={m.id} />
-            <SubmitButton variant="secondary">Withdraw move</SubmitButton>
-          </ActionForm>
+          <Link href={`/account/requests/${m.id}/withdraw`}>Withdraw move</Link> ·{' '}
+          <Link href="/account/requests">Your requests</Link>
         </Alert>
       ))}
       <Card aria-labelledby="upcoming">

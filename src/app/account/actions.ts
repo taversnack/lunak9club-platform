@@ -256,17 +256,6 @@ export async function moveMembershipDayAction(_: ActionState, fd: FormData): Pro
   });
 }
 
-/** Withdraw one of your own requests that is still waiting (membership days, moves). */
-export async function withdrawApprovalAction(_: ActionState, fd: FormData): Promise<ActionState> {
-  return runAction(fd, async () => {
-    const actor = await requirePermission('account.access');
-    await withdrawMyApprovalRequest(getDb(), actor, String(fd.get('id') ?? ''));
-    revalidatePath('/account/membership');
-    revalidatePath('/account/bookings');
-    return { status: 'success', message: 'Request withdrawn.' };
-  });
-}
-
 export async function withdrawMembershipAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
     const actor = await requirePermission('account.access');

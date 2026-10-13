@@ -32,6 +32,10 @@ test('customer sees prices and chooses 2 membership days for approval', async ({
   await yours.getByRole('checkbox', { name: 'Wednesday' }).check();
   await yours.getByRole('button', { name: 'Send for approval' }).click();
   await expect(page.getByText('Change waiting for approval').first()).toBeVisible();
+  await expect(yours.getByRole('link', { name: `Withdraw request for ${dog}` })).toHaveAttribute(
+    'href',
+    /^\/account\/requests\/[0-9a-f-]+\/withdraw$/,
+  );
   await axe(page);
   await signOut(page);
 });
