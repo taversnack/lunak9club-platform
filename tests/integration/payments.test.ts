@@ -260,8 +260,8 @@ describe('two offers from one request (same bookingId)', () => {
   });
 
   it('an expired checkout releases only its own day, not a newer hold on the same booking', async () => {
-    const d1 = weekdayAhead(53);
-    const d2 = weekdayAhead(54);
+    const d1 = weekdayAhead(36);
+    const d2 = weekdayAhead(38);
     for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), quinn, {
       dogIds: [quinnDog],
@@ -328,7 +328,7 @@ describe('automatic refunds (D20, D58)', () => {
 
   it('a refund whose answer was lost stays pending, and the webhook settles it by our id without a second refund', async () => {
     const date = weekdayAhead(47);
-    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const a = await payLatest(pia.userId);
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     stripe.loseRefundAnswers = true;

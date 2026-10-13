@@ -5,10 +5,10 @@ import { setEmailProvider } from '@/infra/email/providers';
 import { setPaymentProvider } from '@/infra/payments';
 import { SimulatedPaymentProvider } from '@/infra/payments/simulated';
 import { bookingDogs, checkoutAttempts, customers, jobRuns } from '@/infra/db/schema';
-import { createMyBookings } from '@/server/services/bookings';
 import { runTick } from '@/server/services/jobs';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, londonDate, londonInstant } from '@/domain/time';
+import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
 import { approvedDog, readyCustomer } from '../support/onboard';
@@ -74,8 +74,8 @@ describe('scheduler tick resilience (M2, M6)', () => {
   afterEach(() => stripe.broken.clear());
 
   it('one checkout the provider can’t answer for doesn’t stop the tick, and the Owner is told once a day', async () => {
-    for (const date of [weekdayAhead(53), weekdayAhead(55)])
-      await createMyBookings(db(), tess, { dogIds: [tessDog], dates: [date], session: 'full', taxi: false });
+    for (const date of [weekdayAhead(33), weekdayAhead(48)])
+      await requestAndApprove(db(), tess, { dogIds: [tessDog], dates: [date], session: 'full', taxi: false }, owner);
     const attempts = await db()
       .select({ a: checkoutAttempts })
       .from(checkoutAttempts)

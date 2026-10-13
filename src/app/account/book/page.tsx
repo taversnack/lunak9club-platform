@@ -6,7 +6,6 @@ import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
-import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
@@ -41,9 +40,6 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
     <Stack>
       <h1>Book day care</h1>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      <Alert tone="info" title="How booking works">
-        <p>{REQUEST_NOT_SECURED}</p>
-      </Alert>
       {bookable.length === 0 ? (
         dogs.length === 0 ? (
           <Alert tone="info" title="Add your dog to start booking">

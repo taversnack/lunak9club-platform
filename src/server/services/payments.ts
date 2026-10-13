@@ -866,11 +866,21 @@ export async function releaseExpiredCheckouts(db: Db, now = new Date()) {
     .from(checkoutAttempts)
     .where(and(eq(checkoutAttempts.status, 'open'), lte(checkoutAttempts.expiresAt, now)));
   let released = 0;
-  for (const a of due)
-    released += (await releaseCheckout(db, a.id, { reason: 'Not paid in time', notify: a.purpose === 'booking' }, now))
-      .released;
+  let errors = 0;
+  for (const a of due) {
+    // One checkout the provider can't answer for mustn't stop the others being released (#10).
+    try {
+      released += (
+        await releaseCheckout(db, a.id, { reason: 'Not paid in time', notify: a.purpose === 'booking' }, now)
+      ).released;
+    } catch (err) {
+      errors++;
+      logger.error({ attempt: a.id, err: err instanceof Error ? err.name : 'unknown' }, 'releasing checkout failed');
+    }
+  }
+  // Holds with no open checkout covering them (the provider was down) lapse here too.
   released += await releaseOrphanHolds(db, now);
-  return { checkouts: due.length, released };
+  return { checkouts: due.length, released, errors };
 }
 
 /**
