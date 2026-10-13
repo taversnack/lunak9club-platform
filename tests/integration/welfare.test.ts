@@ -320,9 +320,26 @@ describe('your data (UK GDPR, D65)', () => {
     const uploaded = await oldCustomer('Uploader Uma', [{ action: 'document.uploaded', at: daysAgo(400) }]);
     const gone = await oldCustomer('Gone Gil', [{ action: 'auth.signed_in', at: daysAgo(4 * 365) }]);
 
+    // Tester phase 7 (retention_before/after.txt, "Ximena SignedInLastYear"): signed in a year ago,
+    // session since purged, no audit row for it. users.last_signed_in_at must keep her.
+    const lastYear = await oldCustomer('Ximena SignedInLastYear', []);
+    const [ly] = await db().select().from(customers).where(eq(customers.id, lastYear));
+    await db()
+      .update(users)
+      .set({ lastSignedInAt: daysAgo(365) })
+      .where(eq(users.id, ly!.userId));
+    const longAgo = await oldCustomer('Long-ago Lou', []);
+    const [la] = await db().select().from(customers).where(eq(customers.id, longAgo));
+    await db()
+      .update(users)
+      .set({ lastSignedInAt: daysAgo(4 * 365) })
+      .where(eq(users.id, la!.userId));
+
     await runRetention(db(), storage, system);
     const anonymised = async (id: string) =>
       (await db().select().from(customers).where(eq(customers.id, id)))[0]!.anonymisedAt !== null;
+    expect(await anonymised(lastYear)).toBe(false);
+    expect(await anonymised(longAgo)).toBe(true);
     expect(await anonymised(signedIn)).toBe(false);
     expect(await anonymised(uploaded)).toBe(false);
     expect(await anonymised(gone)).toBe(true);

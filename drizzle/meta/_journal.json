@@ -106,6 +106,13 @@
       "when": 1791123111010,
       "tag": "0014_dog_register_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791894003227,
+      "tag": "0018_last_signed_in",
+      "breakpoints": true
     }
   ]
 }
