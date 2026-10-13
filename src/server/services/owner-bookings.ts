@@ -123,7 +123,15 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
     /** The manual waitlist (D81), in the order people joined. */
     waitlist: withWarnings
       .filter((r) => r.status === 'waitlisted')
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((r) => {
+        // D82: shown up front like the vaccination block; giveWaitlistPlace still refuses on the server.
+        if (r.giveBlock) return r;
+        const f = fits(r.session, r.taxi, o.used, o.cap);
+        return f.ok
+          ? r
+          : { ...r, giveBlock: `Can’t give a place: ${f.reason === 'taxi_full' ? 'the taxi is full' : 'day is full'}.` };
+      }),
     cancelled: withWarnings.filter((r) => r.status === 'cancelled'),
     taxi: withWarnings.filter((r) => r.taxi && ['confirmed', 'attended'].includes(r.status)),
   };

@@ -607,12 +607,16 @@ describe('manual waitlist (D81, D82)', () => {
     const w = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
     const waiting = await rowOf(bobDog, date);
     expect(waiting.status).toBe('waitlisted');
+    // Shown up front on the day view (button disabled with the reason), and still refused on the server.
+    const full = (await ownerDay(db(), owner, date)).waitlist.find((x) => x.id === waiting.id)!;
+    expect(full.giveBlock).toBe('Can’t give a place: day is full.');
     await expect(giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version })).rejects.toThrow(
       /no free place/,
     );
     await withdrawMyApprovalRequest(db(), alice, a.requestId!);
     await runTick(db(), system);
     expect((await rowOf(bobDog, date)).status).toBe('waitlisted');
+    expect((await ownerDay(db(), owner, date)).waitlist.find((x) => x.id === waiting.id)!.giveBlock).toBeNull();
     mail.sent.length = 0;
     const g = await giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version });
     const given = await rowOf(bobDog, date);
