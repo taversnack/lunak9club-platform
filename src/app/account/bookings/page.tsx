@@ -6,12 +6,13 @@ import { ActionForm, SubmitButton } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { myBookings } from '@/server/services/bookings';
+import { myPendingApprovals } from '@/server/services/approvals';
 import { myOpenCheckouts } from '@/server/services/payments';
 import { pounds } from '@/domain/pricing/engine';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
 import { formatDateTimeLondon } from '@/ui/format';
-import { acceptOfferAction } from '../actions';
+import { acceptOfferAction, withdrawApprovalAction } from '../actions';
 
 export const metadata: Metadata = { title: 'Your bookings' };
 export const dynamic = 'force-dynamic';
@@ -34,10 +35,12 @@ export default async function BookingsPage({
 }) {
   const actor = await requirePermission('account.access');
   const sp = await searchParams;
-  const [{ upcoming, past }, checkouts] = await Promise.all([
+  const [{ upcoming, past }, checkouts, moves] = await Promise.all([
     myBookings(getDb(), actor),
     myOpenCheckouts(getDb(), actor),
+    myPendingApprovals(getDb(), actor, { type: 'membership.move_once' }),
   ]);
+  const moving = new Set(moves.map((m) => m.subjectKey.replace(/^booking_dog:/, '')));
   const offers = upcoming.filter((b) => b.offerLive);
   return (
     <Stack>
@@ -108,6 +111,20 @@ export default async function BookingsPage({
           </ActionForm>
         </Alert>
       ))}
+      {sp.moveRequested ? (
+        <Alert tone="success" title="Move requested">
+          Thanks – we’ll check there’s space and confirm. Your day stays booked until then.
+        </Alert>
+      ) : null}
+      {moves.map((m) => (
+        <Alert key={m.id} tone="info" title="Move waiting for approval">
+          <p>{m.summary}</p>
+          <ActionForm action={withdrawApprovalAction}>
+            <input type="hidden" name="id" value={m.id} />
+            <SubmitButton variant="secondary">Withdraw move</SubmitButton>
+          </ActionForm>
+        </Alert>
+      ))}
       <Card aria-labelledby="upcoming">
         <h2 id="upcoming">Coming up</h2>
         {upcoming.length === 0 ? (
@@ -144,6 +161,14 @@ export default async function BookingsPage({
                       </StatusBadge>
                     </td>
                     <td>
+                      {b.kind === 'membership' && b.status === 'confirmed' && !b.late && !moving.has(b.id) ? (
+                        <>
+                          <Link href={`/account/bookings/${b.id}/move`}>
+                            Move{' '}
+                            <span className="visually-hidden">{`${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
+                          </Link>{' '}
+                        </>
+                      ) : null}
                       {b.cancellable ? (
                         <Link href={`/account/bookings/${b.id}/cancel`}>
                           Cancel{' '}

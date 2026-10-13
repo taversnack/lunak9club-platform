@@ -229,6 +229,19 @@ export async function requestMoveOnceAction(_: ActionState, fd: FormData): Promi
   });
 }
 
+/** "This occasion only" → a move request; "all future months" → the Membership page to change days (D90). */
+export async function moveMembershipDayAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    if (fd.get('scope') === 'future') redirect('/account/membership#yours');
+    if (fd.get('scope') !== 'once')
+      return { status: 'error', message: 'Please choose an option.', fields: { scope: 'Choose an option' } };
+    await requestMyMoveOnce(getDb(), actor, obj(fd));
+    revalidatePath('/account/bookings');
+    redirect('/account/bookings?moveRequested=1');
+  });
+}
+
 /** Withdraw one of your own requests that is still waiting (membership days, moves). */
 export async function withdrawApprovalAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
