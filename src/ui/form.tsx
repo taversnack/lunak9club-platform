@@ -23,18 +23,17 @@ export function ActionForm({
   action,
   children,
   successMessage,
-  encType,
 }: {
   action: (state: ActionState, fd: FormData) => Promise<ActionState>;
   children: ReactNode;
   successMessage?: string;
-  encType?: 'multipart/form-data';
 }) {
   const [state, formAction] = useActionState(action, { status: 'idle' } as ActionState);
   const fields = state.fields ?? {};
   const count = Object.keys(fields).length;
+  // No encType/method: React sets a multipart POST itself for a function action (and warns if given).
   return (
-    <form action={formAction} encType={encType} noValidate>
+    <form action={formAction} noValidate>
       <FormCtx.Provider value={{ fields, values: state.values ?? {} }}>
         <div className={s.stack}>
           {state.status === 'error' ? (
@@ -290,12 +289,17 @@ export function SubmitButton({
   variant = 'primary',
   name,
   value,
+  disabled = false,
+  describedBy,
 }: {
   children: ReactNode;
   pendingText?: string;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   name?: string;
   value?: string;
+  /** Blocked for a reason shown next to the button (pass its id as describedBy). */
+  disabled?: boolean;
+  describedBy?: string;
 }) {
   const { pending } = useFormStatus();
   return (
@@ -304,8 +308,9 @@ export function SubmitButton({
       name={name}
       value={value}
       className={`${s.button} ${s[variant]}`}
-      disabled={pending}
-      aria-disabled={pending}
+      disabled={pending || disabled}
+      aria-disabled={pending || disabled}
+      aria-describedby={describedBy}
       aria-busy={pending || undefined}
     >
       {pending ? <span className={s.spinner} aria-hidden="true" /> : null}

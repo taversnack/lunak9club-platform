@@ -42,8 +42,8 @@ describe('simulated provider', () => {
   });
 
   it('refunds are idempotent by key', async () => {
-    const a = await p.refund('pi_1', 100, 'k1');
-    const b = await p.refund('pi_1', 100, 'k1');
+    const a = await p.refund('pi_1', 100, 'k1', 'r1');
+    const b = await p.refund('pi_1', 100, 'k1', 'r1');
     expect(a.id).toBe(b.id);
     expect(p.refunds.filter((r) => r.key === 'k1')).toHaveLength(1);
   });

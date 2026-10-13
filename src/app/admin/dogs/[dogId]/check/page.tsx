@@ -5,6 +5,7 @@ import { Card, Muted, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, Checkbox, FieldError, RadioGroup, SubmitButton, TextArea, TextField } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
+import { orNotFound } from '@/server/not-found';
 import { getDogForOwner } from '@/server/services/owner-review';
 import { dogWelfare } from '@/server/services/welfare';
 import { CONCERN_LABELS, MUST_TELL_OWNER } from '@/domain/compliance/welfare';
@@ -26,7 +27,9 @@ export default async function DailyCheckPage({
 }) {
   const [{ dogId }, sp] = await Promise.all([params, searchParams]);
   const actor = await requirePermission('welfare.manage');
-  const [dog, history] = await Promise.all([getDogForOwner(getDb(), actor, dogId), dogWelfare(getDb(), actor, dogId)]);
+  const [dog, history] = await orNotFound(
+    Promise.all([getDogForOwner(getDb(), actor, dogId), dogWelfare(getDb(), actor, dogId)]),
+  );
   const name = dog.dog.name;
   return (
     <Stack>

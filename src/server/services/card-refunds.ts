@@ -113,12 +113,16 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
       .where(and(eq(cardRefunds.id, r.id), eq(cardRefunds.status, r.status)))
       .returning({ id: cardRefunds.id });
     if (!claimed || !providerPaymentId) continue;
-    const res = await provider.refund(providerPaymentId, r.amountPence, `refund-${r.id}`);
+    const res = await provider.refund(providerPaymentId, r.amountPence, `refund-${r.id}`, r.id);
+    // 'pending' with no id means we don't know whether it went through: it stays 'submitted' with no
+    // provider id, so the safety net above sends it again (the provider dedupes) or the webhook,
+    // matched on our id, settles it.
     const status = res.status === 'succeeded' ? 'succeeded' : res.status === 'failed' ? 'failed' : 'submitted';
     await db
       .update(cardRefunds)
-      .set({ status, providerRefundId: res.id || null, failureReason: res.failureReason ?? null })
-      .where(eq(cardRefunds.id, r.id));
+      .set({ status, failureReason: res.failureReason ?? null, ...(res.id ? { providerRefundId: res.id } : {}) })
+      // A webhook may have settled it (or recorded its id) while we waited: don't undo that.
+      .where(and(eq(cardRefunds.id, r.id), eq(cardRefunds.status, 'submitted')));
     await recordAudit(db, {
       actor: SYSTEM,
       action: `refund.card_${status}`,
@@ -138,8 +142,25 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
   return { succeeded, failed };
 }
 
-/** A provider webhook reported the final state of a refund. */
-export async function applyRefundUpdate(db: Db, providerRefundId: string, status: 'succeeded' | 'pending' | 'failed') {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A provider webhook reported the state of a refund. Matched on the provider's refund id, or – if we
+ * never learned it (the create call timed out) – on our own id from the refund's metadata.
+ */
+export async function applyRefundUpdate(
+  db: Db,
+  providerRefundId: string,
+  status: 'succeeded' | 'pending' | 'failed',
+  reference?: string,
+) {
+  // First news of a refund whose create call we never heard back from: record its id, which also
+  // stops the safety net from sending it again.
+  if (reference && UUID.test(reference))
+    await db
+      .update(cardRefunds)
+      .set({ providerRefundId })
+      .where(and(eq(cardRefunds.id, reference), isNull(cardRefunds.providerRefundId)));
   if (status === 'pending') return;
   const [r] = await db
     .update(cardRefunds)

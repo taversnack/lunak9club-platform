@@ -5,6 +5,7 @@ import { Alert, Card, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, SubmitButton } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
+import { orNotFound } from '@/server/not-found';
 import { myIncident } from '@/server/services/welfare';
 import { formatDateTimeLondon } from '@/ui/format';
 import { INCIDENT_KIND_LABELS, SEVERITY_LABELS, SEVERITY_TONE } from '@/ui/welfare-labels';
@@ -16,7 +17,7 @@ export const dynamic = 'force-dynamic';
 export default async function MyIncidentPage({ params }: { params: Promise<{ incidentId: string }> }) {
   const { incidentId } = await params;
   const actor = await requirePermission('account.access');
-  const d = await myIncident(getDb(), actor, incidentId);
+  const d = await orNotFound(myIncident(getDb(), actor, incidentId));
   const i = d.inc;
   return (
     <Stack>
