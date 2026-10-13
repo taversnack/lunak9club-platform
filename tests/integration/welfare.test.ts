@@ -15,6 +15,9 @@ import {
   dataRequests,
   documents,
   dogs,
+  invoiceLines,
+  invoices,
+  payments,
   incidents,
   notificationLog,
   users,
@@ -447,5 +450,87 @@ describe('retention schedule (D64)', () => {
     mail.sent.length = 0;
     await sendVaccinationReminders(db(), system, afterExpiry(200));
     expect(mine()).toHaveLength(0);
+  });
+});
+
+// Runs last: it adds a shared daily note and an invoice that the tests above don't expect.
+describe('your data export: contents (D65)', () => {
+  it('includes incident details, full daily notes and money, but nothing staff-only', async () => {
+    const [cust] = await db().select().from(customers).where(eq(customers.userId, rosa.userId));
+    await db().update(dogs).set({ statusReason: 'Owner-only: watch with big dogs' }).where(eq(dogs.id, rosaDog));
+    await db()
+      .insert(welfareChecks)
+      .values({
+        dogId: rosaDog,
+        serviceDate: today,
+        ate: 'some',
+        drinking: 'normal',
+        toileting: 'unusual',
+        mood: 'settled',
+        concerns: ['pain'],
+        medicationGiven: 'Half a Metacam at lunch',
+        shared: true,
+      });
+    const [inv] = await db()
+      .insert(invoices)
+      .values({ customerId: cust!.id, periodMonth: today.slice(0, 7), totalPence: 3200 })
+      .returning();
+    await db().insert(invoiceLines).values({
+      invoiceId: inv!.id,
+      position: 1,
+      serviceDate: today,
+      description: 'Day care – Clover',
+      explanation: 'Standard day',
+      amountPence: 3200,
+    });
+    await db()
+      .update(invoices)
+      .set({
+        status: 'issued',
+        number: 'INV-EXPORT-1',
+        issueDate: today,
+        dueDate: today,
+        issuedAt: new Date(),
+        billToName: 'Rosa',
+        sellerDetails: {
+          tradingName: 'Luna',
+          legalName: 'Luna Ltd',
+          companyNumber: '1',
+          registeredOffice: 'x',
+          contactEmail: 'a@b.test',
+          contactPhone: '1',
+        },
+      })
+      .where(eq(invoices.id, inv!.id));
+    await db().insert(payments).values({
+      invoiceId: inv!.id,
+      amountPence: 3200,
+      method: 'manual',
+      receivedOn: today,
+      reason: 'STAFF-ONLY: cash in the till drawer',
+      recordedBy: owner.userId,
+    });
+
+    const data = await exportMyData(db(), rosa);
+    const json = JSON.stringify(data);
+    const report = data.incidentReports[0]!;
+    expect(report.whatHappened).toContain('graze');
+    expect(report.actionTaken).toContain('saline');
+    expect(report.updates.map((u) => u.body)).toEqual(['Paw looked fine at pick-up.']);
+    expect(json).not.toContain('gate latch'); // private update
+    const note = data.sharedDailyNotes.find((n) => n.medicationGiven);
+    expect(note).toMatchObject({
+      toileting: 'unusual',
+      concerns: ['pain'],
+      medicationGiven: 'Half a Metacam at lunch',
+    });
+    const exported = data.invoices.find((i) => i.number === 'INV-EXPORT-1')!;
+    expect(exported.lines).toEqual([expect.objectContaining({ description: 'Day care – Clover', amountPence: 3200 })]);
+    expect(exported.payments).toEqual([expect.objectContaining({ amountPence: 3200, method: 'manual' })]);
+    expect(json).not.toContain('STAFF-ONLY');
+    expect(json).not.toContain(owner.userId);
+    expect(data.dogs[0]).not.toHaveProperty('approvedBy');
+    expect(data.dogs[0]).not.toHaveProperty('statusReason');
+    expect(json).not.toContain('watch with big dogs');
   });
 });
