@@ -16,8 +16,8 @@ import {
   payments,
   webhookEvents,
 } from '@/infra/db/schema';
-import { cancelMyBooking, createMyBookings } from '@/server/services/bookings';
-import { ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
+import { acceptOffer, cancelMyBooking, createMyBookings } from '@/server/services/bookings';
+import { offerPlace, ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
 import { issueTx, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
@@ -188,6 +188,88 @@ describe('pay at booking (D6)', () => {
     expect(after!.status).toBe('cancelled');
     const [a] = await attemptsFor(pia.userId);
     expect(a!.status).toBe('expired');
+  });
+});
+
+describe('two offers from one request (same bookingId)', () => {
+  it('each checkout pays for, confirms and releases only its own day', async () => {
+    const d1 = weekdayAhead(50);
+    const d2 = weekdayAhead(51);
+    for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
+    const w = await createMyBookings(db(), quinn, {
+      dogIds: [quinnDog],
+      dates: [d1, d2],
+      session: 'full',
+      taxi: false,
+      ifFull: 'waitlist',
+    });
+    expect(w.outcomes.map((o) => o.outcome)).toEqual(['waitlisted', 'waitlisted']);
+    for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 20, taxiCapacity: 20 });
+    const row = async (date: string) =>
+      (
+        await db()
+          .select()
+          .from(bookingDogs)
+          .where(and(eq(bookingDogs.dogId, quinnDog), eq(bookingDogs.serviceDate, date)))
+      )[0]!;
+    const [w1, w2] = [await row(d1), await row(d2)];
+    expect(w1.bookingId).toBe(w2.bookingId);
+    await offerPlace(db(), owner, w1.id, { version: w1.version });
+    await offerPlace(db(), owner, w2.id, { version: w2.version });
+
+    // Both accepted within the hold: two open checkouts on one bookingId, one day each.
+    await acceptOffer(db(), quinn, w1.id);
+    await acceptOffer(db(), quinn, w2.id);
+    const [second, first] = await attemptsFor(quinn.userId);
+    expect(first!.amountPence).toBe(5000);
+    expect(second!.amountPence).toBe(5000);
+
+    // Paying the first confirms only day 1 and bills only day 1.
+    stripe.pay(first!.providerSessionId!);
+    await completeCheckout(db(), first!.id);
+    expect((await row(d1)).status).toBe('confirmed');
+    expect((await row(d2)).status).toBe('pending_payment');
+    const [paid] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, first!.id));
+    const lines = await db().select().from(invoiceLines).where(eq(invoiceLines.invoiceId, paid!.resultInvoiceId!));
+    expect(lines.map((l) => l.serviceDate)).toEqual([d1]);
+
+    // Cancelling the unpaid day 2 releases only its own checkout; the paid day is untouched.
+    await cancelMyBooking(db(), quinn, w2.id);
+    expect((await row(d2)).status).toBe('cancelled');
+    expect((await row(d1)).status).toBe('confirmed');
+    const [rel] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, second!.id));
+    expect(rel!.status).toBe('expired');
+  });
+
+  it('an expired checkout releases only its own day, not a newer hold on the same booking', async () => {
+    const d1 = weekdayAhead(53);
+    const d2 = weekdayAhead(54);
+    for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
+    await createMyBookings(db(), quinn, {
+      dogIds: [quinnDog],
+      dates: [d1, d2],
+      session: 'full',
+      taxi: false,
+      ifFull: 'waitlist',
+    });
+    for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 20, taxiCapacity: 20 });
+    const row = async (date: string) =>
+      (
+        await db()
+          .select()
+          .from(bookingDogs)
+          .where(and(eq(bookingDogs.dogId, quinnDog), eq(bookingDogs.serviceDate, date)))
+      )[0]!;
+    const [w1, w2] = [await row(d1), await row(d2)];
+    await offerPlace(db(), owner, w1.id, { version: w1.version });
+    await offerPlace(db(), owner, w2.id, { version: w2.version });
+    const t0 = new Date();
+    await acceptOffer(db(), quinn, w1.id, t0);
+    await acceptOffer(db(), quinn, w2.id, new Date(t0.getTime() + 20 * 60_000));
+    // 32 minutes on: the first checkout has run out, the second still has ~19 minutes.
+    await releaseExpiredCheckouts(db(), new Date(t0.getTime() + 32 * 60_000));
+    expect((await row(d1)).status).toBe('cancelled');
+    expect((await row(d2)).status).toBe('pending_payment');
   });
 });
 
