@@ -1122,7 +1122,7 @@ export async function handleWebhook(db: Db, rawBody: string, signature: string |
           );
       }
     } else if (event.type.startsWith('refund.') && event.refundStatus) {
-      await applyRefundUpdate(db, event.objectId, event.refundStatus, event.refundReference);
+      await applyRefundUpdate(db, event.objectId, event.refundStatus, event.refundReference, event.refundAttempt);
     }
     await db
       .update(webhookEvents)
