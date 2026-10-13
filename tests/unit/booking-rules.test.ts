@@ -8,9 +8,9 @@ import {
   londonInstant,
   remainingFor,
   usage,
-  vaccinationBlockForDate,
   type Settings,
 } from '@/domain/booking/rules';
+import { vaccinationBlocksForDate } from '@/domain/compliance/attendance';
 
 const settings: Settings = {
   sessionCapacity: 20,
@@ -123,12 +123,38 @@ describe('cancellations', () => {
 
 describe('vaccinations by date', () => {
   const v = [
-    { label: 'Core vaccinations', expiresOn: '2026-10-15', mandatory: true, blocksBooking: true },
-    { label: 'Kennel cough', expiresOn: '2027-01-01', mandatory: true, blocksBooking: true },
-    { label: 'Optional thing', expiresOn: null, mandatory: false, blocksBooking: false },
+    {
+      key: 'vaccination_core',
+      label: 'Core vaccinations',
+      kind: 'vaccination' as const,
+      state: 'met' as const,
+      expiresOn: '2026-10-15',
+      mandatory: true,
+      blocksBooking: true,
+    },
+    {
+      key: 'vaccination_kennel_cough',
+      label: 'Kennel cough',
+      kind: 'vaccination' as const,
+      state: 'met' as const,
+      expiresOn: '2027-01-01',
+      mandatory: true,
+      blocksBooking: true,
+    },
+    {
+      key: 'optional',
+      label: 'Optional thing',
+      kind: 'vaccination' as const,
+      state: 'to_do' as const,
+      expiresOn: null,
+      mandatory: false,
+      blocksBooking: false,
+    },
   ];
   it('allows dates up to and including expiry, then blocks', () => {
-    expect(vaccinationBlockForDate(v, '2026-10-15')).toBeNull();
-    expect(vaccinationBlockForDate(v, '2026-10-16')).toBe('Core vaccinations runs out before this date.');
+    expect(vaccinationBlocksForDate(v, '2026-10-15', null)).toEqual({ hard: [], overridable: [] });
+    expect(vaccinationBlocksForDate(v, '2026-10-16', null).hard).toEqual([
+      'Core vaccinations runs out before this date.',
+    ]);
   });
 });
