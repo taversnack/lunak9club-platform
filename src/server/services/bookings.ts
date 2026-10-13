@@ -16,16 +16,16 @@ import {
   checkBookableDate,
   fits,
   remainingFor,
-  vaccinationBlockForDate,
   type Session,
 } from '@/domain/booking/rules';
-import { addDays, londonDate, type IsoDate } from '@/domain/time';
+import { addDays, formatUkDate, londonDate, type IsoDate } from '@/domain/time';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
 import { idOrNotFound, isoDate, optionalText, parseInput } from '../validation';
 import { asUser, getMyCustomer, isProfileComplete } from './customers';
 import { evaluateDogs } from './compliance-facts';
+import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
 import { closuresBetween, consume, daysOverview, describeSession, loadSettings, lockDays } from './booking-shared';
 import { loadPricingContext, priceWith, writeSnapshot } from './pricing';
 import type { Price } from '@/domain/pricing/engine';
@@ -60,14 +60,11 @@ export async function myBookableDogs(db: Db, actor: Actor) {
       /** A dog not approved yet can be requested for a trial day (D85). */
       canRequestTrial: r.status === 'not_started' || r.status === 'pending_review',
       blockers: e.bookingBlockers,
-      vaccinations: e.items
-        .filter((i) => i.kind === 'vaccination')
-        .map((i) => ({
-          label: i.label,
-          expiresOn: i.expiresOn,
-          mandatory: i.mandatory,
-          blocksBooking: i.blocksBooking,
-        })),
+      /** Facts for the vaccination rules per date (D40, D73, D74). */
+      attendance: {
+        items: e.items.filter((i) => i.kind === 'vaccination'),
+        primaryCourseCompletedOn: e.primaryCourseCompletedOn,
+      },
     };
   });
 }
@@ -178,8 +175,9 @@ async function validateRequest(db: Db, actor: Actor, input: unknown, now: Date) 
     const c = checkBookableDate({ date, today, settings, closedReason: closed.get(date) });
     if (!c.ok) fields.dates = `${date}: ${c.reason}`;
     for (const dog of chosen) {
-      const block = vaccinationBlockForDate(dog.vaccinations, date);
-      if (block) fields.dates = `${dog.name} on ${date}: ${block}`;
+      // Customers can't override any vaccination block.
+      const [block] = allBlocks(blocksForEvaluation(dog.attendance, date));
+      if (block) fields.dates = `${dog.name} on ${formatUkDate(date)}: ${block}`;
     }
   }
   if (Object.keys(fields).length) throw new ValidationError('Some of these can’t be booked.', fields);

@@ -29,6 +29,7 @@ import { isoWeekday } from '@/domain/booking/rules';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
+import { approveVaccinations } from '../support/onboard';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
 import { FsStorageProvider } from '@/infra/storage/fs';
 import { uploadVaccinationRecord } from '@/server/services/documents';
@@ -70,6 +71,7 @@ async function approvedDog(user: TestUser, name: string) {
     dogId: id,
     fileName: 'v.pdf',
     bytes: PDF,
+    firstCourse: 'no',
     entries: ['vaccination_core', 'vaccination_leptospirosis', 'vaccination_kennel_cough'].map((k) => ({
       requirementKey: k,
       expiresOn: expires,
@@ -410,6 +412,21 @@ describe('cancellations', () => {
 describe('Owner day operations', () => {
   it('books a trial day for an unapproved dog only with a reason, and checks in/out on the day', async () => {
     const trial = await createMyDog(db(), alice, { ...validDog, name: 'Trial Pup' });
+    // No core/leptospirosis records yet: a licence block that no reason or trial flag can override (D73).
+    await expect(
+      ownerCreateBooking(db(), owner, {
+        dogId: trial,
+        date: today,
+        session: 'full',
+        trial: 'on',
+        overrideReason: 'Trial',
+      }),
+    ).rejects.toMatchObject({ fields: { date: expect.stringMatching(/Core vaccinations is missing/) } });
+    await approveVaccinations(db(), owner, alice, trial, [
+      'vaccination_core',
+      'vaccination_leptospirosis',
+      'vaccination_kennel_cough',
+    ]);
     await expect(ownerCreateBooking(db(), owner, { dogId: trial, date: today, session: 'full' })).rejects.toMatchObject(
       { fields: { overrideReason: expect.stringMatching(/Give a reason/) } },
     );

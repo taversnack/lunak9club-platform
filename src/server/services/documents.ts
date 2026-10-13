@@ -1,6 +1,7 @@
 import 'server-only';
 import { createHash, randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
+import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import type { StorageProvider } from '@/infra/storage';
 import { complianceRequirements, complianceSubmissions, customers, documents } from '@/infra/db/schema';
@@ -23,7 +24,45 @@ export type UploadInput = {
   fileName: string;
   bytes: Uint8Array;
   entries: VaccinationEntry[];
+  /** 'yes' if this record is the dog's first (primary) course of vaccinations (D74). */
+  firstCourse: unknown;
+  /** The date the first course finished; needed when firstCourse is 'yes'. */
+  primaryCourseCompletedOn?: unknown;
 };
+
+/** D74: one plain question on upload, and the date the first course finished if the answer is yes. */
+export const FirstCourseInput = z.object({
+  firstCourse: z.enum(['yes', 'no'], { message: 'Tell us whether this is your dog’s first course of vaccinations' }),
+  primaryCourseCompletedOn: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v || null),
+});
+
+/** Validates the first-course answer. Returns the completion date to store (or null) and any field errors. */
+export function parseFirstCourse(
+  input: Pick<UploadInput, 'firstCourse' | 'primaryCourseCompletedOn'>,
+  today: string,
+): { completedOn: string | null; fields: Record<string, string> } {
+  const parsed = FirstCourseInput.safeParse({
+    firstCourse: input.firstCourse,
+    primaryCourseCompletedOn: typeof input.primaryCourseCompletedOn === 'string' ? input.primaryCourseCompletedOn : '',
+  });
+  if (!parsed.success) return { completedOn: null, fields: { firstCourse: parsed.error.issues[0]!.message } };
+  const { firstCourse, primaryCourseCompletedOn: date } = parsed.data;
+  if (firstCourse === 'no') return { completedOn: null, fields: {} };
+  if (!date || !isIsoDate(date))
+    return { completedOn: null, fields: { primaryCourseCompletedOn: 'Enter the date the first course finished' } };
+  if (date > today)
+    return {
+      completedOn: null,
+      fields: {
+        primaryCourseCompletedOn: 'This date is in the future – upload the record once the course has finished',
+      },
+    };
+  return { completedOn: date, fields: {} };
+}
 
 /**
  * Customer uploads a vaccination record covering one or more vaccinations.
@@ -40,7 +79,9 @@ export async function uploadVaccinationRecord(
   const dog = await loadMyDog(db, actor, input.dogId, 'documents.self.upload');
   if (actor.kind !== 'user') throw new NotFoundError();
 
-  const fields: Record<string, string> = {};
+  const today = londonDate(now);
+  const firstCourse = parseFirstCourse(input, today);
+  const fields: Record<string, string> = { ...firstCourse.fields };
   const check = checkUpload(input.bytes);
   if (!check.ok) fields.file = check.message;
   if (!input.entries.length) fields.entries = 'Tick at least one vaccination this record shows';
@@ -51,7 +92,6 @@ export async function uploadVaccinationRecord(
       .from(complianceRequirements)
       .where(and(eq(complianceRequirements.kind, 'vaccination'), eq(complianceRequirements.active, true)))
   ).map((r) => r.key);
-  const today = londonDate(now);
   const seen = new Set<string>();
   for (const e of input.entries) {
     if (!vaccinationKeys.includes(e.requirementKey) || seen.has(e.requirementKey)) {
@@ -115,6 +155,7 @@ export async function uploadVaccinationRecord(
           documentId: doc!.id,
           expiresOn: e.expiresOn,
           administeredOn: e.administeredOn,
+          primaryCourseCompletedOn: firstCourse.completedOn,
           submittedBy: actor.userId,
         })),
       );

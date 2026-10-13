@@ -24,14 +24,8 @@ import {
   users,
   vets,
 } from '@/infra/db/schema';
-import {
-  checkBookableDate,
-  fits,
-  isoWeekday,
-  remainingFor,
-  vaccinationBlockForDate,
-  type Session,
-} from '@/domain/booking/rules';
+import { checkBookableDate, fits, isoWeekday, remainingFor, type Session } from '@/domain/booking/rules';
+import { allBlocks, blocksForEvaluation, type AttendanceBlocks } from '@/domain/compliance/attendance';
 import { addDays, isIsoDate, londonDate, type IsoDate } from '@/domain/time';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
@@ -88,12 +82,8 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
   const evals = await evaluateDogs(db, [...new Set(rows.map((r) => r.dogId))], now);
   const withWarnings = rows.map((r) => {
     const e = evals.get(r.dogId);
-    const vacc = e
-      ? vaccinationBlockForDate(
-          e.items.filter((i) => i.kind === 'vaccination'),
-          date,
-        )
-      : null;
+    const blocks: AttendanceBlocks = e ? blocksForEvaluation(e, date) : { hard: [], overridable: [] };
+    const vacc = blocks.hard[0] ?? blocks.overridable[0] ?? null;
     const warning = !e ? null : (vacc ?? (e.canBook ? null : (e.bookingBlockers[0] ?? null)));
     return {
       ...r,
@@ -101,6 +91,10 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
       /** D82: a dog failing the vaccination check for this date can't be given a place. */
       giveBlock: vacc ? `Can’t give a place: ${vacc}` : null,
       holdLive: r.status === 'pending_payment' && !!r.offerExpiresAt && r.offerExpiresAt > now,
+      /** Check-in is refused – no override (D42, D73, D74). */
+      checkInBlocked: blocks.hard[0] ?? null,
+      /** Check-in needs an Owner reason (kennel cough, D73). */
+      checkInNeedsReason: blocks.hard.length === 0 && blocks.overridable.length > 0,
     };
   });
   const o = overview.get(date)!;
@@ -173,6 +167,7 @@ async function transition(
   fn: (bd: typeof bookingDogs.$inferSelect, today: IsoDate) => Partial<typeof bookingDogs.$inferInsert>,
   action: string,
   now = new Date(),
+  metadata?: Record<string, number>,
 ) {
   assertAuthorized(actor, 'attendance.manage');
   const { version } = parseInput(Version, input);
@@ -186,24 +181,56 @@ async function transition(
       .where(and(eq(bookingDogs.id, bd.id), eq(bookingDogs.version, bd.version)))
       .returning({ id: bookingDogs.id });
     if (!updated.length) throw new ConflictError('This booking changed. Please reload.');
-    await recordAudit(tx, { actor, action, entityType: 'booking_dog', entityId: bd.id });
+    await recordAudit(tx, { actor, action, entityType: 'booking_dog', entityId: bd.id, metadata });
   });
 }
 
-export const checkIn = (db: Db, actor: Actor, id: string, input: unknown, now = new Date()) =>
-  transition(
+export const CheckInInput = z.object({
+  version: z.coerce.number().int().positive(),
+  overrideReason: optionalText(300),
+});
+
+/**
+ * Check a dog in on the day (D42, D73, D74). Vaccinations are checked again: core or leptospirosis
+ * problems and the 14-day wait after a first course refuse check-in outright (licence guidance 9.4);
+ * kennel cough needs a reason from the Owner, which is kept on the booking and audited.
+ */
+export async function checkIn(db: Db, actor: Actor, rawId: string, input: unknown, now = new Date()) {
+  assertAuthorized(actor, 'attendance.manage');
+  const d = parseInput(CheckInInput, input);
+  const { bd, dogName } = await loadBookingDog(db, rawId);
+  if (bd.status !== 'confirmed') throw new ConflictError('Only booked dogs can be checked in.');
+  if (bd.serviceDate > londonDate(now)) throw new ConflictError('You can check dogs in on the day.');
+  const e = (await evaluateDogs(db, [bd.dogId], now)).get(bd.dogId);
+  const blocks: AttendanceBlocks = e ? blocksForEvaluation(e, bd.serviceDate) : { hard: [], overridable: [] };
+  if (blocks.hard.length)
+    throw new ConflictError(`${dogName} can’t be checked in – no override is possible: ${blocks.hard.join(' ')}`);
+  const overridden = blocks.overridable.length > 0;
+  if (overridden && !d.overrideReason)
+    throw new ValidationError(`Needs a reason to check in: ${blocks.overridable.join(' ')}`, {
+      overrideReason: `Give a reason to check in anyway: ${blocks.overridable.join(' ')}`,
+    });
+  return transition(
     db,
     actor,
-    id,
-    input,
-    (bd, today) => {
-      if (bd.status !== 'confirmed') throw new ConflictError('Only booked dogs can be checked in.');
-      if (bd.serviceDate > today) throw new ConflictError('You can check dogs in on the day.');
-      return { status: 'attended', checkedInAt: now };
+    rawId,
+    { version: d.version },
+    (row, today) => {
+      if (row.status !== 'confirmed') throw new ConflictError('Only booked dogs can be checked in.');
+      if (row.serviceDate > today) throw new ConflictError('You can check dogs in on the day.');
+      return {
+        status: 'attended',
+        checkedInAt: now,
+        ...(overridden
+          ? { overrideReason: [row.overrideReason, `Check-in: ${d.overrideReason}`].filter(Boolean).join('\n') }
+          : {}),
+      };
     },
-    'attendance.checked_in',
+    overridden ? 'attendance.checked_in_with_override' : 'attendance.checked_in',
     now,
+    overridden ? { overrides: blocks.overridable.length } : undefined,
   );
+}
 
 export const checkOut = (db: Db, actor: Actor, id: string, input: unknown, now = new Date()) =>
   transition(
@@ -263,12 +290,7 @@ export async function giveWaitlistPlace(db: Db, actor: Actor, rawId: string, inp
   const { bd } = row;
   if (bd.serviceDate < londonDate(now)) throw new ConflictError('This day has passed.');
   const e = (await evaluateDogs(db, [bd.dogId], now)).get(bd.dogId);
-  const vacc = e
-    ? vaccinationBlockForDate(
-        e.items.filter((i) => i.kind === 'vaccination'),
-        bd.serviceDate,
-      )
-    : null;
+  const vacc = e ? (allBlocks(blocksForEvaluation(e, bd.serviceDate))[0] ?? null) : null;
   // D82: refuse up front, before anything changes, with the reason the Owner sees on the day view.
   if (vacc) throw new ConflictError(`Can’t give ${row.dogName} a place: ${vacc}`);
   const [snap] = await db
@@ -488,13 +510,17 @@ export async function ownerCreateBooking(db: Db, actor: Actor, input: unknown, n
 
   const problems: string[] = [];
   const e = (await evaluateDogs(db, [dogId], now)).get(dogId)!;
+  // Licence rules (guidance 9.4, D73, D74): no reason can override these, not even for a trial day.
+  const blocks = blocksForEvaluation(e, d.date);
+  if (blocks.hard.length) {
+    throw new ValidationError(`${dog.name} can’t be booked on this date – no override is possible.`, {
+      date: blocks.hard.join(' '),
+    });
+  }
   // A trial day is the expected way to book a dog that isn't approved yet (D21), so it isn't an override.
-  if (!e.canBook && !d.trial) problems.push(e.bookingBlockers[0] ?? 'Dog is not approved');
-  const vacc = vaccinationBlockForDate(
-    e.items.filter((i) => i.kind === 'vaccination'),
-    d.date,
-  );
-  if (vacc) problems.push(vacc);
+  if (e.otherBlockers.length && !d.trial) problems.push(e.otherBlockers[0]!);
+  // Kennel cough (the business's own rule) can still be overridden with a reason.
+  problems.push(...blocks.overridable);
   const closed = await closuresBetween(db, d.date, d.date);
   // The Owner may book today and beyond the customer booking window; closures and closed weekdays still need a reason.
   const c = checkBookableDate({

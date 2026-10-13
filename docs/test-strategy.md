@@ -86,3 +86,18 @@
 | Manual waitlist: join, leave, Owner removes without charge, Give place (priced and membership), Give place blocked up front for a dog failing the vaccination check (reason shown, nothing changes), no automatic offers | `tests/integration/booking-requests.test.ts`, `tests/integration/bookings.test.ts` |
 | Customer request → Owner approves on Requests → pay; wording on form, confirmation screen and email; withdraw; leave waitlist; Give place (button disabled with the vaccination reason, then enabled) | `tests/e2e/booking.spec.ts`, `tests/e2e/requests.spec.ts` |
 | Accessibility of request, review, bookings, leave/withdraw and Requests pages | a11y scan (`tests/e2e/a11y.spec.ts`) |
+
+## Vaccination compliance (D73–D75, licence guidance 9.4) → tests
+
+| Criterion | Test |
+|---|---|
+| Core/leptospirosis: every record state (missing, waiting, not accepted, new copy, expired, runs out before the date) is a hard block; still blocks if settings say optional; kennel cough is overridable in every state | `vaccination-attendance.test.ts` |
+| Owner booking refused for core/lepto in every state, even with a reason and as a trial day; kennel cough overridable with a reason (audited without details) | `vaccination-compliance.test.ts › Owner booking` |
+| A reason still overrides closures, capacity and approval; trial days need no reason for approval | `vaccination-compliance.test.ts › Owner booking`, `bookings.test.ts › Owner day operations` |
+| Customer booking refused for core/lepto in every state and for dates past expiry | `vaccination-compliance.test.ts › customer booking` |
+| Membership book-ahead skips blocked days (first-course wait, lepto waiting for review) | `vaccination-compliance.test.ts › membership book-ahead` |
+| Waitlist place can't be given (D82) while a licence vaccination is out of date | `vaccination-compliance.test.ts › Give place` |
+| Check-in gate: refused for core/lepto in every state (no reason helps), kennel cough needs a reason (kept + audited), day view shows which applies | `vaccination-compliance.test.ts › check-in gate` |
+| First course: day 13 blocked, day 14 allowed, no date no block – at customer booking, Owner booking and check-in; latest approved date wins | `vaccination-attendance.test.ts`, `vaccination-compliance.test.ts` |
+| First-course question: must be answered, yes needs a past date, stored per vaccination, Owner keeps/corrects/clears it; UI question and error | `vaccination-compliance.test.ts › first-course question`, `onboarding.spec.ts` |
+| Reminders 60/30/14/7: 60-day sent once, catch-up sends only the nearest, then 30; migrated rows and default; migration UPDATE keeps Owner-edited rows; settings accept 60,30,14,7 and refuse making licence vaccinations optional | `vaccination-attendance.test.ts`, `vaccination-compliance.test.ts › reminders` |

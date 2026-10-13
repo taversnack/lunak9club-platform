@@ -78,6 +78,7 @@ async function onboardedDog(user: TestUser, name: string, approve = true) {
     dogId: id,
     fileName: 'v.pdf',
     bytes: PDF,
+    firstCourse: 'no',
     entries: ['vaccination_core', 'vaccination_leptospirosis', 'vaccination_kennel_cough'].map((k) => ({
       requirementKey: k,
       expiresOn: addDays(today, 200),

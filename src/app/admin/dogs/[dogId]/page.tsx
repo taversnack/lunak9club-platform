@@ -143,6 +143,17 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
                 defaultValue={p.expiresOn}
                 hint="Correct this if it doesn’t match the record"
               />
+              <TextField
+                name="primaryCourseCompletedOn"
+                label="First course of vaccinations finished on"
+                type="date"
+                defaultValue={p.primaryCourseCompletedOn ?? ''}
+                hint={
+                  p.primaryCourseCompletedOn
+                    ? 'The customer says this is a first course. The dog can attend from 14 days after this date.'
+                    : 'The customer says this isn’t a first course. Leave empty unless the record shows one.'
+                }
+              />
               <RadioGroup
                 name="decision"
                 label="Decision"

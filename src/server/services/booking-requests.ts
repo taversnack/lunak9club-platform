@@ -3,14 +3,9 @@ import { and, asc, eq, inArray, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import { approvalRequests, bookingDogs, customers, dogs, priceSnapshots, users } from '@/infra/db/schema';
-import {
-  formatPounds,
-  PLACE_STATUSES,
-  remainingFor,
-  SESSION_LABELS,
-  vaccinationBlockForDate,
-} from '@/domain/booking/rules';
+import { formatPounds, PLACE_STATUSES, remainingFor, SESSION_LABELS } from '@/domain/booking/rules';
 import { subjectKey } from '@/domain/approvals';
+import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
 import { formatUkDate, londonDate, type IsoDate } from '@/domain/time';
 import { bookingSummaryMessage, type BookingLine } from '@/infra/email/templates';
 import { assertAuthorized, type Actor } from '../policy/authorize';
@@ -121,12 +116,7 @@ registerApprovalType<BookingRequestPayload>({
     const evals = await evaluateDogs(ctx.tx as unknown as Db, [...new Set(rows.map((r) => r.dogId))], ctx.now);
     for (const r of rows) {
       const e = evals.get(r.dogId);
-      const block = e
-        ? vaccinationBlockForDate(
-            e.items.filter((i) => i.kind === 'vaccination'),
-            r.serviceDate,
-          )
-        : null;
+      const block = e ? (allBlocks(blocksForEvaluation(e, r.serviceDate))[0] ?? null) : null;
       if (block)
         throw new ConflictError(
           `${r.dogName} on ${formatUkDate(r.serviceDate)}: ${block} Decline that day first, or ask the customer to update the record.`,
