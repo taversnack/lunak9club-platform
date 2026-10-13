@@ -130,7 +130,10 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
         const f = fits(r.session, r.taxi, o.used, o.cap);
         return f.ok
           ? r
-          : { ...r, giveBlock: `Can’t give a place: ${f.reason === 'taxi_full' ? 'the taxi is full' : 'day is full'}.` };
+          : {
+              ...r,
+              giveBlock: `Can’t give a place: ${f.reason === 'taxi_full' ? 'the taxi is full' : 'day is full'}.`,
+            };
       }),
     cancelled: withWarnings.filter((r) => r.status === 'cancelled'),
     taxi: withWarnings.filter((r) => r.taxi && ['confirmed', 'attended'].includes(r.status)),
