@@ -31,6 +31,34 @@ export async function latestLink(to: string, template: string): Promise<string> 
   throw new Error(`No ${template} email for ${to}`);
 }
 
+/** The most recent email sent to `to` for a template (polls briefly). */
+export async function latestEmail(
+  to: string,
+  template: string,
+): Promise<{ text: string; html: string; subject: string }> {
+  for (let i = 0; i < 30; i++) {
+    if (existsSync(MAIL_DIR)) {
+      const m = readdirSync(MAIL_DIR)
+        .sort()
+        .reverse()
+        .map(
+          (f) =>
+            JSON.parse(readFileSync(join(MAIL_DIR, f), 'utf8')) as {
+              to: string;
+              template: string;
+              text: string;
+              html: string;
+              subject: string;
+            },
+        )
+        .find((x) => x.to === to && x.template === template);
+      if (m) return m;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`No ${template} email for ${to}`);
+}
+
 export async function signIn(page: Page, email: string, password: string) {
   await page.goto('/sign-in');
   await page.getByLabel('Email address').fill(email);
@@ -50,4 +78,29 @@ export async function signOut(page: Page) {
   if (!(await btn.first().isVisible())) await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await btn.first().click();
   await expect(page).toHaveURL(/\/sign-in/);
+}
+
+/**
+ * Test-only: move a demo dog's vaccination expiry in the e2e test database (to rehearse a
+ * vaccination block without waiting months). Returns the previous expiry so it can be restored.
+ */
+export async function setVaccinationExpiry(dogName: string, requirementKey: string, expiresOn: string) {
+  const { Client } = await import('pg');
+  const url = process.env.TEST_DATABASE_URL ?? 'postgres://lunak9:lunak9@localhost:5432/lunak9_test';
+  if (!/test/.test(new URL(url).pathname)) throw new Error('Only for a *test* database');
+  const c = new Client({ connectionString: url });
+  await c.connect();
+  try {
+    const r = await c.query<{ expires_on: string }>(
+      `update compliance_submissions s set expires_on = $3
+         from dogs d, compliance_submissions old
+        where d.id = s.dog_id and d.name = $1 and s.requirement_key = $2 and old.id = s.id
+          and s.status = 'approved'
+        returning to_char(old.expires_on, 'YYYY-MM-DD') as expires_on`,
+      [dogName, requirementKey, expiresOn],
+    );
+    return r.rows[0]?.expires_on ?? null;
+  } finally {
+    await c.end();
+  }
 }

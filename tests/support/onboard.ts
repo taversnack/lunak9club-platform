@@ -63,7 +63,7 @@ export async function approvedDog(db: Db, owner: TestUser, user: TestUser, name:
  */
 export async function releaseMemberDays(db: Db) {
   await db.execute(
-    sql`update booking_dogs set status = 'cancelled', cancelled_at = now(), late_cancellation = false where kind = 'membership' and status in ('confirmed', 'waitlisted', 'offered')`,
+    sql`update booking_dogs set status = 'cancelled', cancelled_at = now(), late_cancellation = false where kind = 'membership' and status in ('confirmed', 'waitlisted', 'requested')`,
   );
   await db.execute(sql`update memberships set status = 'ended' where status in ('active', 'requested')`);
 }

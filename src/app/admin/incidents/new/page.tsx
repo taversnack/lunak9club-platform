@@ -34,7 +34,7 @@ export default async function NewIncidentPage({
         instead.
       </p>
       <Card>
-        <ActionForm action={reportIncidentAction} encType="multipart/form-data">
+        <ActionForm action={reportIncidentAction}>
           {sp.bookingDog ? <input type="hidden" name="bookingDogId" value={sp.bookingDog} /> : null}
           <SelectField
             name="dogId"

@@ -75,13 +75,6 @@ export default async function AvailabilityPage() {
               required
               defaultValue={settings.freeCancellationHours}
             />
-            <TextField
-              name="waitlistOfferHours"
-              label="Hold waitlist offers for (hours)"
-              inputMode="numeric"
-              required
-              defaultValue={settings.waitlistOfferHours}
-            />
           </div>
           <div>
             <SubmitButton>Save settings</SubmitButton>

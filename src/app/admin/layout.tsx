@@ -4,7 +4,13 @@ import { requirePermission } from '@/server/session';
 export const dynamic = 'force-dynamic';
 
 const groups: NavGroup[] = [
-  { label: 'Today', items: [{ href: '/admin', label: 'Dashboard' }] },
+  {
+    label: 'Today',
+    items: [
+      { href: '/admin', label: 'Dashboard' },
+      { href: '/admin/approvals', label: 'Requests' },
+    ],
+  },
   {
     label: 'Bookings',
     items: [

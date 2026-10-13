@@ -48,7 +48,10 @@ import { ConflictError, NotFoundError, ValidationError } from '../errors';
 import { appUrl, firstNameOf, ownerEmails, sendSafely } from '../notify';
 import { idOrNotFound, isoDate, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
+import { csvCell } from '../csv';
 import { queueCardRefunds, submitPendingRefunds } from './card-refunds';
+// payments.ts also imports from this module; only functions cross the cycle, used at call time.
+import { releaseOverchargingCheckouts } from './payments';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Q = Db | Tx;
@@ -619,7 +622,7 @@ export async function recordManualPayment(db: Db, actor: Actor, rawId: string, i
     throw new ValidationError('Please check the highlighted fields.', {
       receivedOn: 'The date can’t be in the future',
     });
-  return db.transaction(async (tx) => {
+  const r = await db.transaction(async (tx) => {
     const inv = await lockIssued(tx, id);
     if (inv.status === 'void') throw new ConflictError('This invoice has been cancelled with a credit note.');
     const bal = (await balances(tx, [id])).get(id)!;
@@ -645,6 +648,8 @@ export async function recordManualPayment(db: Db, actor: Actor, rawId: string, i
     });
     return r;
   });
+  await releaseOverchargingCheckouts(db, id, now);
+  return r;
 }
 
 /**
@@ -765,6 +770,7 @@ export async function issueCreditNote(db: Db, actor: Actor, rawId: string, input
     const amount = d.amount ?? lines.reduce((a, l) => a + l.amountPence, 0);
     return createCreditNoteTx(tx, actor, inv, { lines, amountPence: amount, reason: d.reason }, now);
   });
+  await releaseOverchargingCheckouts(db, id, now);
   await submitPendingRefunds(db);
   return cn;
 }
@@ -1100,11 +1106,11 @@ export async function invoicesCsv(db: Db, actor: Actor, month: Month) {
   assertAuthorized(actor, 'exports.read');
   assertAuthorized(actor, 'invoices.manage');
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || !isIsoDate(`${month}-01`)) throw new NotFoundError('Month');
+  // The name billed is the one snapshotted when the invoice was issued (the legal record), not the
+  // customer's current name, which may since have changed or been anonymised.
   const rows = await db
-    .select({ inv: invoices, customerName: users.name })
+    .select({ inv: invoices })
     .from(invoices)
-    .innerJoin(customers, eq(customers.id, invoices.customerId))
-    .innerJoin(users, eq(users.id, customers.userId))
     .where(and(eq(invoices.periodMonth, month), inArray(invoices.status, ['issued', 'paid', 'void'])))
     .orderBy(asc(invoices.number));
   const bals = await balances(
@@ -1112,7 +1118,6 @@ export async function invoicesCsv(db: Db, actor: Actor, month: Month) {
     rows.map((r) => r.inv.id),
   );
   const money = (p: number) => (p / 100).toFixed(2);
-  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const out = [
     [
       'Invoice number',
@@ -1125,24 +1130,28 @@ export async function invoicesCsv(db: Db, actor: Actor, month: Month) {
       'Paid',
       'Still owed',
       'Status',
-    ].join(','),
+    ]
+      .map(csvCell)
+      .join(','),
   ];
   const today = londonDate(new Date());
   for (const r of rows) {
     const b = bals.get(r.inv.id)!;
     out.push(
       [
-        r.inv.number ?? '',
-        r.inv.issueDate ?? '',
-        r.inv.dueDate ?? '',
-        esc(r.customerName),
+        r.inv.number,
+        r.inv.issueDate,
+        r.inv.dueDate,
+        r.inv.billToName,
         month,
         money(b.totalPence),
         money(b.creditedPence),
         money(b.paidPence),
         money(b.duePence),
         paymentState(r.inv, b, today),
-      ].join(','),
+      ]
+        .map(csvCell)
+        .join(','),
     );
   }
   await recordAudit(db, {

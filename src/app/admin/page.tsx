@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { auditActionLabel, auditEntityLabel } from '@/domain/audit-labels';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
@@ -14,6 +15,7 @@ import { expiringVaccinations } from '@/server/services/reminders';
 import { ownerDataRequests } from '@/server/services/privacy';
 import { formatUkDate, londonDate } from '@/domain/time';
 import { pounds } from '@/domain/pricing/engine';
+import { pendingApprovalCount } from '@/server/services/approvals';
 import { reminderDaysCopy } from '@/domain/compliance/reminder-copy';
 
 export const metadata: Metadata = { title: 'Owner dashboard' };
@@ -22,7 +24,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminHome() {
   const actor = await requirePermission('admin.access');
   const db = getDb();
-  const [events, queue, today, billing, welfare, expiring, requests, requirements] = await Promise.all([
+  const [events, queue, today, billing, welfare, expiring, requests, approvals, requirements] = await Promise.all([
     listRecentAuditEvents(db, actor, 20),
     reviewQueue(db, actor),
     ownerDay(db, actor, londonDate(new Date())),
@@ -30,6 +32,7 @@ export default async function AdminHome() {
     welfareOverview(db, actor),
     expiringVaccinations(db, actor),
     ownerDataRequests(db, actor),
+    pendingApprovalCount(db, actor),
     listRequirements(db, actor),
   ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
@@ -38,6 +41,11 @@ export default async function AdminHome() {
     <Stack>
       <h1>Owner dashboard</h1>
       <Grid>
+        <Card aria-labelledby="approvals">
+          <h2 id="approvals">Requests waiting</h2>
+          <p className={s.bigNumber}>{approvals}</p>
+          <Link href="/admin/approvals">Open requests</Link>
+        </Card>
         <Card aria-labelledby="records">
           <h2 id="records">Records to review</h2>
           <p className={s.bigNumber}>{queue.pending.length}</p>
@@ -137,8 +145,8 @@ export default async function AdminHome() {
                 {events.map((e) => (
                   <tr key={e.id}>
                     <td>{formatDateTimeLondon(e.occurredAt)}</td>
-                    <td>{e.action}</td>
-                    <td>{e.entityType}</td>
+                    <td>{auditActionLabel(e.action)}</td>
+                    <td>{auditEntityLabel(e.entityType)}</td>
                     <td>
                       <StatusBadge
                         tone={e.outcome === 'success' ? 'success' : e.outcome === 'denied' ? 'warning' : 'danger'}
