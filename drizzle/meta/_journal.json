@@ -141,6 +141,13 @@
       "when": 1791898684864,
       "tag": "0020_checkout_attempt_days",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791905461684,
+      "tag": "0021_membership_workflow",
+      "breakpoints": true
     }
   ]
 }
