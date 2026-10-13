@@ -38,7 +38,7 @@ export const complianceRequirements = pgTable(
     reminderDays: integer()
       .array()
       .notNull()
-      .default(sql`'{30,14,7}'::integer[]`),
+      .default(sql`'{60,30,14,7}'::integer[]`),
     sortOrder: integer().notNull().default(0),
     active: boolean().notNull().default(true),
     updatedAt: timestamp({ withTimezone: true })
@@ -110,6 +110,8 @@ export const complianceSubmissions = pgTable(
     expiresOn: date({ mode: 'string' }).notNull(),
     /** Date the vaccination was given (licence para 25(1)(h), D68). Null on records sent before migration 0014. */
     administeredOn: date({ mode: 'string' }),
+    /** D74: set when the customer says this record is the dog's first (primary) course – the date it finished. */
+    primaryCourseCompletedOn: date({ mode: 'string' }),
     submittedBy: text()
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
