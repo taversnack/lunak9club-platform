@@ -1,8 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { testDatabaseUrl } from './tests/support/test-db-url'; // also loads .env
+
+// Use a port of your own (E2E_PORT) when several checkouts share a machine: Playwright reuses any server
+// already listening there. E2E_HOST defaults to 127.0.0.1 because `localhost` may not resolve to loopback.
 const PORT = Number(process.env.E2E_PORT ?? 3100);
-const BASE = `http://localhost:${PORT}`;
-const TEST_DB = process.env.TEST_DATABASE_URL ?? 'postgres://lunak9:lunak9@localhost:5432/lunak9_test';
+const HOST = process.env.E2E_HOST ?? '127.0.0.1';
+const BASE = process.env.E2E_BASE_URL ?? `http://${HOST}:${PORT}`;
+const TEST_DB = testDatabaseUrl();
 export const E2E_MAIL_DIR = '.tmp/e2e-mail';
 
 export default defineConfig({
