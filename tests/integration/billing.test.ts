@@ -12,7 +12,7 @@ import {
   payments,
   refundRequests,
 } from '@/infra/db/schema';
-import { requestMembership, approveMembership } from '@/server/services/memberships';
+import { ownerSetMembershipDays } from '@/server/services/membership-workflow';
 import { cancelMyBooking } from '@/server/services/bookings';
 import {
   approveInvoice,
@@ -106,16 +106,11 @@ beforeAll(async () => {
   await readyCustomer(db(), noah);
   miaDog = await approvedDog(db(), owner, mia, 'Pepper');
   // Mon, Wed and Fri full days from tomorrow: 3 days a week → £48 a day (D3).
-  const r = await requestMembership(db(), mia, {
-    dogId: miaDog,
+  await ownerSetMembershipDays(db(), owner, miaDog, {
     weekdays: [1, 3, 5],
     session: 'full',
     startsOn: addDays(today, 1),
   });
-  const [m] = await db()
-    .execute<{ version: number }>(sql`select version from memberships where id = ${r.id}`)
-    .then((x) => x.rows);
-  await approveMembership(db(), owner, r.id, { version: m!.version });
 });
 afterAll(async () => {
   await releaseMemberDays(db());
