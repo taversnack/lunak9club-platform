@@ -755,3 +755,14 @@
     padding: var(--space-4);
   }
 }
+.approvalItem {
+  display: block;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+}
+.approvalItem + .approvalItem {
+  margin-top: var(--space-3);
+}

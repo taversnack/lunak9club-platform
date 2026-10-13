@@ -1,7 +1,7 @@
 import type { Metadata, Route } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
-import { Alert, Card, Muted, Stack } from '@/ui/components';
+import { Alert, Card, EmptyState, Muted, PageHeader, Stack } from '@/ui/components';
 import { ActionForm, SubmitButton, TextArea } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
@@ -26,11 +26,10 @@ export default async function ApprovalsPage({
   const noLink = hasPermission(actor, 'bookings.manage') ? await bookingsMissingPayLink(getDb(), actor) : [];
   return (
     <Stack>
-      <h1>Requests</h1>
-      <p className={s.hint}>
-        Every kind of request, oldest first. Notes you add are shown to the customer in their account only – never
-        emailed.
-      </p>
+      <PageHeader
+        title="Requests"
+        lead="Every kind of request, oldest first. Notes you add are shown to the customer in their account only – never emailed."
+      />
       {sp.approved ? <Alert tone="success">Request approved. The customer has been emailed.</Alert> : null}
       {sp.declined ? (
         <Alert tone="info">
@@ -68,10 +67,10 @@ export default async function ApprovalsPage({
       ) : null}
       <Card aria-labelledby="waiting">
         <h2 id="waiting">Waiting for you ({items.length})</h2>
-        {items.length === 0 ? <Muted>No requests waiting.</Muted> : null}
+        {items.length === 0 ? <EmptyState title="No requests waiting." /> : null}
         <ul className={s.list}>
           {items.map((r) => (
-            <li key={r.id} className={s.listItem} style={{ display: 'block' }} data-testid="approval-item">
+            <li key={r.id} className={s.approvalItem} data-testid="approval-item">
               <p>
                 <strong>{r.label}</strong> · <Link href={`/admin/customers/${r.customerId}`}>{r.customerName}</Link>
                 <br />
