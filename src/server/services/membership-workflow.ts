@@ -739,3 +739,42 @@ export async function notifyUnconfirmedDays(db: Db, actor: Actor, now = new Date
   }
   return { month, unconfirmed: list.length };
 }
+
+/** Owner's membership view for one customer: dogs' days, open offers and this/next month's confirmations. */
+export async function ownerMembershipOverview(db: Db, actor: Actor, rawCustomerId: string, now = new Date()) {
+  assertAuthorized(actor, 'memberships.manage');
+  const id = idOrNotFound(rawCustomerId, 'Customer');
+  const today = londonDate(now);
+  const [offers, myDogs, confs] = await Promise.all([
+    db
+      .select()
+      .from(membershipOffers)
+      .where(and(eq(membershipOffers.customerId, id), isNull(membershipOffers.closedAt)))
+      .orderBy(asc(membershipOffers.createdAt)),
+    db
+      .select({ id: dogs.id, name: dogs.name })
+      .from(dogs)
+      .where(and(eq(dogs.customerId, id), isNull(dogs.archivedAt)))
+      .orderBy(asc(dogs.name)),
+    db.select().from(membershipMonthConfirmations).where(eq(membershipMonthConfirmations.customerId, id)),
+  ]);
+  const thisMonth = monthOf(today);
+  const months: { month: Month; monthText: string; hasDays: boolean; confirmedAt: Date | null; byOwner: boolean }[] =
+    [];
+  for (const m of [thisMonth, monthOf(addDays(`${thisMonth}-28`, 7))]) {
+    const c = confs.find((x) => x.month === m);
+    months.push({
+      month: m,
+      monthText: formatMonth(m),
+      hasDays: await hasMemberDays(db, id, m),
+      confirmedAt: c?.confirmedAt ?? null,
+      byOwner: c?.byOwner ?? false,
+    });
+  }
+  return {
+    offers,
+    dogs: await Promise.all(myDogs.map(async (d) => ({ ...d, membership: await currentMembership(db, d.id, today) }))),
+    months,
+    changeFrom: await changeStartFor(db, id, now),
+  };
+}
