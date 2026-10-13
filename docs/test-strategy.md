@@ -74,3 +74,18 @@
 | Members' extra days at member rate; other dogs at ad hoc | `pricing-memberships.test.ts` |
 | Customers can't manage prices/memberships of others | `pricing-memberships.test.ts` |
 | End-to-end: prices shown, request, Owner approval, member-rate bookings; axe on each page | `membership.spec.ts` |
+
+## Vaccination compliance (D73–D75, licence guidance 9.4) → tests
+
+| Criterion | Test |
+|---|---|
+| Core/leptospirosis: every record state (missing, waiting, not accepted, new copy, expired, runs out before the date) is a hard block; still blocks if settings say optional; kennel cough is overridable in every state | `vaccination-attendance.test.ts` |
+| Owner booking refused for core/lepto in every state, even with a reason and as a trial day; kennel cough overridable with a reason (audited without details) | `vaccination-compliance.test.ts › Owner booking` |
+| A reason still overrides closures, capacity and approval; trial days need no reason for approval | `vaccination-compliance.test.ts › Owner booking`, `bookings.test.ts › Owner day operations` |
+| Customer booking refused for core/lepto in every state and for dates past expiry | `vaccination-compliance.test.ts › customer booking` |
+| Membership book-ahead skips blocked days (first-course wait, lepto waiting for review) | `vaccination-compliance.test.ts › membership book-ahead` |
+| Waitlist place can't be accepted while a licence vaccination is out of date | `vaccination-compliance.test.ts › waitlist offers` |
+| Check-in gate: refused for core/lepto in every state (no reason helps), kennel cough needs a reason (kept + audited), day view shows which applies | `vaccination-compliance.test.ts › check-in gate` |
+| First course: day 13 blocked, day 14 allowed, no date no block – at customer booking, Owner booking and check-in; latest approved date wins | `vaccination-attendance.test.ts`, `vaccination-compliance.test.ts` |
+| First-course question: must be answered, yes needs a past date, stored per vaccination, Owner keeps/corrects/clears it; UI question and error | `vaccination-compliance.test.ts › first-course question`, `onboarding.spec.ts` |
+| Reminders 60/30/14/7: 60-day sent once, catch-up sends only the nearest, then 30; migrated rows and default; migration UPDATE keeps Owner-edited rows; settings accept 60,30,14,7 and refuse making licence vaccinations optional | `vaccination-attendance.test.ts`, `vaccination-compliance.test.ts › reminders` |
