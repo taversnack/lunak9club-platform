@@ -214,7 +214,31 @@ async function decide(
 ) {
   await ensureTypesLoaded();
   const id = idOrNotFound(rawId, 'Request');
-  const result = await db.transaction(async (tx) => {
+  let result: Awaited<ReturnType<typeof decideInTx>>;
+  try {
+    result = await decideInTx(db, actor, id, decision, opts);
+  } catch (err) {
+    // An approval the business rules refuse (e.g. the day is now full) leaves the request waiting;
+    // record why so the Owner sees it in the list (portal only, never emailed).
+    if (decision === 'approve' && err instanceof ConflictError) {
+      await db
+        .update(approvalRequests)
+        .set({ lastError: err.message.slice(0, 500), lastErrorAt: opts.now })
+        .where(and(eq(approvalRequests.id, id), eq(approvalRequests.status, 'pending')));
+    }
+    throw err;
+  }
+  return afterDecision(db, decision, result);
+}
+
+async function decideInTx(
+  db: Db,
+  actor: Actor,
+  id: string,
+  decision: ApprovalDecision,
+  opts: { reason: string | null; now: Date; ownCustomerOnly?: string },
+) {
+  return db.transaction(async (tx) => {
     const [row] = await tx.select().from(approvalRequests).where(eq(approvalRequests.id, id)).for('update');
     // A customer only ever sees their own requests; anything else simply doesn't exist for them.
     if (!row || (opts.ownCustomerOnly && row.customerId !== opts.ownCustomerOnly)) throw new NotFoundError('Request');
@@ -237,6 +261,8 @@ async function decide(
         decidedBy: actor.kind === 'user' ? actor.userId : null,
         decidedAt: opts.now,
         reason: decision === 'approve' || decision === 'reject' ? opts.reason : null,
+        lastError: null,
+        lastErrorAt: null,
       })
       .where(and(eq(approvalRequests.id, row.id), eq(approvalRequests.status, 'pending')))
       .returning();
@@ -250,7 +276,13 @@ async function decide(
     });
     return { def, record: toRecord(updated, record.payload) };
   });
+}
 
+async function afterDecision(
+  db: Db,
+  decision: ApprovalDecision,
+  result: { def: ApprovalType<unknown>; record: ApprovalRecord<unknown> },
+) {
   // After commit: the type's own follow-up (checkouts, its own emails), then the generic email.
   const { def, record } = result;
   const after = def.afterCommit?.[decision];
@@ -397,6 +429,9 @@ export function myPendingApprovals(db: Db, actor: Actor, opts: { type?: string }
 }
 
 export type OwnerApprovalItem = CustomerApprovalItem & {
+  /** Why the last approval attempt failed (e.g. the day is now full); Owner only. */
+  lastError: string | null;
+  lastErrorAt: Date | null;
   customerId: string;
   customerName: string;
   /** From the type's optional ownerContext loader, e.g. the other dogs booked that day. */
@@ -459,6 +494,8 @@ export async function ownerApprovalList(
       createdAt: r.createdAt,
       decidedAt: r.decidedAt,
       reason: r.reason,
+      lastError: r.lastError,
+      lastErrorAt: r.lastErrorAt,
       customerId: r.customerId,
       customerName,
       context: context.get(r.id) ?? [],

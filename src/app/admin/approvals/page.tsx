@@ -46,6 +46,13 @@ export default async function ApprovalsPage({
                 <br />
                 <span className={s.hint}>Sent {formatDateTimeLondon(r.createdAt)}</span>
               </p>
+              {r.lastError ? (
+                <Alert tone="warning">
+                  Couldn’t approve this
+                  {r.lastErrorAt ? ` (tried ${formatDateTimeLondon(r.lastErrorAt)})` : ''}: {r.lastError} It’s still
+                  waiting – decline it, or approve again once that’s sorted.
+                </Alert>
+              ) : null}
               {r.context.map((c) => (
                 <div key={c.heading}>
                   <h3>{c.heading}</h3>

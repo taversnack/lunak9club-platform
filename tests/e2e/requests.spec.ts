@@ -76,6 +76,29 @@ test('Owner declines a request with a note: polite email, note in the portal onl
   await axe(page);
 });
 
+test('customer withdraws a waiting request from Your requests', async ({ page }) => {
+  await signIn(page, DEMO_CUSTOMER_2.email, DEMO_CUSTOMER_2.password);
+  await expect(page).toHaveURL(/\/account$/);
+  await request(page, 'Rex', dayIso);
+  await page.getByRole('button', { name: 'Send booking request' }).click();
+  await expect(page.getByText('Booking request sent')).toBeVisible();
+  await page.goto('/account/requests');
+  await expect(page.getByRole('heading', { name: 'Waiting (1)' })).toBeVisible();
+  await axe(page);
+  await page
+    .getByRole('link', { name: /^Withdraw/ })
+    .first()
+    .click();
+  await expect(page.getByRole('heading', { name: 'Withdraw this request?' })).toBeVisible();
+  await axe(page);
+  await page.getByRole('button', { name: 'Yes, withdraw the request' }).click();
+  await expect(page).toHaveURL(/\/account\/requests\?withdrawn=1/);
+  await expect(page.getByText('Your request has been withdrawn')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Waiting (0)' })).toBeVisible();
+  await expect(page.getByText('Withdrawn').first()).toBeVisible();
+  await signOut(page);
+});
+
 test('Give place: a full day, the waitlist and the Owner choosing the dog', async ({ page }, info) => {
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);

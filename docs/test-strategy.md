@@ -84,6 +84,8 @@
 | Request creates `requested` days + one approval request in one transaction, holds capacity, fixed price, wording in the email, owner note never emailed | `tests/integration/booking-requests.test.ts` |
 | Approve → pending_payment + pay link (“pay to secure”), £0/membership → confirmed, vaccination re-check, reject, decline one day, withdraw (whole/day), expiry at cut-off, one pending request per subject, other customers refused | `tests/integration/booking-requests.test.ts` |
 | Manual waitlist: join, leave, Owner removes without charge, Give place (priced and membership), Give place blocked up front for a dog failing the vaccination check (reason shown, nothing changes), no automatic offers | `tests/integration/booking-requests.test.ts`, `tests/integration/bookings.test.ts` |
+| Failed approval attempt recorded (`last_error`) and shown to the Owner only, cleared on decision; Owner context lists other dogs booked that day with links | `tests/integration/booking-requests.test.ts` |
+| Customer “Your requests” page: list and withdraw any waiting request | `tests/e2e/requests.spec.ts`, a11y scan |
 | Customer request → Owner approves on Requests → pay; wording on form, confirmation screen and email; withdraw; leave waitlist; Give place (button disabled with the vaccination reason, then enabled) | `tests/e2e/booking.spec.ts`, `tests/e2e/requests.spec.ts` |
 | Accessibility of request, review, bookings, leave/withdraw and Requests pages | a11y scan (`tests/e2e/a11y.spec.ts`) |
 

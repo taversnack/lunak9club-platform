@@ -22,7 +22,13 @@ import { uploadVaccinationRecord } from '@/server/services/documents';
 import { acceptTerms, myTermsStatus } from '@/server/services/policies';
 import { recordAssessment, reviewSubmission, setDogStatus } from '@/server/services/owner-review';
 import { cancelMyBooking, createMyBookings, leaveWaitlist, myBookings } from '@/server/services/bookings';
-import { giveWaitlistPlace, ownerCancel, ownerDay, setDayCapacity } from '@/server/services/owner-bookings';
+import {
+  giveWaitlistPlace,
+  ownerCancel,
+  ownerCreateBooking,
+  ownerDay,
+  setDayCapacity,
+} from '@/server/services/owner-bookings';
 import {
   approveApprovalRequest,
   createApprovalRequest,
@@ -407,6 +413,56 @@ describe('booking requests (D76)', () => {
   });
 });
 
+describe('Owner context on Requests (Developer 1 gap c)', () => {
+  it('lists the other dogs already booked that day, with links to them and the day view', async () => {
+    const date = weekdayAhead(11);
+    await ownerCreateBooking(db(), owner, { dogId: bobDog, date, session: 'full' });
+    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [date], session: 'am', taxi: false });
+    const item = (await ownerApprovalList(db(), owner)).find((x) => x.id === r.requestId)!;
+    const day = item.context.find((c) => c.heading.includes('dogs already booked'))!;
+    expect(day.lines.join(' ')).toMatch(/Already booked: Rex \(Full day, awaiting payment\)/);
+    expect(day.lines.join(' ')).not.toMatch(/Already booked:.*Pip/);
+    expect(day.links).toEqual(
+      expect.arrayContaining([
+        { label: expect.stringMatching(/^Day view/), href: `/admin/bookings?date=${date}` },
+        { label: 'Rex', href: `/admin/dogs/${bobDog}` },
+      ]),
+    );
+    await withdrawMyApprovalRequest(db(), carol, r.requestId!);
+  });
+});
+
+describe('failed approvals (Developer 1 gap b)', () => {
+  it('records why an approval failed, shows it to the Owner, and clears it once approved', async () => {
+    const date = weekdayAhead(6);
+    const moss = await onboardedDog(carol, 'Moss');
+    const r = await createMyBookings(db(), carol, { dogIds: [moss], dates: [date], session: 'full', taxi: false });
+    const kc = and(
+      eq(complianceSubmissions.dogId, moss),
+      eq(complianceSubmissions.requirementKey, 'vaccination_kennel_cough'),
+    );
+    const [before] = await db().select().from(complianceSubmissions).where(kc);
+    await db()
+      .update(complianceSubmissions)
+      .set({ expiresOn: addDays(date, -1) })
+      .where(kc);
+    await expect(approveApprovalRequest(db(), owner, r.requestId!)).rejects.toBeInstanceOf(ConflictError);
+    const listed = (await ownerApprovalList(db(), owner)).find((i) => i.id === r.requestId)!;
+    expect(listed.status).toBe('pending');
+    expect(listed.lastError).toMatch(/Moss on .*runs out before this date/);
+    expect(listed.lastErrorAt).toBeInstanceOf(Date);
+    // Customers never see it.
+    const mine = (await myApprovalRequests(db(), carol)).find((i) => i.id === r.requestId)!;
+    expect(mine).not.toHaveProperty('lastError');
+
+    await db().update(complianceSubmissions).set({ expiresOn: before!.expiresOn }).where(kc);
+    await approveApprovalRequest(db(), owner, r.requestId!);
+    const [row] = await db().select().from(approvalRequests).where(eq(approvalRequests.id, r.requestId!));
+    expect(row!.status).toBe('approved');
+    expect(row!.lastError).toBeNull();
+  });
+});
+
 describe('manual waitlist (D81, D82)', () => {
   it('Give place makes its own booking with a pay link; nothing is automatic', async () => {
     const date = weekdayAhead(30);
@@ -434,7 +490,7 @@ describe('manual waitlist (D81, D82)', () => {
   });
 
   it('Give place blocks a dog failing the vaccination check up front, with the reason (D82)', async () => {
-    const date = weekdayAhead(40);
+    const date = weekdayAhead(7);
     const pip = await onboardedDog(bob, 'Pip');
     await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), bob, { dogIds: [pip], dates: [date], session: 'full', taxi: false });

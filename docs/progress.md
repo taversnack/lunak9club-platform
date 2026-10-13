@@ -83,7 +83,8 @@
   - `booking.request`: customer bookings (ad hoc, members' extra days, trial days) become `requested` days that hold their place with the price fixed at request time; no payment until approved. Wording “does not secure your booking” on the form, the confirmation screen and a new confirmation email.
   - Approve: vaccination re-check; priced days held as `pending_payment` (24 h or until the session starts, min 31 min) with a pay link email (“pay to secure”, deadline in London time); £0 and membership days confirmed. Decline (whole request or one day), withdraw, expiry at the cut-off (one email per request). Owner notes stay in the portal.
   - Manual waitlist: join when full, leave any time, Owner removes; **Give place** makes its own booking and is blocked up front (reason shown, button disabled, refused on the server) for a dog failing the vaccination check. Waitlist offers, offer warnings and the offer-hours setting are retired.
-  - **Migration 0016 pending** – generated only after Developer 1's 0015 (PR #4) is on main (see `drizzle/NOTES.md`).
+  - Customer **Your requests** page (all approval types) with a withdraw confirmation; a failed approval attempt (e.g. a vaccination ran out) keeps the request waiting and shows the Owner why (`last_error`).
+  - Migration `0016_booking_approvals`, generated after Developer 1's 0015 (PR #4) merged (see `drizzle/NOTES.md`).
 
 ## Verification (26 Sep 2026, cloud build workspace)
 Phase 7 (4 Oct): `pnpm verify` → OVERALL PASS. 93 unit, 116 integration/authz (incl. 12 welfare/privacy), E2E incident → customer acknowledgement → daily check → data download on mobile + desktop; a11y scans on all new pages.
@@ -105,7 +106,7 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 
 ## Current
 - Phase 7 done; awaiting Owner review. Next: Phase 8 (hardening and launch).
-- Booking requests and approvals (D76–D85) built on `dev2/booking-approval`; migration 0016 and the PR wait for PR #4 (0015).
+- Booking requests and approvals (D76–D85) built on `dev2/booking-approval` with migration 0016 (draft PR). Developer 1 regenerates their next migration as 0017.
 - Dog register fields (D68–D72) built on `dev2/dog-register-fields` (draft PR). **Developer 1’s migration must be regenerated as 0015 after 0014 lands** (see `drizzle/NOTES.md`); Developer 1 uses decision IDs from D73.
 
 - **Membership workflow (Developer 1, branch dev1/membership-workflow, 13 Oct 2026, local only):** Owner-created accounts with 7-day invites (D86), per-dog offers and `membership.days` approvals (D87), monthly confirmation and job (D88), Owner day changes (D89), `membership.move_once` (D90), portal-only decision notes (D91). Migration 0017. Built on Developer 2's approval requests (merged from dev2/booking-approval 58c6d2d; its migration 0016 isn't committed yet).
