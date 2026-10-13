@@ -5,6 +5,7 @@ import { DEMO_CUSTOMER, DEMO_OWNER, signIn } from './helpers';
 const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
 async function scan(page: import('@playwright/test').Page) {
+  await page.waitForFunction(() => document.title !== '', undefined, { timeout: 5000 }).catch(() => undefined);
   const r = await new AxeBuilder({ page }).withTags(WCAG).analyze();
   expect(r.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
 }

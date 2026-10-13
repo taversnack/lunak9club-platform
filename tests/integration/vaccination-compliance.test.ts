@@ -39,7 +39,7 @@ import { addDays, formatUkDate, londonDate, londonInstant } from '@/domain/time'
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
-import { approvedDog, approveVaccinations, readyCustomer, releaseMemberDays } from '../support/onboard';
+import { approvedDog, approveVaccinations, readyCustomer, releaseMemberDays, clearDayLimits } from '../support/onboard';
 
 const db = () => getDb();
 const mail = new MemoryEmailProvider();
@@ -359,6 +359,8 @@ describe('Give place (D82, D73)', () => {
 });
 
 describe('membership book-ahead (D47, D73, D74)', () => {
+  // Earlier tests in this file leave small day limits; membership days can't be set onto a full day (D90).
+  beforeAll(() => clearDayLimits(db()));
   it('skips days inside the first-course wait and books from day 14', async () => {
     const dog = await approvedDog(db(), owner, cass, 'Member Moss');
     const done = addDays(today, -1);
