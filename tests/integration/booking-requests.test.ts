@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -41,7 +41,16 @@ import {
 import { BOOKING_REQUEST, bookingSubjectKey, expireBookingRequests } from '@/server/services/booking-requests';
 import { addCustomerRate } from '@/server/services/pricing';
 import { runTick } from '@/server/services/jobs';
-import { releaseExpiredCheckouts } from '@/server/services/payments';
+import {
+  bookingsMissingPayLink,
+  checkoutRetry,
+  myHoldsWithoutPayLink,
+  PayLinkUnavailableError,
+  payForMyBooking,
+  releaseExpiredCheckouts,
+  resendPayLink,
+  resumeCheckoutUrl,
+} from '@/server/services/payments';
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError, type Actor } from '@/server/policy/authorize';
 import { addDays, londonDate } from '@/domain/time';
@@ -49,7 +58,7 @@ import { isoWeekday } from '@/domain/booking/rules';
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '@/domain/booking/wording';
 import { formatDateTimeLondon } from '@/ui/format';
 import { MemoryEmailProvider } from '../support/memory-email';
-import { payOpenCheckouts } from '../support/payments';
+import { payOpenCheckouts, simulated } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
 
 const db = () => getDb();
@@ -66,6 +75,8 @@ function weekdayAhead(n: number): string {
   return d;
 }
 
+/** Reused by the pay-link tests (other customers' dogs) so they need no extra dates. */
+let payDate = '';
 let owner: TestUser;
 let alice: TestUser;
 let bob: TestUser;
@@ -205,6 +216,7 @@ describe('booking requests (D76)', () => {
 
   it('approve → held for payment with a pay link, deadline and "pay to secure" → paid → confirmed', async () => {
     const date = weekdayAhead(8);
+    payDate = date;
     const r = await createMyBookings(db(), alice, {
       dogIds: [aliceDog, aliceDog2],
       dates: [date],
@@ -432,6 +444,99 @@ describe('Owner context on Requests (Developer 1 gap c)', () => {
   });
 });
 
+describe('pay links when the card service is down', () => {
+  const down = () => new Error('provider unreachable');
+  const attemptsFor = (bookingId: string) =>
+    db().select().from(checkoutAttempts).where(eq(checkoutAttempts.bookingId, bookingId));
+  // The date from the approve-and-pay test, with other dogs, so no extra dates are used.
+  async function approvedWith(failures: number, who: TestUser, dog: string) {
+    checkoutRetry.delayMs = 0;
+    const date = payDate;
+    const r = await createMyBookings(db(), who, { dogIds: [dog], dates: [date], session: 'full', taxi: false });
+    const spy = vi.spyOn(simulated(), 'createCheckout');
+    for (let i = 0; i < failures; i++) spy.mockRejectedValueOnce(down());
+    mail.sent.length = 0;
+    await approveApprovalRequest(db(), owner, r.requestId!);
+    spy.mockRestore();
+    return { ...r, date, spy };
+  }
+
+  it('retries opening the checkout and sends the pay link once it works', async () => {
+    const r = await approvedWith(2, bob, await onboardedDog(bob, 'Retry'));
+    const attempts = await attemptsFor(r.bookingId);
+    expect(attempts.map((a) => a.status)).toEqual(['open']);
+    expect(mail.sent.filter((m) => m.to === bob.email && m.template === 'booking.request-approved')).toHaveLength(1);
+    await payOpenCheckouts(db());
+    expect((await rowsOf(r.bookingId))[0]!.status).toBe('confirmed');
+  });
+
+  it('a persistent failure keeps the hold, shows the Owner, and the customer can pay on demand without duplicates', async () => {
+    const r = await approvedWith(3, bob, bobDog);
+    // The request is approved and the place held, but there's no working link and no pay email.
+    expect((await requestOf(r.requestId!)).status).toBe('approved');
+    const [row] = await rowsOf(r.bookingId);
+    expect(row!.status).toBe('pending_payment');
+    const [failed] = await attemptsFor(r.bookingId);
+    expect(failed!.status).toBe('failed');
+    expect(mail.sent.some((m) => m.to === bob.email && m.template === 'booking.request-approved')).toBe(false);
+    const audits = await db().select().from(auditEvents).where(eq(auditEvents.entityId, r.bookingId));
+    expect(audits.map((a) => a.action)).toContain('payment.checkout_failed');
+    // The Owner sees it on Requests and on the day view.
+    const missing = await bookingsMissingPayLink(db(), owner);
+    expect(missing.find((m) => m.bookingId === r.bookingId)?.failedAt).toBeInstanceOf(Date);
+    const day = await ownerDay(db(), owner, r.date);
+    expect(day.booked.find((x) => x.id === row!.id)?.payLinkMissing).toBe(true);
+    // The customer sees "Pay now"; while the service is still down they get a friendly error and keep the place.
+    expect((await myHoldsWithoutPayLink(db(), bob)).map((h) => h.bookingId)).toContain(r.bookingId);
+    const spy = vi.spyOn(simulated(), 'createCheckout').mockRejectedValue(down());
+    await expect(payForMyBooking(db(), bob, r.bookingId)).rejects.toBeInstanceOf(PayLinkUnavailableError);
+    await expect(payForMyBooking(db(), bob, r.bookingId)).rejects.toThrow(/couldn’t create your payment link/);
+    spy.mockRestore();
+    expect((await rowsOf(r.bookingId))[0]!.status).toBe('pending_payment');
+    // Service back: the old link in any email (failed attempt id) now creates one lazily…
+    const first = await resumeCheckoutUrl(db(), bob, failed!.id);
+    expect(first.url).toMatch(/\/dev\/checkout\//);
+    // …and "Pay now", a second click and the Owner's resend all reuse it.
+    const again = await payForMyBooking(db(), bob, r.bookingId);
+    expect(again.url).toBe(first.url);
+    mail.sent.length = 0;
+    await resendPayLink(db(), owner, r.bookingId);
+    const open = (await attemptsFor(r.bookingId)).filter((a) => a.status === 'open');
+    expect(open).toHaveLength(1);
+    const resent = mail.sent.find((m) => m.to === bob.email && m.template === 'booking.request-approved')!;
+    expect(resent.text).toContain(`/api/payments/pay/${open[0]!.id}`);
+    expect(resent.text).not.toMatch(/unreachable|provider|error/i);
+    expect((await bookingsMissingPayLink(db(), owner)).some((m) => m.bookingId === r.bookingId)).toBe(false);
+    await expect(resendPayLink(db(), bob, r.bookingId)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(payForMyBooking(db(), alice, r.bookingId)).rejects.toBeInstanceOf(NotFoundError);
+    await payOpenCheckouts(db());
+    expect((await rowsOf(r.bookingId))[0]!.status).toBe('confirmed');
+  });
+
+  it('the Owner resend creates the missing link; simultaneous clicks make one checkout', async () => {
+    const r = await approvedWith(3, bob, await onboardedDog(bob, 'Twin'));
+    const both = await Promise.allSettled([
+      payForMyBooking(db(), bob, r.bookingId),
+      payForMyBooking(db(), bob, r.bookingId),
+    ]);
+    expect(both.some((b) => b.status === 'fulfilled')).toBe(true);
+    mail.sent.length = 0;
+    await resendPayLink(db(), owner, r.bookingId);
+    expect((await attemptsFor(r.bookingId)).filter((a) => a.status === 'open')).toHaveLength(1);
+    expect(mail.sent.some((m) => m.to === bob.email && m.template === 'booking.request-approved')).toBe(true);
+    await payOpenCheckouts(db());
+  });
+
+  it('an unpaid hold with no link lapses at its deadline', async () => {
+    const r = await approvedWith(3, bob, await onboardedDog(bob, 'Lapse'));
+    const [row] = await rowsOf(r.bookingId);
+    mail.sent.length = 0;
+    await releaseExpiredCheckouts(db(), new Date(row!.offerExpiresAt!.getTime() + 1000));
+    expect((await rowsOf(r.bookingId))[0]!.status).toBe('cancelled');
+    expect(mail.sent.some((m) => m.to === bob.email)).toBe(true);
+  });
+});
+
 describe('failed approvals (Developer 1 gap b)', () => {
   it('records why an approval failed, shows it to the Owner, and clears it once approved', async () => {
     const date = weekdayAhead(6);
@@ -572,5 +677,6 @@ describe('approvals authorisation', () => {
       sql`select count(*)::int as n from approval_requests where status = 'pending'`,
     );
     expect(n.rows[0]!.n).toBeGreaterThan(0);
+    await withdrawMyApprovalRequest(db(), bob, r.requestId!);
   });
 });

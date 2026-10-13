@@ -15,6 +15,7 @@ import {
   dayCapacityAction,
   internalNoteAction,
   givePlaceAction,
+  resendPayLinkAction,
   ownerCancelAction,
 } from '../actions';
 
@@ -153,7 +154,20 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
               ) : r.warning ? (
                 <Alert tone="warning">{r.warning}</Alert>
               ) : null}
-              {r.status === 'pending_payment' && r.offerExpiresAt ? (
+              {r.status === 'pending_payment' && r.offerExpiresAt && r.payLinkMissing ? (
+                <>
+                  <Alert tone="warning">
+                    The payment link couldn’t be created, so the customer can’t pay yet. The place is held until{' '}
+                    {formatDateTimeLondon(r.offerExpiresAt)}.
+                  </Alert>
+                  <ActionForm action={resendPayLinkAction}>
+                    <input type="hidden" name="bookingId" value={r.bookingId} />
+                    <SubmitButton variant="secondary">
+                      Resend pay link <span className="visually-hidden">for {r.dogName}</span>
+                    </SubmitButton>
+                  </ActionForm>
+                </>
+              ) : r.status === 'pending_payment' && r.offerExpiresAt ? (
                 <p className={s.hint}>Payment link sent – held until {formatDateTimeLondon(r.offerExpiresAt)}.</p>
               ) : null}
               {r.overrideReason ? <p className={s.hint}>Override: {r.overrideReason}</p> : null}

@@ -7,7 +7,7 @@ import { ActionForm, SubmitButton } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { myBookings } from '@/server/services/bookings';
-import { myOpenCheckouts } from '@/server/services/payments';
+import { myHoldsWithoutPayLink, myOpenCheckouts } from '@/server/services/payments';
 import { pounds } from '@/domain/pricing/engine';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
@@ -37,12 +37,13 @@ export default async function BookingsPage({
 }) {
   const actor = await requirePermission('account.access');
   const sp = await searchParams;
-  const [{ upcoming, past }, checkouts, requests, decided, moves] = await Promise.all([
+  const [{ upcoming, past }, checkouts, requests, decided, moves, unlinked] = await Promise.all([
     myBookings(getDb(), actor),
     myOpenCheckouts(getDb(), actor),
     myApprovalRequests(getDb(), actor, { type: 'booking.request', status: 'pending' }),
     myApprovalRequests(getDb(), actor, { type: 'booking.request', status: 'all' }),
     myPendingApprovals(getDb(), actor, { type: 'membership.move_once' }),
+    myHoldsWithoutPayLink(getDb(), actor),
   ]);
   // The Owner's note on a decided request is shown here only – never emailed (D80).
   const notes = decided.filter((r) => r.status !== 'pending' && r.reason).slice(0, 5);
@@ -105,6 +106,25 @@ export default async function BookingsPage({
           The time to pay ran out, so the places were released. You can book again.
         </Alert>
       ) : null}
+      {sp.payment === 'unavailable' ? (
+        <Alert tone="warning" title="We couldn’t create your payment link">
+          Sorry – we couldn’t create your payment link just now. Your places are still held. Please try again in a few
+          minutes.
+        </Alert>
+      ) : null}
+      {unlinked.map((u) => (
+        <Alert key={u.bookingId} tone="warning" title={`Waiting for payment: ${pounds(u.amountPence)}`}>
+          <p>
+            Day care for {u.dogs} ({u.days} {u.days === 1 ? 'session' : 'sessions'}). You need to pay to secure this
+            booking. Held until {formatDateTimeLondon(u.holdUntil)}, then released.
+          </p>
+          <p>
+            <a className={buttonClass('primary')} href={`/api/payments/pay-booking/${u.bookingId}`}>
+              Pay now {pounds(u.amountPence)} by card
+            </a>
+          </p>
+        </Alert>
+      ))}
       {checkouts.map((c) => (
         <Alert key={c.id} tone="warning" title={`Waiting for payment: ${pounds(c.amountPence)}`}>
           <p>

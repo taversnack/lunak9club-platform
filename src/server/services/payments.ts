@@ -1,8 +1,10 @@
 import 'server-only';
-import { and, asc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
 import {
+  approvalRequests,
   bookingDogs,
+  bookings,
   checkoutAttempts,
   customers,
   dogs,
@@ -86,9 +88,30 @@ const describeDays = (days: { dogName: string }[]) => {
   return `day care for ${names} (${days.length} ${days.length === 1 ? 'session' : 'sessions'})`;
 };
 
+/** Pause between tries when the payment provider can't be reached (tests set it to 0). */
+export const checkoutRetry = { delayMs: 300 };
+
+/** The provider couldn't create a pay link; any places stay held (the Owner can resend, the customer can retry). */
+export class PayLinkUnavailableError extends ConflictError {
+  constructor(untilText: string | null) {
+    super(
+      untilText
+        ? `We couldn’t create your payment link just now. Please try again in a few minutes – your places are held until ${untilText}.`
+        : 'We couldn’t create your payment link just now. Please try again in a few minutes.',
+    );
+    this.name = 'PayLinkUnavailableError';
+  }
+}
+
 /**
- * Open a card checkout for the places held on a booking. If the provider can't be reached the
- * holds are released straight away so nothing is left half-booked.
+ * Open a card checkout for the places held on a booking, or reuse the one already open for the
+ * same amount (so a retry, a resend or a second click never makes a duplicate). Only days still
+ * within their hold are charged.
+ *
+ * The provider is tried `tries` times. If it still can't be reached: by default the holds are
+ * released so nothing is left half-booked; with `keepHoldOnFailure` (approved requests, places
+ * given from the waitlist, customer "Pay now", Owner "Resend pay link") the places stay held until
+ * their deadline, the failure is recorded and PayLinkUnavailableError is thrown.
  */
 export async function startBookingCheckout(
   db: Db,
@@ -100,72 +123,391 @@ export async function startBookingCheckout(
     notifyByEmail?: boolean;
     /** The email follows an approved booking request (D80): "pay to secure" wording. */
     approvedRequest?: boolean;
+    tries?: number;
+    keepHoldOnFailure?: boolean;
   },
   now = new Date(),
 ) {
-  const days = await pendingDays(db, opts.bookingId);
+  const days = (await pendingDays(db, opts.bookingId)).filter((d) => !d.holdUntil || d.holdUntil > now);
   const amount = days.reduce((a, d) => a + d.totalPence, 0);
   if (!days.length || amount <= 0) return null;
   const who = await customerContact(db, opts.customerId);
   const provider = getPaymentProvider();
   const description = `Luna’s K9 Club – ${describeDays(days)}`;
-  const [attempt] = await db
-    .insert(checkoutAttempts)
-    .values({
-      purpose: 'booking',
-      customerId: opts.customerId,
-      bookingId: opts.bookingId,
-      amountPence: amount,
-      description,
-      provider: provider.name,
-      expiresAt: opts.expiresAt,
-      createdBy: opts.createdBy,
-    })
-    .returning();
-  try {
-    const s = await provider.createCheckout({
-      reference: attempt!.id,
-      amountPence: amount,
-      description,
-      customerEmail: who.email,
-      successUrl: appUrl(`/api/payments/return?attempt=${attempt!.id}`),
-      cancelUrl: appUrl(`/api/payments/return?attempt=${attempt!.id}&cancelled=1`),
-      expiresAt: opts.expiresAt,
-    });
+  const expiresAt = opts.expiresAt;
+  const notify = async (attemptId: string, until: Date) => {
+    if (!opts.notifyByEmail) return;
+    await sendSafely(
+      paymentLinkMessage(
+        who.email,
+        firstNameOf(who.name),
+        {
+          amountText: pounds(amount),
+          forText: describeDays(days),
+          untilText: formatDateTimeLondon(until),
+          approved: opts.approvedRequest,
+        },
+        appUrl(`/api/payments/pay/${attemptId}`),
+      ),
+    );
+  };
+
+  // One booking, one live checkout: serialise on the booking and reuse what's already open.
+  const claim = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`checkout:${opts.bookingId}`}))`);
+    const live = await tx
+      .select()
+      .from(checkoutAttempts)
+      .where(
+        and(
+          eq(checkoutAttempts.bookingId, opts.bookingId),
+          inArray(checkoutAttempts.status, ['open', 'creating']),
+          gt(checkoutAttempts.expiresAt, now),
+        ),
+      )
+      .orderBy(desc(checkoutAttempts.createdAt));
+    const stale: string[] = [];
+    for (const a of live) {
+      if (a.status === 'open' && a.url && a.amountPence === amount) return { reuse: a, stale };
+      // Another request is creating the link right now.
+      if (a.status === 'creating' && a.amountPence === amount && a.createdAt > new Date(now.getTime() - 2 * 60_000))
+        return { busy: true as const, stale };
+      // Wrong amount (a day was cancelled since) or abandoned: close it without touching the holds.
+      await tx
+        .update(checkoutAttempts)
+        .set({ status: 'expired', completedAt: now })
+        .where(eq(checkoutAttempts.id, a.id));
+      if (a.providerSessionId) stale.push(a.providerSessionId);
+    }
+    const [attempt] = await tx
+      .insert(checkoutAttempts)
+      .values({
+        purpose: 'booking',
+        customerId: opts.customerId,
+        bookingId: opts.bookingId,
+        amountPence: amount,
+        description,
+        provider: provider.name,
+        expiresAt,
+        createdBy: opts.createdBy,
+      })
+      .returning();
+    return { attempt: attempt!, stale };
+  });
+  for (const sid of claim.stale) await provider.expireCheckout(sid).catch(() => undefined);
+  if ('reuse' in claim && claim.reuse) {
+    await notify(claim.reuse.id, claim.reuse.expiresAt);
+    return { attemptId: claim.reuse.id, url: claim.reuse.url!, amountPence: amount, reused: true };
+  }
+  if ('busy' in claim) throw new ConflictError('Your payment link is being prepared. Please try again in a moment.');
+  const attempt = claim.attempt!;
+
+  const tries = Math.max(1, opts.tries ?? 1);
+  let session: { id: string; url: string } | null = null;
+  let failures = 0;
+  for (let i = 0; i < tries && !session; i++) {
+    try {
+      session = await provider.createCheckout({
+        reference: attempt.id,
+        amountPence: amount,
+        description,
+        customerEmail: who.email,
+        successUrl: appUrl(`/api/payments/return?attempt=${attempt.id}`),
+        cancelUrl: appUrl(`/api/payments/return?attempt=${attempt.id}&cancelled=1`),
+        expiresAt,
+      });
+    } catch (err) {
+      failures++;
+      logger.warn(
+        { err: err instanceof Error ? err.name : 'unknown', try: i + 1, of: tries },
+        'checkout could not be started',
+      );
+      if (i + 1 < tries && checkoutRetry.delayMs > 0)
+        await new Promise((r) => setTimeout(r, checkoutRetry.delayMs * (i + 1)));
+    }
+  }
+
+  if (session) {
     await db
       .update(checkoutAttempts)
-      .set({ status: 'open', providerSessionId: s.id, url: s.url })
-      .where(eq(checkoutAttempts.id, attempt!.id));
+      .set({ status: 'open', providerSessionId: session.id, url: session.url })
+      .where(eq(checkoutAttempts.id, attempt.id));
     await recordAudit(db, {
       actor: SYSTEM,
       action: 'payment.checkout_started',
       entityType: 'checkout_attempt',
-      entityId: attempt!.id,
-      metadata: { purpose: 'booking', amountPence: amount },
+      entityId: attempt.id,
+      metadata: { purpose: 'booking', amountPence: amount, retries: failures },
     });
-    if (opts.notifyByEmail)
-      await sendSafely(
-        paymentLinkMessage(
-          who.email,
-          firstNameOf(who.name),
-          {
-            amountText: pounds(amount),
-            forText: describeDays(days),
-            untilText: formatDateTimeLondon(opts.expiresAt),
-            approved: opts.approvedRequest,
-          },
-          appUrl(`/api/payments/pay/${attempt!.id}`),
-        ),
-      );
-    return { attemptId: attempt!.id, url: s.url, amountPence: amount };
-  } catch (err) {
-    logger.error({ err: err instanceof Error ? err.name : 'unknown' }, 'checkout could not be started');
-    await db.update(checkoutAttempts).set({ status: 'failed' }).where(eq(checkoutAttempts.id, attempt!.id));
-    await releaseHolds(db, opts.bookingId, now, 'Card payment unavailable');
-    throw new ConflictError(
-      'Card payments aren’t available right now, so nothing has been booked. Please try again shortly.',
-    );
+    await notify(attempt.id, expiresAt);
+    return { attemptId: attempt.id, url: session.url, amountPence: amount, reused: false };
   }
+
+  logger.error({ tries }, 'checkout could not be started after retries');
+  await db.update(checkoutAttempts).set({ status: 'failed' }).where(eq(checkoutAttempts.id, attempt.id));
+  await recordAudit(db, {
+    actor: SYSTEM,
+    action: 'payment.checkout_failed',
+    entityType: 'booking',
+    entityId: opts.bookingId,
+    metadata: { tries, keptHold: Boolean(opts.keepHoldOnFailure) },
+  });
+  if (opts.keepHoldOnFailure) throw new PayLinkUnavailableError(formatDateTimeLondon(expiresAt));
+  await releaseHolds(db, opts.bookingId, now, 'Card payment unavailable');
+  throw new ConflictError(
+    'Card payments aren’t available right now, so nothing has been booked. Please try again shortly.',
+  );
+}
+
+/** Live holds on a booking: pending_payment days whose deadline hasn't passed. */
+async function liveHolds(db: Db, bookingId: string, now: Date) {
+  const rows = await db
+    .select({ customerId: bookingDogs.customerId, holdUntil: bookingDogs.offerExpiresAt })
+    .from(bookingDogs)
+    .where(
+      and(
+        eq(bookingDogs.bookingId, bookingId),
+        eq(bookingDogs.status, 'pending_payment'),
+        gt(bookingDogs.offerExpiresAt, now),
+      ),
+    );
+  if (!rows.length) return null;
+  const until = rows.map((r) => r.holdUntil!).reduce((a, b) => (a < b ? a : b));
+  return { customerId: rows[0]!.customerId, until };
+}
+
+async function approvedRequestFor(db: Db, bookingId: string) {
+  const [r] = await db
+    .select({ id: approvalRequests.id })
+    .from(approvalRequests)
+    .where(and(eq(approvalRequests.subjectKey, `booking:${bookingId}`), eq(approvalRequests.status, 'approved')))
+    .limit(1);
+  return Boolean(r);
+}
+
+/**
+ * Customer "Pay now" for a booking with places held for payment: reuses the open checkout or
+ * creates one on demand (e.g. if it couldn't be created when the request was approved).
+ */
+export async function payForMyBooking(db: Db, actor: Actor, rawBookingId: string, now = new Date()) {
+  const me = asUser(actor);
+  const customer = await getMyCustomer(db, me);
+  assertAuthorized(me, 'bookings.self.manage', { ownerUserId: customer.userId });
+  const bookingId = idOrNotFound(rawBookingId, 'Booking');
+  const [b] = await db.select({ customerId: bookings.customerId }).from(bookings).where(eq(bookings.id, bookingId));
+  if (!b || b.customerId !== customer.id) throw new NotFoundError('Booking');
+  const hold = await liveHolds(db, bookingId, now);
+  if (!hold) return { url: null, reason: 'expired' as const };
+  const r = await startBookingCheckout(
+    db,
+    {
+      bookingId,
+      customerId: customer.id,
+      createdBy: me.userId,
+      expiresAt: hold.until,
+      tries: 2,
+      keepHoldOnFailure: true,
+    },
+    now,
+  );
+  return r ? { url: r.url, reason: null } : { url: null, reason: 'expired' as const };
+}
+
+/** Owner: email the customer a pay link again, creating the checkout if it's missing. */
+export async function resendPayLink(db: Db, actor: Actor, rawBookingId: string, now = new Date()) {
+  assertAuthorized(actor, 'bookings.manage');
+  const bookingId = idOrNotFound(rawBookingId, 'Booking');
+  const hold = await liveHolds(db, bookingId, now);
+  if (!hold) throw new ConflictError('Nothing on this booking is waiting for payment any more.');
+  const r = await startBookingCheckout(
+    db,
+    {
+      bookingId,
+      customerId: hold.customerId,
+      createdBy: actor.kind === 'user' ? actor.userId : null,
+      expiresAt: hold.until,
+      notifyByEmail: true,
+      approvedRequest: await approvedRequestFor(db, bookingId),
+      tries: 2,
+      keepHoldOnFailure: true,
+    },
+    now,
+  );
+  await recordAudit(db, {
+    actor,
+    action: 'payment.link_resent',
+    entityType: 'booking',
+    entityId: bookingId,
+    metadata: { reused: Boolean(r?.reused) },
+  });
+  return { sent: Boolean(r) };
+}
+
+/**
+ * Owner: bookings with places held for payment but no working pay link (the provider couldn't
+ * be reached). Shown on Requests and the day view with "Resend pay link".
+ */
+export async function bookingsMissingPayLink(db: Db, actor: Actor, opts: { date?: string } = {}, now = new Date()) {
+  assertAuthorized(actor, 'bookings.manage');
+  const rows = await db
+    .select({
+      bookingId: bookingDogs.bookingId,
+      bookingDogId: bookingDogs.id,
+      serviceDate: bookingDogs.serviceDate,
+      dogName: dogs.name,
+      customerName: users.name,
+      holdUntil: bookingDogs.offerExpiresAt,
+    })
+    .from(bookingDogs)
+    .innerJoin(dogs, eq(dogs.id, bookingDogs.dogId))
+    .innerJoin(customers, eq(customers.id, bookingDogs.customerId))
+    .innerJoin(users, eq(users.id, customers.userId))
+    .where(
+      and(
+        eq(bookingDogs.status, 'pending_payment'),
+        gt(bookingDogs.offerExpiresAt, now),
+        opts.date ? eq(bookingDogs.serviceDate, opts.date) : undefined,
+        sql`not exists (select 1 from ${checkoutAttempts} c where c.booking_id = ${bookingDogs.bookingId}
+              and c.status in ('open', 'creating') and c.expires_at > ${now})`,
+      ),
+    )
+    .orderBy(asc(bookingDogs.offerExpiresAt));
+  const failed = rows.length
+    ? await db
+        .select({ bookingId: checkoutAttempts.bookingId, at: sql<Date>`max(${checkoutAttempts.createdAt})` })
+        .from(checkoutAttempts)
+        .where(
+          and(
+            eq(checkoutAttempts.status, 'failed'),
+            inArray(checkoutAttempts.bookingId, [...new Set(rows.map((r) => r.bookingId))]),
+          ),
+        )
+        .groupBy(checkoutAttempts.bookingId)
+    : [];
+  const failedAt = new Map(failed.map((f) => [f.bookingId, f.at]));
+  const byBooking = new Map<
+    string,
+    {
+      bookingId: string;
+      customerName: string;
+      days: string[];
+      holdUntil: Date;
+      failedAt: Date | null;
+      bookingDogIds: string[];
+    }
+  >();
+  for (const r of rows) {
+    const e = byBooking.get(r.bookingId) ?? {
+      bookingId: r.bookingId,
+      customerName: r.customerName,
+      days: [],
+      holdUntil: r.holdUntil!,
+      failedAt: failedAt.get(r.bookingId) ? new Date(failedAt.get(r.bookingId)!) : null,
+      bookingDogIds: [],
+    };
+    e.days.push(`${r.dogName} ${r.serviceDate}`);
+    e.bookingDogIds.push(r.bookingDogId);
+    byBooking.set(r.bookingId, e);
+  }
+  return [...byBooking.values()];
+}
+
+/** The customer's held bookings that have no working pay link yet ("Pay now" creates one). */
+export async function myHoldsWithoutPayLink(db: Db, actor: Actor, now = new Date()) {
+  const me = asUser(actor);
+  const customer = await getMyCustomer(db, me);
+  assertAuthorized(me, 'bookings.self.manage', { ownerUserId: customer.userId });
+  const rows = await db
+    .select({
+      bookingId: bookingDogs.bookingId,
+      dogName: dogs.name,
+      holdUntil: bookingDogs.offerExpiresAt,
+      totalPence: priceSnapshots.totalPence,
+    })
+    .from(bookingDogs)
+    .innerJoin(dogs, eq(dogs.id, bookingDogs.dogId))
+    .innerJoin(priceSnapshots, eq(priceSnapshots.bookingDogId, bookingDogs.id))
+    .where(
+      and(
+        eq(bookingDogs.customerId, customer.id),
+        eq(bookingDogs.status, 'pending_payment'),
+        gt(bookingDogs.offerExpiresAt, now),
+        sql`not exists (select 1 from ${checkoutAttempts} c where c.booking_id = ${bookingDogs.bookingId}
+              and c.status = 'open' and c.expires_at > ${now})`,
+      ),
+    );
+  const out = new Map<
+    string,
+    { bookingId: string; days: number; dogs: Set<string>; amountPence: number; holdUntil: Date }
+  >();
+  for (const r of rows) {
+    const e = out.get(r.bookingId) ?? {
+      bookingId: r.bookingId,
+      days: 0,
+      dogs: new Set(),
+      amountPence: 0,
+      holdUntil: r.holdUntil!,
+    };
+    e.days++;
+    e.dogs.add(r.dogName);
+    e.amountPence += r.totalPence;
+    if (r.holdUntil! < e.holdUntil) e.holdUntil = r.holdUntil!;
+    out.set(r.bookingId, e);
+  }
+  return [...out.values()].map((e) => ({ ...e, dogs: [...e.dogs].join(' and ') }));
+}
+
+/** Scheduler: holds whose deadline passed with no open checkout (the pay link was never created). */
+async function releaseOrphanHolds(db: Db, now: Date) {
+  const due = await db
+    .selectDistinct({ bookingId: bookingDogs.bookingId, customerId: bookingDogs.customerId })
+    .from(bookingDogs)
+    .where(
+      and(
+        eq(bookingDogs.status, 'pending_payment'),
+        lte(bookingDogs.offerExpiresAt, now),
+        sql`not exists (select 1 from ${checkoutAttempts} c where c.booking_id = ${bookingDogs.bookingId}
+              and c.status = 'open')`,
+      ),
+    );
+  let released = 0;
+  for (const d of due) {
+    const n = await db.transaction(async (tx) => {
+      const r = await tx
+        .update(bookingDogs)
+        .set({
+          status: 'cancelled',
+          cancelledAt: now,
+          cancelledBy: null,
+          lateCancellation: false,
+          internalNote: 'Not paid in time',
+          version: sql`${bookingDogs.version} + 1`,
+        })
+        .where(
+          and(
+            eq(bookingDogs.bookingId, d.bookingId),
+            eq(bookingDogs.status, 'pending_payment'),
+            lte(bookingDogs.offerExpiresAt, now),
+          ),
+        )
+        .returning({ id: bookingDogs.id });
+      if (r.length)
+        await recordAudit(tx, {
+          actor: SYSTEM,
+          action: 'payment.hold_released',
+          entityType: 'booking',
+          entityId: d.bookingId,
+          metadata: { released: r.length, reason: 'no_checkout' },
+        });
+      return r.length;
+    });
+    if (n) {
+      const who = await customerContact(db, d.customerId);
+      await sendSafely(holdReleasedMessage(who.email, firstNameOf(who.name), 'your booking', appUrl('/account/book')));
+    }
+    released += n;
+  }
+  return released;
 }
 
 async function releaseHolds(q: Db | Tx, bookingId: string, now: Date, note: string) {
@@ -449,6 +791,7 @@ export async function releaseExpiredCheckouts(db: Db, now = new Date()) {
   for (const a of due)
     released += (await releaseCheckout(db, a.id, { reason: 'Not paid in time', notify: a.purpose === 'booking' }, now))
       .released;
+  released += await releaseOrphanHolds(db, now);
   return { checkouts: due.length, released };
 }
 
@@ -546,9 +889,12 @@ export async function returnFromCheckout(db: Db, actor: Actor, rawId: string, ca
 export async function resumeCheckoutUrl(db: Db, actor: Actor, rawId: string, now = new Date()) {
   const attempt = await loadMyAttempt(db, actor, rawId);
   if (attempt.status === 'paid') return { url: null, reason: 'paid' as const };
-  if (attempt.status !== 'open' || !attempt.url || attempt.expiresAt <= now)
-    return { url: null, reason: 'expired' as const };
-  return { url: attempt.url, reason: null };
+  if (attempt.status === 'open' && attempt.url && attempt.expiresAt > now) return { url: attempt.url, reason: null };
+  // The link in the email still works if the checkout failed or was replaced: make (or reuse) one
+  // for the places still held on that booking.
+  if (attempt.purpose === 'booking' && attempt.bookingId && !hasPermission(actor, 'invoices.manage'))
+    return payForMyBooking(db, actor, attempt.bookingId, now);
+  return { url: null, reason: 'expired' as const };
 }
 
 /** The customer's bookings still waiting for payment. */

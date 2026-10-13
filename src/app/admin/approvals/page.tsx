@@ -6,6 +6,9 @@ import { ActionForm, SubmitButton, TextArea } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { ownerApprovalList } from '@/server/services/approvals';
+import { bookingsMissingPayLink } from '@/server/services/payments';
+import { hasPermission } from '@/server/policy/authorize';
+import { resendPayLinkAction } from '../actions';
 import { formatDateTimeLondon } from '@/ui/format';
 import { approveRequestAction, declineRequestAction } from './actions';
 
@@ -20,6 +23,7 @@ export default async function ApprovalsPage({
   const sp = await searchParams;
   const actor = await requirePermission('approvals.manage');
   const items = await ownerApprovalList(getDb(), actor);
+  const noLink = hasPermission(actor, 'bookings.manage') ? await bookingsMissingPayLink(getDb(), actor) : [];
   return (
     <Stack>
       <h1>Requests</h1>
@@ -32,6 +36,35 @@ export default async function ApprovalsPage({
         <Alert tone="info">
           Request declined. The customer has been emailed; any note shows in their account only.
         </Alert>
+      ) : null}
+      {noLink.length ? (
+        <Card aria-labelledby="no-pay-link">
+          <h2 id="no-pay-link">Payment links that couldn’t be created ({noLink.length})</h2>
+          <p className={s.hint}>
+            These were approved, but the card payment service couldn’t be reached, so the customer has no pay link. The
+            places stay held until the time shown. The customer can also try “Pay now” in their account.
+          </p>
+          <ul className={s.list}>
+            {noLink.map((m) => (
+              <li key={m.bookingId} className={s.listItem} data-testid="pay-link-missing">
+                <span>
+                  <strong>{m.customerName}</strong> · {m.days.join(', ')}
+                  <br />
+                  <span className={s.hint}>
+                    Held until {formatDateTimeLondon(m.holdUntil)}
+                    {m.failedAt ? ` · last tried ${formatDateTimeLondon(m.failedAt)}` : ''}
+                  </span>
+                </span>
+                <ActionForm action={resendPayLinkAction}>
+                  <input type="hidden" name="bookingId" value={m.bookingId} />
+                  <SubmitButton variant="secondary">
+                    Resend pay link <span className="visually-hidden">to {m.customerName}</span>
+                  </SubmitButton>
+                </ActionForm>
+              </li>
+            ))}
+          </ul>
+        </Card>
       ) : null}
       <Card aria-labelledby="waiting">
         <h2 id="waiting">Waiting for you ({items.length})</h2>
