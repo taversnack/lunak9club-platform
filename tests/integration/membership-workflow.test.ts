@@ -27,7 +27,7 @@ import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, londonDate } from '@/domain/time';
 import { MemoryEmailProvider, linkFrom } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
-import { approvedDog, readyCustomer, releaseMemberDays } from '../support/onboard';
+import { approvedDog, readyCustomer, clearDayLimits, releaseMemberDays } from '../support/onboard';
 
 const db = () => getDb();
 const today = londonDate(new Date());
@@ -46,6 +46,7 @@ const sensitive = /password|token=|vaccin|medical|vet/i;
 
 beforeAll(async () => {
   setEmailProvider(mail);
+  await clearDayLimits(db());
   owner = await makeUser(db(), 'owner', 'Olivia Owner');
   cust = await makeUser(db(), 'customer', 'Wendy Workflow');
   other = await makeUser(db(), 'customer', 'Oscar Other');

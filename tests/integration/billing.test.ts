@@ -38,7 +38,7 @@ import { addMonths, formatDocumentNumber, monthOf, monthRange } from '@/domain/b
 import { addDays, londonDate, londonInstant } from '@/domain/time';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
-import { approvedDog, readyCustomer, releaseMemberDays } from '../support/onboard';
+import { approvedDog, readyCustomer, clearDayLimits, releaseMemberDays } from '../support/onboard';
 
 const db = () => getDb();
 const mail = new MemoryEmailProvider();
@@ -99,6 +99,7 @@ async function draftFor(customerUserId: string, month: string) {
 
 beforeAll(async () => {
   setEmailProvider(mail);
+  await clearDayLimits(db());
   owner = await makeUser(db(), 'owner', 'Olive Owner');
   mia = await makeUser(db(), 'customer', 'Mia Member');
   noah = await makeUser(db(), 'customer', 'Noah Other');

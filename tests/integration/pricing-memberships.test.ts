@@ -28,7 +28,7 @@ import { changeEffectiveDate, firstUninvoicedMonthStart } from '@/domain/members
 import { addDays, londonDate } from '@/domain/time';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
-import { approvedDog, readyCustomer, releaseMemberDays } from '../support/onboard';
+import { approvedDog, readyCustomer, clearDayLimits, releaseMemberDays } from '../support/onboard';
 
 const db = () => getDb();
 const today = londonDate(new Date());
@@ -55,6 +55,7 @@ const mail = new MemoryEmailProvider();
 
 beforeAll(async () => {
   setEmailProvider(mail);
+  await clearDayLimits(db());
   owner = await makeUser(db(), 'owner', 'Olivia Owner');
   cara = await makeUser(db(), 'customer', 'Cara Member');
   dan = await makeUser(db(), 'customer', 'Dan Adhoc');
