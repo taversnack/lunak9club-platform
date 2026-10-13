@@ -76,6 +76,7 @@ export class StripePaymentProvider implements PaymentProvider {
     amountPence: number,
     idempotencyKey: string,
     reference: string,
+    attempt = 1,
   ): Promise<RefundResult> {
     try {
       // An earlier attempt may have created the refund even though we never got the answer (e.g. a
@@ -87,7 +88,7 @@ export class StripePaymentProvider implements PaymentProvider {
             payment_intent: paymentId,
             amount: amountPence,
             reason: 'requested_by_customer',
-            metadata: { cardRefundId: reference },
+            metadata: { cardRefundId: reference, attempt: String(attempt) },
           },
           { idempotencyKey },
         ));
@@ -112,9 +113,10 @@ export class StripePaymentProvider implements PaymentProvider {
     }
   }
 
+  /** Our refund on this payment that hasn't failed. A failed or cancelled one is never reused. */
   private async findRefund(paymentId: string, reference: string): Promise<Stripe.Refund | null> {
     for await (const r of this.stripe.refunds.list({ payment_intent: paymentId, limit: 100 }))
-      if (r.metadata?.cardRefundId === reference) return r;
+      if (r.metadata?.cardRefundId === reference && r.status !== 'failed' && r.status !== 'canceled') return r;
     return null;
   }
 
@@ -132,6 +134,14 @@ export class StripePaymentProvider implements PaymentProvider {
             : 'pending'
         : undefined;
     const refundReference = e.type.startsWith('refund.') ? obj.metadata?.cardRefundId : undefined;
-    return { id: e.id, type: e.type, objectId: obj.id, refundStatus, refundReference };
+    const attempt = e.type.startsWith('refund.') ? Number(obj.metadata?.attempt) : NaN;
+    return {
+      id: e.id,
+      type: e.type,
+      objectId: obj.id,
+      refundStatus,
+      refundReference,
+      ...(Number.isInteger(attempt) && attempt > 0 ? { refundAttempt: attempt } : {}),
+    };
   }
 }

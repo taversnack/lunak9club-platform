@@ -17,7 +17,7 @@ describe('Stripe refunds (M1)', () => {
     const res = await provider({ create }).refund('pi_1', 500, 'refund-abc', 'abc');
     expect(res).toEqual({ id: 're_1', status: 'succeeded', failureReason: undefined });
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ payment_intent: 'pi_1', amount: 500, metadata: { cardRefundId: 'abc' } }),
+      expect.objectContaining({ payment_intent: 'pi_1', amount: 500, metadata: { cardRefundId: 'abc', attempt: '1' } }),
       { idempotencyKey: 'refund-abc' },
     );
   });
@@ -49,6 +49,18 @@ describe('Stripe refunds (M1)', () => {
     expect(res).toMatchObject({ id: 're_mine', status: 'pending' });
     expect(create).not.toHaveBeenCalled();
     expect(list).toHaveBeenCalledWith({ payment_intent: 'pi_1', limit: 100 });
+  });
+
+  it('a retry never reuses a failed refund: it creates a new one with a new key and our id', async () => {
+    const create = vi.fn(async () => ({ id: 're_2', status: 'succeeded', failure_reason: null }));
+    const list = vi.fn(async function* () {
+      yield { id: 're_1', status: 'failed', metadata: { cardRefundId: 'abc', attempt: '1' } };
+    });
+    const res = await provider({ create, list }).refund('pi_1', 500, 'refund-abc-2', 'abc', 2);
+    expect(res).toMatchObject({ id: 're_2', status: 'succeeded' });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ metadata: { cardRefundId: 'abc', attempt: '2' } }), {
+      idempotencyKey: 'refund-abc-2',
+    });
   });
 
   it('reads our id back from refund webhooks', () => {
