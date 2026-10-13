@@ -22,7 +22,13 @@ import { uploadVaccinationRecord } from '@/server/services/documents';
 import { acceptTerms, myTermsStatus } from '@/server/services/policies';
 import { recordAssessment, reviewSubmission, setDogStatus } from '@/server/services/owner-review';
 import { cancelMyBooking, createMyBookings, leaveWaitlist, myBookings } from '@/server/services/bookings';
-import { giveWaitlistPlace, ownerCancel, ownerDay, setDayCapacity } from '@/server/services/owner-bookings';
+import {
+  giveWaitlistPlace,
+  ownerCancel,
+  ownerCreateBooking,
+  ownerDay,
+  setDayCapacity,
+} from '@/server/services/owner-bookings';
 import {
   approveApprovalRequest,
   createApprovalRequest,
@@ -404,6 +410,25 @@ describe('booking requests (D76)', () => {
     expect(row.kind).toBe('trial');
     expect(row.status).toBe('requested');
     expect((await requestOf(r.requestId!)).payload).toMatchObject({ kind: 'trial' });
+  });
+});
+
+describe('Owner context on Requests (Developer 1 gap c)', () => {
+  it('lists the other dogs already booked that day, with links to them and the day view', async () => {
+    const date = weekdayAhead(11);
+    await ownerCreateBooking(db(), owner, { dogId: bobDog, date, session: 'full' });
+    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [date], session: 'am', taxi: false });
+    const item = (await ownerApprovalList(db(), owner)).find((x) => x.id === r.requestId)!;
+    const day = item.context.find((c) => c.heading.includes('dogs already booked'))!;
+    expect(day.lines.join(' ')).toMatch(/Already booked: Rex \(Full day, awaiting payment\)/);
+    expect(day.lines.join(' ')).not.toMatch(/Already booked:.*Pip/);
+    expect(day.links).toEqual(
+      expect.arrayContaining([
+        { label: expect.stringMatching(/^Day view/), href: `/admin/bookings?date=${date}` },
+        { label: 'Rex', href: `/admin/dogs/${bobDog}` },
+      ]),
+    );
+    await withdrawMyApprovalRequest(db(), carol, r.requestId!);
   });
 });
 
