@@ -10,7 +10,8 @@ import { ATE_LABELS, DRINKING_LABELS, INCIDENT_KIND_LABELS, MOOD_LABELS } from '
 
 import { Alert, buttonClass, Card, Stack, StatusBadge } from '@/ui/components';
 import { ITEM_LABELS, OVERALL_LABELS, type ChecklistItem } from '@/domain/compliance/evaluate';
-import { formatUkDate } from '@/domain/time';
+import { formatUkDate, londonDate } from '@/domain/time';
+import { primaryCourseClearOn } from '@/domain/compliance/attendance';
 import { loadDogPage } from './load';
 
 export const metadata: Metadata = { title: 'Your dog' };
@@ -97,6 +98,15 @@ export default async function DogPage({
           </Link>
         </Alert>
       ))}
+
+      {(() => {
+        const clear = primaryCourseClearOn(evaluation.primaryCourseCompletedOn);
+        return clear && clear > londonDate(new Date()) ? (
+          <Alert tone="info" title={`${dog.name} can start day care from ${formatUkDate(clear)}`}>
+            A first course of vaccinations must be finished at least 14 days before a dog’s first day.
+          </Alert>
+        ) : null;
+      })()}
 
       <Card aria-labelledby="checklist">
         <h2 id="checklist">Onboarding checklist</h2>
