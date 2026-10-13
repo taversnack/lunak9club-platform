@@ -13,7 +13,8 @@ type ActionState = {
 
 type Ctx = { fields: Record<string, string>; values: Record<string, string> };
 const FormCtx = createContext<Ctx>({ fields: {}, values: {} });
-const useField = (name: string) => {
+/** A field's error and submitted value from the surrounding ActionForm. */
+export const useField = (name: string) => {
   const c = useContext(FormCtx);
   return { error: c.fields[name], value: c.values[name] };
 };
