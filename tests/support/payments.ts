@@ -2,12 +2,12 @@ import { eq } from 'drizzle-orm';
 import type { Db } from '../../src/infra/db/client';
 import { checkoutAttempts } from '../../src/infra/db/schema';
 import { getPaymentProvider } from '../../src/infra/payments';
-import { SimulatedPaymentProvider } from '../../src/infra/payments/simulated';
+import { isSimulatedProvider, type SimulatedPaymentProvider } from '../../src/infra/payments/simulated';
 import { completeCheckout } from '../../src/server/services/payments';
 
 export function simulated(): SimulatedPaymentProvider {
   const p = getPaymentProvider();
-  if (!(p instanceof SimulatedPaymentProvider)) throw new Error('Tests expect PAYMENTS_DRIVER=simulated');
+  if (!isSimulatedProvider(p)) throw new Error('Tests expect PAYMENTS_DRIVER=simulated');
   return p;
 }
 

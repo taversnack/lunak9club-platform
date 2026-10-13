@@ -1,6 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import type { CheckoutRequest, CheckoutState, PaymentProvider, RefundResult, WebhookEvent } from './types';
 
+const SIMULATED_BRAND = Symbol.for('lk9.payments.simulated');
+
+/**
+ * Bundle-safe check for the simulated provider. The provider is cached on globalThis, so the
+ * instance may come from another copy of this module (route handler vs page bundle); a global
+ * Symbol brand works across copies where `instanceof` doesn't.
+ */
+export function isSimulatedProvider(p: unknown): p is SimulatedPaymentProvider {
+  return typeof p === 'object' && p !== null && (p as Record<symbol, unknown>)[SIMULATED_BRAND] === true;
+}
+
 type Session = CheckoutRequest & { id: string; status: CheckoutState['status']; paymentId: string | null };
 
 /**
@@ -9,6 +20,8 @@ type Session = CheckoutRequest & { id: string; status: CheckoutState['status']; 
  */
 export class SimulatedPaymentProvider implements PaymentProvider {
   readonly name = 'simulated' as const;
+  /** Brand checked by isSimulatedProvider – `instanceof` fails when Next bundles this module twice. */
+  readonly [SIMULATED_BRAND] = true;
   readonly sessions = new Map<string, Session>();
   readonly refunds: { id: string; paymentId: string; amountPence: number; key: string; reference: string }[] = [];
   /** Tests can make the next refunds fail. */
