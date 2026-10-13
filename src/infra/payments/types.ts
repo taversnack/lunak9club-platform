@@ -33,6 +33,8 @@ export type WebhookEvent = {
   refundStatus?: RefundResult['status'];
   /** refund.* events: our card_refunds.id, from the refund's metadata. */
   refundReference?: string;
+  /** refund.* events: which of our attempts this provider refund was, from its metadata. */
+  refundAttempt?: number;
 };
 
 export interface PaymentProvider {
@@ -41,8 +43,18 @@ export interface PaymentProvider {
   getCheckout(id: string): Promise<CheckoutState>;
   /** Stop an open checkout so it can't be paid. Returns the final state (it may already be complete). */
   expireCheckout(id: string): Promise<CheckoutState>;
-  /** `reference` is our card_refunds.id, stored on the provider's refund so it can be found again. */
-  refund(paymentId: string, amountPence: number, idempotencyKey: string, reference: string): Promise<RefundResult>;
+  /**
+   * `reference` is our card_refunds.id, stored on the provider's refund (with `attempt`) so it can be
+   * found again. A refund the provider failed is never reused: retrying it is a new `attempt` with a
+   * new idempotency key, so the money is actually sent again.
+   */
+  refund(
+    paymentId: string,
+    amountPence: number,
+    idempotencyKey: string,
+    reference: string,
+    attempt?: number,
+  ): Promise<RefundResult>;
   /** Verify the signature and parse. Throws if the signature is wrong. */
   parseWebhook(rawBody: string, signature: string | null): WebhookEvent;
 }
