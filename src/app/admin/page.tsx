@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { auditActionLabel, auditEntityLabel } from '@/domain/audit-labels';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
@@ -144,8 +145,8 @@ export default async function AdminHome() {
                 {events.map((e) => (
                   <tr key={e.id}>
                     <td>{formatDateTimeLondon(e.occurredAt)}</td>
-                    <td>{e.action}</td>
-                    <td>{e.entityType}</td>
+                    <td>{auditActionLabel(e.action)}</td>
+                    <td>{auditEntityLabel(e.entityType)}</td>
                     <td>
                       <StatusBadge
                         tone={e.outcome === 'success' ? 'success' : e.outcome === 'denied' ? 'warning' : 'danger'}
