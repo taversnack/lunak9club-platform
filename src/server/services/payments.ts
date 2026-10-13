@@ -1,10 +1,11 @@
 import 'server-only';
-import { and, asc, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
 import {
   approvalRequests,
   bookingDogs,
   bookings,
+  checkoutAttemptDays,
   checkoutAttempts,
   customers,
   dogs,
@@ -100,6 +101,13 @@ async function pendingDays(q: Db | Tx, bookingId: string, ids: string[] | null) 
     .orderBy(asc(bookingDogs.serviceDate), asc(dogs.name));
 }
 
+// A held day is covered by a checkout recorded for that day, or by a legacy checkout on its booking
+// that recorded no days (from before checkout_attempt_days).
+const coveredDay = (statusSql: ReturnType<typeof sql>) => sql`exists (select 1 from ${checkoutAttempts} c
+  where c.booking_id = ${bookingDogs.bookingId} and ${statusSql}
+    and (exists (select 1 from ${checkoutAttemptDays} cd where cd.checkout_attempt_id = c.id and cd.booking_dog_id = ${bookingDogs.id})
+      or not exists (select 1 from ${checkoutAttemptDays} cd where cd.checkout_attempt_id = c.id)))`;
+
 const describeDays = (days: { dogName: string }[]) => {
   const names = [...new Set(days.map((d) => d.dogName))].join(' and ');
   return `day care for ${names} (${days.length} ${days.length === 1 ? 'session' : 'sessions'})`;
@@ -154,6 +162,8 @@ export async function startBookingCheckout(
   db: Db,
   opts: {
     bookingId: string;
+    /** The held booking_dogs rows this checkout pays for (#8). Other held days on the booking aren't touched. */
+    bookingDogIds: string[];
     customerId: string;
     createdBy: string | null;
     expiresAt: Date;
@@ -165,7 +175,12 @@ export async function startBookingCheckout(
   },
   now = new Date(),
 ) {
-  const days = (await pendingDays(db, opts.bookingId)).filter((d) => !d.holdUntil || d.holdUntil > now);
+  const days = (await pendingDays(db, opts.bookingId, opts.bookingDogIds)).filter(
+    (d) => !d.holdUntil || d.holdUntil > now,
+  );
+  const dayIds = days.map((d) => d.id);
+  const sameDays = (ids: string[] | null) =>
+    ids !== null && ids.length === dayIds.length && ids.every((id) => dayIds.includes(id));
   const amount = days.reduce((a, d) => a + d.totalPence, 0);
   if (!days.length || amount <= 0) return null;
   const who = await customerContact(db, opts.customerId);
@@ -189,7 +204,9 @@ export async function startBookingCheckout(
     );
   };
 
-  // One booking, one live checkout: serialise on the booking and reuse what's already open.
+  // One live checkout per set of days (#8 scopes each checkout to its days). Serialise on the
+  // booking, reuse an open checkout for exactly these days, and close any other live checkout that
+  // covers one of them (it would charge the same day twice). Checkouts for other days are left alone.
   const claim = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`checkout:${opts.bookingId}`}))`);
     const live = await tx
@@ -205,11 +222,15 @@ export async function startBookingCheckout(
       .orderBy(desc(checkoutAttempts.createdAt));
     const stale: string[] = [];
     for (const a of live) {
-      if (a.status === 'open' && a.url && a.amountPence === amount) return { reuse: a, stale };
-      // Another request is creating the link right now.
-      if (a.status === 'creating' && a.amountPence === amount && a.createdAt > new Date(now.getTime() - 2 * 60_000))
-        return { busy: a.id, stale };
-      // Wrong amount (a day was cancelled since) or abandoned: close it without touching the holds.
+      const covers = await attemptDayIds(tx, a.id); // null: an attempt from before days were recorded
+      if (covers && !covers.some((id) => dayIds.includes(id))) continue;
+      if (sameDays(covers) && a.amountPence === amount) {
+        if (a.status === 'open' && a.url) return { reuse: a, stale };
+        // Another request is creating the link for these days right now.
+        if (a.status === 'creating' && a.createdAt > new Date(now.getTime() - 2 * 60_000))
+          return { busy: a.id, stale };
+      }
+      // Overlapping, different amount, legacy or abandoned: close it without touching the holds.
       await tx
         .update(checkoutAttempts)
         .set({ status: 'expired', completedAt: now })
@@ -229,6 +250,9 @@ export async function startBookingCheckout(
         createdBy: opts.createdBy,
       })
       .returning();
+    await tx
+      .insert(checkoutAttemptDays)
+      .values(dayIds.map((id) => ({ checkoutAttemptId: attempt!.id, bookingDogId: id })));
     return { attempt: attempt!, stale };
   });
   for (const sid of claim.stale) await provider.expireCheckout(sid).catch(() => undefined);
@@ -298,7 +322,7 @@ export async function startBookingCheckout(
     metadata: { tries, keptHold: Boolean(opts.keepHoldOnFailure) },
   });
   if (opts.keepHoldOnFailure) throw new PayLinkUnavailableError(formatDateTimeLondon(expiresAt));
-  await releaseHolds(db, opts.bookingId, now, 'Card payment unavailable');
+  await releaseHolds(db, opts.bookingId, now, 'Card payment unavailable', dayIds);
   throw new ConflictError(
     'Card payments aren’t available right now, so nothing has been booked. Please try again shortly.',
   );
@@ -307,7 +331,7 @@ export async function startBookingCheckout(
 /** Live holds on a booking: pending_payment days whose deadline hasn't passed. */
 async function liveHolds(db: Db, bookingId: string, now: Date) {
   const rows = await db
-    .select({ customerId: bookingDogs.customerId, holdUntil: bookingDogs.offerExpiresAt })
+    .select({ id: bookingDogs.id, customerId: bookingDogs.customerId, holdUntil: bookingDogs.offerExpiresAt })
     .from(bookingDogs)
     .where(
       and(
@@ -318,7 +342,7 @@ async function liveHolds(db: Db, bookingId: string, now: Date) {
     );
   if (!rows.length) return null;
   const until = rows.map((r) => r.holdUntil!).reduce((a, b) => (a < b ? a : b));
-  return { customerId: rows[0]!.customerId, until };
+  return { customerId: rows[0]!.customerId, until, ids: rows.map((r) => r.id) };
 }
 
 async function approvedRequestFor(db: Db, bookingId: string) {
@@ -347,6 +371,7 @@ export async function payForMyBooking(db: Db, actor: Actor, rawBookingId: string
     db,
     {
       bookingId,
+      bookingDogIds: hold.ids,
       customerId: customer.id,
       createdBy: me.userId,
       expiresAt: hold.until,
@@ -368,6 +393,7 @@ export async function resendPayLink(db: Db, actor: Actor, rawBookingId: string, 
     db,
     {
       bookingId,
+      bookingDogIds: hold.ids,
       customerId: hold.customerId,
       createdBy: actor.kind === 'user' ? actor.userId : null,
       expiresAt: hold.until,
@@ -412,8 +438,7 @@ export async function bookingsMissingPayLink(db: Db, actor: Actor, opts: { date?
         eq(bookingDogs.status, 'pending_payment'),
         gt(bookingDogs.offerExpiresAt, now),
         opts.date ? eq(bookingDogs.serviceDate, opts.date) : undefined,
-        sql`not exists (select 1 from ${checkoutAttempts} c where c.booking_id = ${bookingDogs.bookingId}
-              and c.status in ('open', 'creating') and c.expires_at > ${now})`,
+        sql`not ${coveredDay(sql`c.status in ('open', 'creating') and c.expires_at > ${now}`)}`,
       ),
     )
     .orderBy(asc(bookingDogs.offerExpiresAt));
@@ -477,8 +502,7 @@ export async function myHoldsWithoutPayLink(db: Db, actor: Actor, now = new Date
         eq(bookingDogs.customerId, customer.id),
         eq(bookingDogs.status, 'pending_payment'),
         gt(bookingDogs.offerExpiresAt, now),
-        sql`not exists (select 1 from ${checkoutAttempts} c where c.booking_id = ${bookingDogs.bookingId}
-              and c.status = 'open' and c.expires_at > ${now})`,
+        sql`not ${coveredDay(sql`c.status = 'open' and c.expires_at > ${now}`)}`,
       ),
     );
   const out = new Map<
@@ -511,8 +535,7 @@ async function releaseOrphanHolds(db: Db, now: Date) {
       and(
         eq(bookingDogs.status, 'pending_payment'),
         lte(bookingDogs.offerExpiresAt, now),
-        sql`not exists (select 1 from ${checkoutAttempts} c where c.booking_id = ${bookingDogs.bookingId}
-              and c.status = 'open')`,
+        sql`not ${coveredDay(sql`c.status = 'open'`)}`,
       ),
     );
   let released = 0;
@@ -533,6 +556,7 @@ async function releaseOrphanHolds(db: Db, now: Date) {
             eq(bookingDogs.bookingId, d.bookingId),
             eq(bookingDogs.status, 'pending_payment'),
             lte(bookingDogs.offerExpiresAt, now),
+            sql`not ${coveredDay(sql`c.status = 'open'`)}`,
           ),
         )
         .returning({ id: bookingDogs.id });
@@ -870,11 +894,21 @@ export async function releaseExpiredCheckouts(db: Db, now = new Date()) {
     .from(checkoutAttempts)
     .where(and(eq(checkoutAttempts.status, 'open'), lte(checkoutAttempts.expiresAt, now)));
   let released = 0;
-  for (const a of due)
-    released += (await releaseCheckout(db, a.id, { reason: 'Not paid in time', notify: a.purpose === 'booking' }, now))
-      .released;
+  let errors = 0;
+  for (const a of due) {
+    // One checkout the provider can't answer for mustn't stop the others being released (#10).
+    try {
+      released += (
+        await releaseCheckout(db, a.id, { reason: 'Not paid in time', notify: a.purpose === 'booking' }, now)
+      ).released;
+    } catch (err) {
+      errors++;
+      logger.error({ attempt: a.id, err: err instanceof Error ? err.name : 'unknown' }, 'releasing checkout failed');
+    }
+  }
+  // Holds with no open checkout covering them (the provider was down) lapse here too.
   released += await releaseOrphanHolds(db, now);
-  return { checkouts: due.length, released };
+  return { checkouts: due.length, released, errors };
 }
 
 /**
@@ -1116,7 +1150,7 @@ export async function handleWebhook(db: Db, rawBody: string, signature: string |
           );
       }
     } else if (event.type.startsWith('refund.') && event.refundStatus) {
-      await applyRefundUpdate(db, event.objectId, event.refundStatus, event.refundReference);
+      await applyRefundUpdate(db, event.objectId, event.refundStatus, event.refundReference, event.refundAttempt);
     }
     await db
       .update(webhookEvents)

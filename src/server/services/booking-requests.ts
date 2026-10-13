@@ -179,6 +179,7 @@ registerApprovalType<BookingRequestPayload>({
           // "Pay now" later and the Owner sees "Resend pay link" (failure recorded and audited).
           await startBookingCheckout(db, {
             bookingId: req.payload.bookingId,
+            bookingDogIds: held.map((r) => r.id),
             customerId: req.customerId,
             createdBy: null,
             expiresAt,

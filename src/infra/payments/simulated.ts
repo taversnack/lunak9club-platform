@@ -23,7 +23,15 @@ export class SimulatedPaymentProvider implements PaymentProvider {
   /** Brand checked by isSimulatedProvider – `instanceof` fails when Next bundles this module twice. */
   readonly [SIMULATED_BRAND] = true;
   readonly sessions = new Map<string, Session>();
-  readonly refunds: { id: string; paymentId: string; amountPence: number; key: string; reference: string }[] = [];
+  readonly refunds: {
+    id: string;
+    paymentId: string;
+    amountPence: number;
+    key: string;
+    reference: string;
+    attempt: number;
+    status: 'succeeded' | 'failed';
+  }[] = [];
   /** Tests can make the next refunds fail. */
   failRefunds = false;
 
@@ -67,13 +75,29 @@ export class SimulatedPaymentProvider implements PaymentProvider {
     return s;
   }
 
-  async refund(paymentId: string, amountPence: number, key: string, reference: string): Promise<RefundResult> {
-    const existing = this.refunds.find((r) => r.key === key || r.reference === reference);
-    if (existing) return { id: existing.id, status: 'succeeded' };
+  async refund(
+    paymentId: string,
+    amountPence: number,
+    key: string,
+    reference: string,
+    attempt = 1,
+  ): Promise<RefundResult> {
+    // Like Stripe: the same idempotency key gives back the same refund, and a refund for our id that
+    // hasn't failed is found again rather than sent twice. A failed one is never reused.
+    const existing =
+      this.refunds.find((r) => r.key === key) ??
+      this.refunds.find((r) => r.reference === reference && r.status !== 'failed');
+    if (existing) return { id: existing.id, status: existing.status };
     if (this.failRefunds) return { id: '', status: 'failed', failureReason: 'Simulated refund failure' };
     const id = `sim_re_${randomUUID()}`;
-    this.refunds.push({ id, paymentId, amountPence, key, reference });
+    this.refunds.push({ id, paymentId, amountPence, key, reference, attempt, status: 'succeeded' });
     return { id, status: 'succeeded' };
+  }
+
+  /** Tests: the bank bounced a refund after it had gone through (Stripe's refund.failed). */
+  failRefundLater(id: string) {
+    const r = this.refunds.find((x) => x.id === id);
+    if (r) r.status = 'failed';
   }
 
   parseWebhook(_rawBody: string, _signature: string | null): WebhookEvent {

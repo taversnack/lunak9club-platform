@@ -53,6 +53,7 @@ import { idOrNotFound, optionalText, parseInput } from '../validation';
 import { asUser, getMyCustomer } from './customers';
 import { balances } from './billing';
 import { myIncidents } from './welfare';
+import { myApprovalRequests } from './approvals';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -256,6 +257,9 @@ export async function exportMyData(db: Db, actor: Actor) {
     for (const k of keys) delete r[k];
     return r as Omit<T, K>;
   };
+  // Requests (bookings, trial days…) exactly as the customer sees them under Requests, including
+  // the Owner's note. Staff-only fields (who decided, the last approval error) are never selected.
+  const requestRows = await myApprovalRequests(db, me, { status: 'all' });
   await recordAudit(db, { actor: me, action: 'data.exported', entityType: 'customer', entityId: customer.id });
   return {
     exportedAt: new Date().toISOString(),
@@ -270,9 +274,11 @@ export async function exportMyData(db: Db, actor: Actor) {
     },
     contacts: myContacts.map(({ customerId: _c, ...c }) => (void _c, c)),
     vets: myVets.map(({ customerId: _c, ...v }) => (void _c, v)),
-    // approvedBy (a staff user id) and statusReason (the Owner's note) are staff-only.
-    dogs: myDogs.map(({ approvedBy: _a, statusReason: _r, ...d }) => ({
-      ...(void _a, void _r, d),
+    // approvedBy (a staff user id) is staff-only. statusReason is included only when the dog is
+    // suspended or rejected, because that's when the customer sees it on their dog's page.
+    dogs: myDogs.map(({ approvedBy: _a, statusReason, ...d }) => ({
+      ...(void _a, d),
+      statusReason: d.status === 'suspended' || d.status === 'rejected' ? statusReason : null,
       health: health.find((h) => h.dogId === d.id) ?? null,
       behaviour: behaviour.find((b) => b.dogId === d.id) ?? null,
       permissions: perms.find((p) => p.dogId === d.id) ?? null,
@@ -294,6 +300,7 @@ export async function exportMyData(db: Db, actor: Actor) {
     })),
     documents: docs,
     termsAccepted: acks,
+    approvalRequests: requestRows.map(({ reason, ...r }) => ({ ...r, statusReason: reason })),
     incidentReports: incidentList.map((i) => {
       const r = incidentRows.find((x) => x.id === i.id);
       return {

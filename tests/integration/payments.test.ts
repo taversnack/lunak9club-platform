@@ -6,6 +6,7 @@ import { setPaymentProvider } from '@/infra/payments';
 import { SimulatedPaymentProvider } from '@/infra/payments/simulated';
 import type { WebhookEvent } from '@/infra/payments/types';
 import {
+  auditEvents,
   bookingDogs,
   cardRefunds,
   checkoutAttempts,
@@ -16,12 +17,13 @@ import {
   payments,
   webhookEvents,
 } from '@/infra/db/schema';
-import { cancelMyBooking } from '@/server/services/bookings';
-import { ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
+import { cancelMyBooking, createMyBookings } from '@/server/services/bookings';
+import { giveWaitlistPlace, ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
 import { issueTx, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
   handleWebhook,
+  OWNER_HOLD_MINUTES,
   releaseExpiredCheckouts,
   resumeCheckoutUrl,
   startInvoiceCheckout,
@@ -40,11 +42,27 @@ import { approvedDog, readyCustomer } from '../support/onboard';
 class TestProvider extends SimulatedPaymentProvider {
   /** Make refunds go through but lose the answer, like a timeout after Stripe created them. */
   loseRefundAnswers = false;
-  override async refund(paymentId: string, amountPence: number, key: string, reference: string) {
-    const res = await super.refund(paymentId, amountPence, key, reference);
-    return this.loseRefundAnswers
-      ? { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' }
-      : res;
+  /** Refunds are accepted but not settled yet (Stripe's 'pending'); a webhook settles them later. */
+  refundsPending = false;
+  /** Make refunds fail the way an invalid Stripe key does. */
+  badKey = false;
+  /** Make each refund call slow, so concurrent runs overlap. */
+  delayMs = 0;
+  refundCalls = 0;
+  override async refund(paymentId: string, amountPence: number, key: string, reference: string, attempt?: number) {
+    this.refundCalls++;
+    if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
+    if (this.badKey)
+      return {
+        id: '',
+        status: 'failed' as const,
+        failureReason: 'StripeAuthenticationError: Invalid API Key provided',
+        needsOwner: true,
+      };
+    const res = await super.refund(paymentId, amountPence, key, reference, attempt);
+    if (this.loseRefundAnswers)
+      return { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' };
+    return this.refundsPending && res.status === 'succeeded' ? { ...res, status: 'pending' as const } : res;
   }
   override parseWebhook(raw: string, signature: string | null): WebhookEvent {
     if (signature !== 'valid') throw new Error('No signatures found matching the expected signature');
@@ -233,12 +251,10 @@ describe('two offers from one request (same bookingId)', () => {
       )[0]!;
     const [w1, w2] = [await row(d1), await row(d2)];
     expect(w1.bookingId).toBe(w2.bookingId);
-    await offerPlace(db(), owner, w1.id, { version: w1.version });
-    await offerPlace(db(), owner, w2.id, { version: w2.version });
-
-    // Both accepted within the hold: two open checkouts on one bookingId, one day each.
-    await acceptOffer(db(), quinn, w1.id);
-    await acceptOffer(db(), quinn, w2.id);
+    // The request found both days full and waitlisted them; the Owner gives each a place
+    // separately: two open checkouts on one bookingId, one day each.
+    await giveWaitlistPlace(db(), owner, w1.id, { version: w1.version });
+    await giveWaitlistPlace(db(), owner, w2.id, { version: w2.version });
     const [second, first] = await attemptsFor(quinn.userId);
     expect(first!.amountPence).toBe(5000);
     expect(second!.amountPence).toBe(5000);
@@ -261,8 +277,8 @@ describe('two offers from one request (same bookingId)', () => {
   });
 
   it('an expired checkout releases only its own day, not a newer hold on the same booking', async () => {
-    const d1 = weekdayAhead(53);
-    const d2 = weekdayAhead(54);
+    const d1 = weekdayAhead(36);
+    const d2 = weekdayAhead(38);
     for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), quinn, {
       dogIds: [quinnDog],
@@ -280,13 +296,11 @@ describe('two offers from one request (same bookingId)', () => {
           .where(and(eq(bookingDogs.dogId, quinnDog), eq(bookingDogs.serviceDate, date)))
       )[0]!;
     const [w1, w2] = [await row(d1), await row(d2)];
-    await offerPlace(db(), owner, w1.id, { version: w1.version });
-    await offerPlace(db(), owner, w2.id, { version: w2.version });
     const t0 = new Date();
-    await acceptOffer(db(), quinn, w1.id, t0);
-    await acceptOffer(db(), quinn, w2.id, new Date(t0.getTime() + 20 * 60_000));
-    // 32 minutes on: the first checkout has run out, the second still has ~19 minutes.
-    await releaseExpiredCheckouts(db(), new Date(t0.getTime() + 32 * 60_000));
+    await giveWaitlistPlace(db(), owner, w1.id, { version: w1.version }, t0);
+    await giveWaitlistPlace(db(), owner, w2.id, { version: w2.version }, new Date(t0.getTime() + 60 * 60_000));
+    // Just past the first hold (Owner holds last OWNER_HOLD_MINUTES): the second still has ~an hour.
+    await releaseExpiredCheckouts(db(), new Date(t0.getTime() + (OWNER_HOLD_MINUTES + 1) * 60_000));
     expect((await row(d1)).status).toBe('cancelled');
     expect((await row(d2)).status).toBe('pending_payment');
   });
@@ -329,9 +343,90 @@ describe('automatic refunds (D20, D58)', () => {
     await expect(retryCardRefund(db(), owner, failed!.id)).rejects.toBeInstanceOf(ConflictError);
   });
 
+  it('concurrent ticks claim an interrupted refund once; a webhook settling it clears the old reason, is audited and emails the customer', async () => {
+    const date = weekdayAhead(46);
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
+    const a = await payLatest(pia.userId);
+    const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+    stripe.loseRefundAnswers = true;
+    await cancelMyBooking(db(), pia, bd!.id);
+    const [pay] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    const [r] = await db().select().from(cardRefunds).where(eq(cardRefunds.paymentId, pay!.id));
+    expect(r).toMatchObject({
+      status: 'submitted',
+      providerRefundId: null,
+      failureReason: expect.stringMatching(/timed out/),
+    });
+    const audits = async () =>
+      (await db().select().from(auditEvents).where(eq(auditEvents.entityId, r!.id))).map((e) => e.action).sort();
+    const before = await audits();
+
+    // Interrupted long enough ago for the safety net; three ticks arrive at once.
+    await db().execute(sql`update card_refunds set updated_at = now() - interval '11 minutes' where id = ${r!.id}`);
+    stripe.delayMs = 200;
+    const calls = stripe.refundCalls;
+    await Promise.all([submitPendingRefunds(db()), submitPendingRefunds(db()), submitPendingRefunds(db())]);
+    stripe.delayMs = 0;
+    stripe.loseRefundAnswers = false;
+    expect(stripe.refundCalls - calls).toBe(1);
+    expect(await audits()).toEqual([...before, 'refund.card_submitted'].sort());
+
+    // Stripe's webhook settles it.
+    mail.sent.length = 0;
+    const sent = stripe.refunds.at(-1)!;
+    const body = (n: number) =>
+      JSON.stringify({
+        id: `evt_h${n}_${r!.id}`,
+        type: 'refund.updated',
+        objectId: sent.id,
+        refundStatus: 'succeeded',
+        refundReference: r!.id,
+      });
+    await handleWebhook(db(), body(1), 'valid');
+    await handleWebhook(db(), body(2), 'valid'); // a second event with the same news
+    const [settled] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
+    expect(settled).toMatchObject({ status: 'succeeded', failureReason: null });
+    const settledBy = await db()
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.entityId, r!.id), eq(auditEvents.action, 'refund.card_succeeded')));
+    expect(settledBy).toHaveLength(1);
+    expect(settledBy[0]!.metadata).toMatchObject({ via: 'webhook' });
+    const toPia = mail.sent.filter((m) => m.to === pia.email);
+    expect(toPia.map((m) => m.subject)).toEqual([expect.stringMatching(/refund of £50\.00/)]);
+  });
+
+  it('an invalid Stripe key fails the refund for the Owner to see, and emails the Owner once', async () => {
+    const date = weekdayAhead(46);
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
+    const a = await payLatest(pia.userId);
+    const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+    await db().execute(sql`delete from notification_log where kind = 'card-refunds-failed'`);
+    mail.sent.length = 0;
+    stripe.badKey = true;
+    await cancelMyBooking(db(), pia, bd!.id);
+    const [pay] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    const [r] = await db().select().from(cardRefunds).where(eq(cardRefunds.paymentId, pay!.id));
+    // Not stuck in 'submitted': it's failed, with the reason, in the Owner's list to try again.
+    expect(r).toMatchObject({ status: 'failed', failureReason: expect.stringMatching(/Invalid API Key/) });
+    expect((await ownerCardRefunds(db(), owner)).failed.map((x) => x.r.id)).toContain(r!.id);
+    const toOwner = mail.sent.filter((m) => m.to === owner.email && /need your attention/.test(m.subject));
+    expect(toOwner).toHaveLength(1);
+    expect(toOwner[0]!.text).toMatch(/Stripe refused our API key/);
+    expect(toOwner[0]!.text).toContain('/admin/refunds');
+    // Trying again with the key still wrong fails again, but doesn't email again the same day.
+    await retryCardRefund(db(), owner, r!.id);
+    expect(mail.sent.filter((m) => m.to === owner.email && /need your attention/.test(m.subject))).toHaveLength(1);
+    // Once the key is fixed, Try again sends it.
+    stripe.badKey = false;
+    await retryCardRefund(db(), owner, r!.id);
+    const [ok] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
+    expect(ok!.status).toBe('succeeded');
+  });
+
   it('a refund whose answer was lost stays pending, and the webhook settles it by our id without a second refund', async () => {
     const date = weekdayAhead(47);
-    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const a = await payLatest(pia.userId);
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     stripe.loseRefundAnswers = true;
