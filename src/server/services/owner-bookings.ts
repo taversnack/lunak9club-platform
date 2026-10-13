@@ -349,6 +349,7 @@ export async function giveWaitlistPlace(db: Db, actor: Actor, rawId: string, inp
         db,
         {
           bookingId,
+          bookingDogIds: [bd.id],
           customerId: bd.customerId,
           createdBy: actor.kind === 'user' ? actor.userId : null,
           expiresAt: hold,

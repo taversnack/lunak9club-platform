@@ -6,7 +6,6 @@ import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
-import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
