@@ -1,6 +1,7 @@
 import 'server-only';
 import type { Db } from '@/infra/db/client';
-import { formatMonth, type Month } from '@/domain/billing/rules';
+import { formatMonth } from '@/domain/billing/rules';
+import { confirmByDate } from '@/domain/membership/rules';
 import { membershipFaqs, type FaqItem } from '@/domain/membership/faq';
 import { formatUkDate, londonDate } from '@/domain/time';
 import type { InvoiceMembershipExtras } from '@/infra/email/templates';
@@ -29,10 +30,6 @@ export async function currentFaqs(q: Q): Promise<FaqItem[]> {
     confirmByDay: bs.confirmByDay,
   });
 }
-
-/** The confirm-by date for a month's days (D88), e.g. 2026-11 with day 1 → 2026-11-01. */
-export const confirmByDate = (month: Month, confirmByDay: number) =>
-  `${month}-${String(confirmByDay).padStart(2, '0')}`;
 
 /**
  * Extras for a membership invoice email: the "confirm your days" section while the confirm-by

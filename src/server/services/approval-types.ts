@@ -12,4 +12,4 @@ import 'server-only';
  *
  * Add a line like:  import './booking-requests';
  */
-export {};
+import './membership-approvals';
