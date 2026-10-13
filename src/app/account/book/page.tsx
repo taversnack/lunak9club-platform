@@ -6,6 +6,7 @@ import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
+import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
   const [dogs, cal] = await Promise.all([myBookableDogs(db, actor), bookingCalendar(db, actor)]);
   const { error } = await searchParams;
   const bookable = dogs.filter((d) => d.canBook);
+  const trialable = dogs.filter((d) => d.canRequestTrial);
   // Group into Monday-start weeks for a readable calendar.
   const weeks: (typeof cal.days)[] = [];
   for (const day of cal.days) {
@@ -64,15 +66,25 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                       type="checkbox"
                       name="dog"
                       value={d.id}
-                      disabled={!d.canBook}
+                      disabled={!d.canBook && !d.canRequestTrial}
                       defaultChecked={bookable.length === 1 && d.canBook}
                     />
                     <span>
                       {d.name}
-                      {!d.canBook ? <span className={s.hint}> – {d.blockers[0]}</span> : null}
+                      {d.canRequestTrial ? (
+                        <span className={s.hint}> – not approved yet: you can ask for a trial day</span>
+                      ) : !d.canBook ? (
+                        <span className={s.hint}> – {d.blockers[0]}</span>
+                      ) : null}
                     </span>
                   </label>
                 ))}
+                {trialable.length ? (
+                  <label className={s.choice}>
+                    <input type="checkbox" name="trial" value="1" defaultChecked={bookable.length === 0} />
+                    <span>This is a trial day request (one dog, one date)</span>
+                  </label>
+                ) : null}
               </fieldset>
             </Card>
             <Card aria-labelledby="what">

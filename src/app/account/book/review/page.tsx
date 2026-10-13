@@ -9,6 +9,7 @@ import { previewMyBookings } from '@/server/services/bookings';
 import { ValidationError } from '@/server/errors';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
+import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 import { confirmBookingAction } from '../../actions';
 
 export const metadata: Metadata = { title: 'Check your booking' };
@@ -29,6 +30,7 @@ export default async function ReviewPage({
     session: String(sp.session ?? ''),
     taxi: sp.taxi === '1',
     ifFull: sp.ifFull === 'skip' ? 'skip' : 'waitlist',
+    trial: sp.trial === '1',
   };
   let preview;
   try {
@@ -54,9 +56,9 @@ export default async function ReviewPage({
     throw e;
   }
   const { lines, request } = preview;
-  const confirmed = lines.filter((l) => l.outcome === 'confirmed');
+  const confirmed = lines.filter((l) => l.outcome === 'requested');
   const outcome = {
-    confirmed: { tone: 'success' as const, text: 'Place available' },
+    requested: { tone: 'success' as const, text: 'Place available – will be requested' },
     waitlisted: { tone: 'warning' as const, text: 'Full – waitlist' },
     skipped: { tone: 'info' as const, text: 'Won’t be booked' },
   };
@@ -65,7 +67,7 @@ export default async function ReviewPage({
       <p className={s.breadcrumb}>
         <Link href="/account/book">Book day care</Link> › Check your booking
       </p>
-      <h1>Check your booking</h1>
+      <h1>Check your booking request</h1>
       <Card aria-labelledby="summary">
         <h2 id="summary">
           {SESSION_LABELS[request.session as 'full']}
@@ -106,14 +108,14 @@ export default async function ReviewPage({
           </table>
         </div>
         <p>
-          Total for {confirmed.length} booked {confirmed.length === 1 ? 'day' : 'days'}:{' '}
+          Total for {confirmed.length} requested {confirmed.length === 1 ? 'day' : 'days'}:{' '}
           <span className={s.total}>{formatPounds(preview.totalPence)}</span>
         </p>
         <p className={s.hint}>
-          Prices are fixed when you book. You pay by card when you book; your places are held for 30 minutes while you
-          pay. Waitlisted days are only charged if you accept a place. Cancel {preview.freeCancellationHours} hours or
-          more before the session starts for a full refund to your card; later cancellations and no-shows are charged in
-          full.
+          Prices are fixed when you send the request. Nothing is charged now: once Luna’s K9 Club approves, we email you
+          a link to pay by card, and the place is held until the time shown in that email. Waitlisted days are only
+          charged if we give you a place. Cancel {preview.freeCancellationHours} hours or more before the session starts
+          for a full refund to your card; later cancellations and no-shows are charged in full.
         </p>
       </Card>
       {confirmed.length === 0 && !lines.some((l) => l.outcome === 'waitlisted') ? (
@@ -131,10 +133,16 @@ export default async function ReviewPage({
           <input type="hidden" name="session" value={request.session} />
           <input type="hidden" name="taxi" value={request.taxi ? '1' : '0'} />
           <input type="hidden" name="ifFull" value={request.ifFull} />
+          <input type="hidden" name="trial" value={request.trial ? '1' : '0'} />
+          {confirmed.length ? (
+            <Alert tone="warning" title="Your booking isn’t secured yet">
+              <p data-testid="request-not-secured">{REQUEST_NOT_SECURED}</p>
+            </Alert>
+          ) : null}
           <TextArea name="customerNote" label="Anything we should know for these days?" rows={2} />
           <div className={s.row} style={{ justifyContent: 'flex-start' }}>
-            <SubmitButton pendingText="Booking…">
-              {preview.totalPence > 0 ? `Continue to payment (${formatPounds(preview.totalPence)})` : 'Confirm booking'}
+            <SubmitButton pendingText="Sending…">
+              {confirmed.length ? 'Send booking request' : 'Join the waitlist'}
             </SubmitButton>
             <Link href="/account/book">Change</Link>
           </div>

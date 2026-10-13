@@ -21,12 +21,12 @@ import {
 } from '@/infra/db/schema';
 import { createMyDog, saveMyDogVet, submitMyOnboardingForm } from '@/server/services/dogs';
 import { uploadVaccinationRecord } from '@/server/services/documents';
-import { acceptOffer, createMyBookings, previewMyBookings } from '@/server/services/bookings';
+import { createMyBookings, previewMyBookings } from '@/server/services/bookings';
 import {
   addClosure,
   checkIn,
   ownerCreateBooking,
-  offerPlace,
+  giveWaitlistPlace,
   ownerDay,
   removeClosure,
   setDayCapacity,
@@ -157,7 +157,7 @@ afterAll(async () => {
   await db().execute(
     sql`update booking_dogs set status = 'cancelled', cancelled_at = now(), late_cancellation = false
         where customer_id = (select id from customers where user_id = ${cass.userId})
-          and status in ('confirmed', 'pending_payment', 'waitlisted', 'offered') and service_date > ${today}`,
+          and status in ('confirmed', 'pending_payment', 'waitlisted', 'requested') and service_date > ${today}`,
   );
   await releaseMemberDays(db());
   setEmailProvider(undefined);
@@ -328,8 +328,8 @@ describe('customer booking (D40, D73, D74)', () => {
   });
 });
 
-describe('waitlist offers (D41, D73)', () => {
-  it('a waitlist place can’t be accepted while a licence vaccination is out of date', async () => {
+describe('Give place (D82, D73)', () => {
+  it('a waitlist place can’t be given while a licence vaccination is out of date', async () => {
     const date = weekdayAhead(60);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     const r = await createMyBookings(db(), cass, {
@@ -345,16 +345,16 @@ describe('waitlist offers (D41, D73)', () => {
       .select()
       .from(bookingDogs)
       .where(and(eq(bookingDogs.dogId, dogA), eq(bookingDogs.serviceDate, date)));
-    await offerPlace(db(), owner, w!.id, { version: w!.version });
     await setState(dogA, CORE, 'expired');
     try {
-      await expect(acceptOffer(db(), cass, w!.id)).rejects.toThrow(
-        /can’t be accepted yet: Core vaccinations has expired/,
+      await expect(giveWaitlistPlace(db(), owner, w!.id, { version: w!.version })).rejects.toThrow(
+        /Can’t give Acorn a place: Core vaccinations has expired/,
       );
+      expect((await fresh(w!.id)).status).toBe('waitlisted');
     } finally {
       await setState(dogA, CORE, 'approved');
     }
-    await acceptOffer(db(), cass, w!.id);
+    await giveWaitlistPlace(db(), owner, w!.id, { version: w!.version });
     expect((await fresh(w!.id)).status).toMatch(/pending_payment|confirmed/);
   });
 });
