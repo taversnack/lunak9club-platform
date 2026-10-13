@@ -78,14 +78,32 @@ test('customer adds a dog, vet, onboarding form and vaccination record', async (
 
   await page.getByRole('link', { name: 'Add your vet’s details.' }).click();
   await expect(page).toHaveURL(/\/vet$/);
-  await page.getByLabel('Practice name').fill('Riverside Vets');
-  await page.getByLabel('Practice phone number').fill('01483 111222');
+  await page.getByLabel('Practice name', { exact: true }).fill('Riverside Vets');
+  await page.getByLabel('Practice phone number', { exact: true }).fill('01483 111222');
+  await page.getByRole('button', { name: 'Save vet details' }).click();
+  await expect(page.getByText('Error: Choose which vet we should use in an emergency')).toBeVisible();
+  await axe(page);
+  await page
+    .getByRole('group', { name: /vet should we use in an emergency/ })
+    .getByRole('radio', { name: 'This practice' })
+    .check();
   await page.getByRole('button', { name: 'Save vet details' }).click();
   await expect(page.getByText('Vet details saved.')).toBeVisible();
 
   await page.getByRole('link', { name: 'Complete and send the onboarding form.' }).click();
   await expect(page).toHaveURL(/\/onboarding$/);
-  await page.getByLabel('Flea and worming treatment').fill('Monthly tablet, last given 1st');
+  await page.getByLabel('Flea and worming products you use').fill('Monthly tablet');
+  await page.getByLabel('Date of the last worming treatment').fill(plusDays(-20));
+  await page.getByLabel('Date of the last flea treatment').fill(plusDays(-10));
+  await page
+    .getByRole('group', { name: /exercise restrictions/ })
+    .getByRole('radio', { name: 'No' })
+    .check();
+  await page
+    .getByRole('group', { name: /insured/ })
+    .getByRole('radio', { name: 'Yes' })
+    .check();
+  await page.getByLabel('If yes, who with?').fill('Petplan');
   await page.getByLabel('What is your dog like with people and other dogs?').fill('Very friendly, loves fetch');
   await page
     .getByRole('group', { name: /bitten/ })
@@ -103,6 +121,23 @@ test('customer adds a dog, vet, onboarding form and vaccination record', async (
     .getByRole('group', { name: /emergency vet/ })
     .getByRole('radio', { name: 'Yes' })
     .check();
+  // Consents (D69): one yes/no each, grouped; the under-1 question isn't shown for an adult dog.
+  await expect(page.getByRole('group', { name: 'Food and treats' })).toBeVisible();
+  await expect(page.getByRole('group', { name: /under 1 year/ })).toHaveCount(0);
+  for (const [q, answer] of [
+    [/feed your dog while/, 'Yes'],
+    [/other dogs nearby/, 'No'],
+    [/crate/, 'Yes'],
+    [/flea or worming/, 'Yes'],
+    [/medicine/, 'Yes'],
+  ] as const)
+    await page.getByRole('group', { name: q }).getByRole('radio', { name: answer }).check();
+  await page.getByRole('button', { name: 'Send onboarding form' }).click();
+  await expect(page.getByText('Error: Choose yes or no')).toBeVisible(); // group walks not answered
+  await page
+    .getByRole('group', { name: /group walks/ })
+    .getByRole('radio', { name: 'Yes' })
+    .check();
   await page.getByRole('button', { name: 'Send onboarding form' }).click();
   await expect(page.getByText('Error: Please confirm the information is accurate')).toBeVisible();
   await axe(page);
@@ -114,6 +149,7 @@ test('customer adds a dog, vet, onboarding form and vaccination record', async (
   await expect(page).toHaveURL(/\/vaccinations$/);
   await page.getByLabel('Vaccination record', { exact: true }).setInputFiles('tests/e2e/fixtures/not-a-pdf.pdf');
   await page.getByRole('checkbox', { name: 'Core vaccinations' }).check();
+  await page.getByLabel('Core vaccinations: date given').fill(plusDays(-60));
   await page.getByLabel('Core vaccinations: valid until').fill(plusDays(300));
   await page.getByRole('button', { name: 'Upload record' }).click();
   await expect(page.getByText(/Please upload a PDF or a photo/)).toBeVisible();
@@ -122,6 +158,7 @@ test('customer adds a dog, vet, onboarding form and vaccination record', async (
   await page.getByLabel('Vaccination record', { exact: true }).setInputFiles('tests/e2e/fixtures/vaccination-card.pdf');
   for (const v of ['Core vaccinations', 'Leptospirosis vaccination', 'Kennel cough vaccination']) {
     await page.getByRole('checkbox', { name: v }).check();
+    await page.getByLabel(`${v}: date given`).fill(plusDays(-60));
     await page.getByLabel(`${v}: valid until`).fill(plusDays(300));
   }
   await page.getByRole('button', { name: 'Upload record' }).click();
@@ -155,6 +192,10 @@ test('owner reviews records, records assessments and approves the dog', async ({
   await page.getByRole('link', { name: dogName }).first().click();
   await expect(page.getByRole('heading', { name: dogName, level: 1 })).toBeVisible();
   await expect(page.getByText('Very friendly, loves fetch')).toBeVisible();
+  await expect(page.getByText('Petplan')).toBeVisible();
+  await expect(page.getByText('Same as vet')).toBeVisible();
+  await expect(page.getByText(/Answered by .+ on /).first()).toBeVisible();
+  await expect(page.getByText('Not needed (1 year or older)')).toBeVisible();
   await axe(page);
 
   for (let i = 0; i < 3; i++) {

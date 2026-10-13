@@ -23,6 +23,13 @@ export const REDACT_PATHS = [
   '*.medication',
   '*.allergies',
   '*.behaviour',
+  // Licence register fields (D68–D70): never logged; these paths are a safety net.
+  '*.insurer',
+  '*.insurancePolicyNumber',
+  '*.exerciseRestrictions',
+  '*.lastWormedOn',
+  '*.lastFleaTreatmentOn',
+  '*.administeredOn',
 ];
 
 export const logger = pino({

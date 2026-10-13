@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import {
@@ -23,7 +23,8 @@ import { idOrNotFound, isoDate, optionalText, parseInput } from '../validation';
 import { evaluateDogs } from './compliance-facts';
 import { appUrl, firstNameOf, sendSafely } from '../notify';
 import { dogApprovedMessage, recordNeedsAttentionMessage } from '@/infra/email/templates';
-import { londonDate } from '@/domain/time';
+import { isIsoDate, londonDate } from '@/domain/time';
+import { CONSENT_KEYS, registerGaps } from '@/domain/compliance/register';
 
 /** Owner: customers list with dog counts. Optional search by name, email or postcode. */
 export async function listCustomers(db: Db, actor: Actor, q?: string) {
@@ -141,6 +142,7 @@ export async function getDogForOwner(db: Db, actor: Actor, rawDogId: string) {
         requirementLabel: complianceRequirements.label,
         status: complianceSubmissions.status,
         expiresOn: complianceSubmissions.expiresOn,
+        administeredOn: complianceSubmissions.administeredOn,
         reviewReason: complianceSubmissions.reviewReason,
         submittedAt: complianceSubmissions.submittedAt,
         reviewedAt: complianceSubmissions.reviewedAt,
@@ -158,9 +160,47 @@ export async function getDogForOwner(db: Db, actor: Actor, rawDogId: string) {
     db.select().from(contacts).where(eq(contacts.customerId, row.customerId)),
     evaluateDogs(db, [dogId]),
   ]);
+  const p = perms[0] ?? null;
+  // Who answered each consent (D69): names for the Owner page; ids never leave the server.
+  const byIds = p ? [...new Set(CONSENT_KEYS.map((k) => p[`${k}By`]).filter((x): x is string => Boolean(x)))] : [];
+  const [agreed, answeredBy] = await Promise.all([
+    row.dog.agreedVetId && row.dog.agreedVetId !== row.dog.vetId
+      ? db.select().from(vets).where(eq(vets.id, row.dog.agreedVetId))
+      : Promise.resolve([]),
+    byIds.length
+      ? db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, byIds))
+      : Promise.resolve([] as { id: string; name: string }[]),
+  ]);
+  const names = new Map(answeredBy.map((u) => [u.id, u.name]));
+  const consentAnswers = CONSENT_KEYS.map((k) => {
+    const by = p?.[`${k}By`] ?? null;
+    return {
+      key: k,
+      value: p?.[k] ?? null,
+      at: p?.[`${k}At`] ?? null,
+      byName: by
+        ? by === (actor.kind === 'user' ? actor.userId : '')
+          ? 'you'
+          : (names.get(by) ?? 'a former user')
+        : null,
+    };
+  });
+  const h = health[0] ?? null;
+  const gaps = registerGaps(
+    {
+      dateOfBirth: row.dog.dateOfBirth,
+      health: h,
+      consents: p,
+      hasAgreedVet: Boolean(row.dog.agreedVetId),
+    },
+    londonDate(new Date()),
+  );
   await recordAudit(db, { actor, action: 'dog.sensitive_viewed', entityType: 'dog', entityId: dogId });
   return {
     ...row,
+    agreedVet: agreed[0] ?? null,
+    consentAnswers,
+    registerGaps: gaps,
     health: health[0] ?? null,
     behaviour: behaviour[0] ?? null,
     permissions: perms[0] ?? null,
@@ -187,6 +227,13 @@ export const ReviewInput = z
     decision: z.enum(['approve', 'reject', 'request_replacement'], { message: 'Choose a decision' }),
     reason: optionalText(500),
     expiresOn: isoDate('the expiry date'),
+    /** Date given (D68). Blank keeps what the customer entered; the Owner corrects it here only (D72). */
+    administeredOn: z
+      .string()
+      .trim()
+      .optional()
+      .transform((v) => (v ? v : null))
+      .refine((v) => v === null || isIsoDate(v), 'Enter the date given as a real date'),
     version: z.coerce.number().int().positive(),
   })
   .refine((d) => d.decision === 'approve' || Boolean(d.reason), {
@@ -211,6 +258,15 @@ export async function reviewSubmission(db: Db, actor: Actor, rawId: string, inpu
         expiresOn: 'This date has passed – the vaccination has expired',
       });
     }
+    const administeredOn = d.administeredOn ?? sub.administeredOn;
+    if (administeredOn && (administeredOn > d.expiresOn || administeredOn > londonDate(new Date()))) {
+      throw new ValidationError('Please check the highlighted fields.', {
+        administeredOn:
+          administeredOn > d.expiresOn
+            ? 'The date given must be before the valid-until date'
+            : 'This date is in the future',
+      });
+    }
     if (d.decision === 'approve') {
       await tx
         .update(complianceSubmissions)
@@ -228,6 +284,7 @@ export async function reviewSubmission(db: Db, actor: Actor, rawId: string, inpu
       .set({
         status: d.decision === 'approve' ? 'approved' : d.decision === 'reject' ? 'rejected' : 'replacement_requested',
         expiresOn: d.expiresOn,
+        administeredOn,
         reviewReason: d.decision === 'approve' ? null : d.reason,
         reviewedBy: reviewer,
         reviewedAt: new Date(),
@@ -239,7 +296,12 @@ export async function reviewSubmission(db: Db, actor: Actor, rawId: string, inpu
       action: `submission.${d.decision === 'approve' ? 'approved' : d.decision === 'reject' ? 'rejected' : 'replacement_requested'}`,
       entityType: 'compliance_submission',
       entityId: id,
-      metadata: { dogId: sub.dogId, requirement: sub.requirementKey, expiryChanged: d.expiresOn !== sub.expiresOn },
+      metadata: {
+        dogId: sub.dogId,
+        requirement: sub.requirementKey,
+        expiryChanged: d.expiresOn !== sub.expiresOn,
+        dateGivenChanged: administeredOn !== sub.administeredOn,
+      },
     });
     return sub.dogId;
   });
