@@ -1,5 +1,6 @@
 import 'server-only';
 import { raiseRefundRequests } from './billing';
+import { csvCell } from '../csv';
 import { submitPendingRefunds } from './card-refunds';
 import {
   ownerHoldUntil,
@@ -660,12 +661,7 @@ export async function ownerBookableDogs(db: Db, actor: Actor) {
 
 // ---- CSV exports (D35) -------------------------------------------------------
 
-/** Escape a CSV cell and neutralise spreadsheet formula injection. */
-export function csvCell(v: unknown): string {
-  let s = v == null ? '' : String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+export { csvCell };
 const csv = (rows: unknown[][]) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
 export async function attendanceCsv(db: Db, actor: Actor, date: IsoDate) {
