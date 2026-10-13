@@ -68,7 +68,7 @@ let bookedDate: string;
 /** Fully onboard and approve a dog for a customer. */
 async function approvedDog(user: TestUser, name: string) {
   const id = await createMyDog(db(), user, { ...validDog, name });
-  await saveMyDogVet(db(), user, id, { practiceName: 'Vets', phone: '01483000000' });
+  await saveMyDogVet(db(), user, id, { practiceName: 'Vets', phone: '01483000000', agreedVet: 'same' });
   await submitMyOnboardingForm(db(), user, id, validOnboarding);
   const expires = addDays(today, 200);
   await uploadVaccinationRecord(db(), storage, user, {
@@ -78,6 +78,7 @@ async function approvedDog(user: TestUser, name: string) {
     entries: ['vaccination_core', 'vaccination_leptospirosis', 'vaccination_kennel_cough'].map((k) => ({
       requirementKey: k,
       expiresOn: expires,
+      administeredOn: addDays(today, -30),
     })),
   });
   const subs = await db()
@@ -468,6 +469,7 @@ describe('Owner day operations', () => {
     expect(att).toContain('Trial Pup');
     const em = await emergencyCsv(db(), owner, today);
     expect(em).toContain('Em Contact 07700900555');
+    expect(em.split('\r\n')[0]).toContain('Agreed emergency vet');
     expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
     expect(csvCell('+44 7700')).toBe("'+44 7700");
     const a = await db().execute<{ action: string }>(sql`select action from audit_events where action like 'export.%'`);

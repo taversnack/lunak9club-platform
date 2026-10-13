@@ -49,7 +49,7 @@ export default async function DogPage({
 }) {
   const { dogId } = await params;
   const { saved } = await searchParams;
-  const { dog, evaluation, submissions, vet } = await loadDogPage(dogId);
+  const { dog, evaluation, submissions, vet, agreedVet, registerGaps } = await loadDogPage(dogId);
   const actor = await requirePermission('account.access');
   const [dogIncidents, notes] = await Promise.all([
     myIncidents(getDb(), actor, { dogId: dog.id }),
@@ -70,6 +70,20 @@ export default async function DogPage({
       {dog.status === 'suspended' || dog.status === 'rejected' ? (
         <Alert tone="danger" title={dog.status === 'suspended' ? 'Bookings are paused' : 'Not accepted'}>
           {dog.statusReason}
+        </Alert>
+      ) : null}
+      {dog.onboardingSubmittedAt && registerGaps.length ? (
+        // Dogs onboarded before the licence register fields existed (D72): a prompt, never a block.
+        <Alert tone="info" title={`We need a few more details for ${dog.name}`}>
+          Please{' '}
+          {registerGaps.some((g) => g !== 'agreedVet') ? (
+            <Link href={`/account/dogs/${dog.id}/onboarding`}>update the onboarding form</Link>
+          ) : null}
+          {registerGaps.some((g) => g !== 'agreedVet') && registerGaps.includes('agreedVet') ? ' and ' : null}
+          {registerGaps.includes('agreedVet') ? (
+            <Link href={`/account/dogs/${dog.id}/vet`}>tell us which vet to use in an emergency</Link>
+          ) : null}
+          .
         </Alert>
       ) : null}
       {evaluation.overall === 'ready_for_approval' ? (
@@ -124,6 +138,16 @@ export default async function DogPage({
           <dd>{dog.microchipNumber ?? '–'}</dd>
           <dt>Vet</dt>
           <dd>{vet ? `${vet.practiceName}, ${vet.phone}` : 'Not added yet'}</dd>
+          <dt>Vet for emergencies</dt>
+          <dd>
+            {!dog.agreedVetId
+              ? 'Not chosen yet'
+              : dog.agreedVetId === dog.vetId
+                ? 'Same as above'
+                : agreedVet
+                  ? `${agreedVet.practiceName}, ${agreedVet.phone}`
+                  : '–'}
+          </dd>
         </dl>
         <p>
           <Link href={`/account/dogs/${dog.id}/vet`}>Update vet details</Link> ·{' '}
@@ -146,6 +170,7 @@ export default async function DogPage({
               <thead>
                 <tr>
                   <th scope="col">Vaccination</th>
+                  <th scope="col">Date given</th>
                   <th scope="col">Valid until</th>
                   <th scope="col">Status</th>
                   <th scope="col">File</th>
@@ -167,6 +192,7 @@ export default async function DogPage({
                     return (
                       <tr key={x.id}>
                         <td>{label}</td>
+                        <td>{x.administeredOn ? formatUkDate(x.administeredOn) : '–'}</td>
                         <td>{formatUkDate(x.expiresOn)}</td>
                         <td>
                           <StatusBadge tone={st.tone}>{st.text}</StatusBadge>

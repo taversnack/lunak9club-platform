@@ -125,11 +125,11 @@ describe('deletion requests (review L5)', () => {
     await db().insert(dataRequests).values({ customerId: id });
   });
 
-  it('migration 0016 keeps only the earliest open request when duplicates already exist', async () => {
+  it('migration 0019 (review_lows) keeps only the earliest open request when duplicates already exist', async () => {
     const u = await makeUser(db(), 'customer', 'Pre Existing');
     await readyCustomer(db(), u);
     const id = await customerId(u);
-    const statements = readFileSync('drizzle/0016_review_lows.sql', 'utf8').split('--> statement-breakpoint');
+    const statements = readFileSync('drizzle/0019_review_lows.sql', 'utf8').split('--> statement-breakpoint');
     const dedupe = statements.find((s) => /DELETE FROM "data_requests"/.test(s))!;
     const kept = await db()
       .transaction(async (tx) => {
