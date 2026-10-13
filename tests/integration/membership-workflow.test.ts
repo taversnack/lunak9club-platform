@@ -1,8 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { runTick } from '@/server/services/jobs';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
-import { accounts, bookingDogs, customers, memberships, membershipOffers, users } from '@/infra/db/schema';
+import {
+  accounts,
+  approvalRequests,
+  jobRuns,
+  bookingDogs,
+  customers,
+  memberships,
+  membershipOffers,
+  users,
+} from '@/infra/db/schema';
 import {
   checkInvite,
   confirmMyMonth,
@@ -177,7 +187,10 @@ describe('membership.days approvals (D87, D89)', () => {
 });
 
 describe('move this occasion only (membership.move_once, D90)', () => {
-  it('refuses a different month and accepts a same-month swap', async () => {
+  it('refuses a different month and accepts a same-month swap (dates pinned, never skips)', async () => {
+    // Use a Monday membership day in NEXT month and pin "now" to 5 days before that month starts,
+    // so the move is always in the future, with notice, and has other weekdays in the same month.
+    const month = addDays(`${today.slice(0, 7)}-28`, 7).slice(0, 7);
     const days = await db()
       .select()
       .from(bookingDogs)
@@ -185,20 +198,46 @@ describe('move this occasion only (membership.move_once, D90)', () => {
         and(eq(bookingDogs.dogId, custDog), eq(bookingDogs.kind, 'membership'), eq(bookingDogs.status, 'confirmed')),
       );
     const bd = days
-      .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate))
-      .find((d) => d.serviceDate > addDays(today, 3));
-    if (!bd) return;
-    const nextMonth = addDays(`${bd.serviceDate.slice(0, 7)}-01`, 40);
-    await expect(requestMyMoveOnce(db(), cust, { bookingDogId: bd.id, toDate: nextMonth })).rejects.toBeInstanceOf(
-      ValidationError,
-    );
-    let to = addDays(bd.serviceDate, 1);
-    while (isoWeekday(to) > 5) to = addDays(to, 1);
-    if (to.slice(0, 7) !== bd.serviceDate.slice(0, 7)) return;
-    const r = await requestMyMoveOnce(db(), cust, { bookingDogId: bd.id, toDate: to });
-    await approveApprovalRequest(db(), owner, r.id);
-    const [after] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, bd.id));
+      .filter((d) => d.serviceDate.startsWith(month))
+      .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate))[0];
+    expect(bd, 'a booked Monday next month').toBeDefined();
+    const now = new Date(`${addDays(`${month}-01`, -5)}T09:00:00Z`);
+    const otherMonth = addDays(`${month}-28`, 7);
+    await expect(
+      requestMyMoveOnce(db(), cust, { bookingDogId: bd!.id, toDate: otherMonth }, now),
+    ).rejects.toBeInstanceOf(ValidationError);
+    const to = nextWeekday(2, addDays(`${month}-01`, 7)); // 2nd-ish Tuesday, same month
+    expect(to.slice(0, 7)).toBe(month);
+    const r = await requestMyMoveOnce(db(), cust, { bookingDogId: bd!.id, toDate: to }, now);
+    await approveApprovalRequest(db(), owner, r.id, {}, now);
+    const [after] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, bd!.id));
     expect(after!.serviceDate).toBe(to);
+  });
+});
+
+describe('full days block approval (D90)', () => {
+  it('an approval is refused when a requested day has filled up since; the request stays pending', async () => {
+    const otherDog = await approvedDog(db(), owner, other, 'Juniper');
+    const start = nextWeekday(5, addDays(today, 3));
+    const r = await requestMyMembershipDays(db(), other, {
+      dogId: otherDog,
+      weekdays: [5],
+      session: 'full',
+      startsOn: start,
+    });
+    const full = addDays(start, 7);
+    await db().execute(
+      sql`insert into service_days (service_date, session_capacity) values (${full}, 0) on conflict (service_date) do update set session_capacity = 0`,
+    );
+    try {
+      await expect(approveApprovalRequest(db(), owner, r.id)).rejects.toBeInstanceOf(ConflictError);
+      const [req] = await db().select().from(approvalRequests).where(eq(approvalRequests.id, r.id));
+      expect(req!.status).toBe('pending');
+      expect(await db().select().from(memberships).where(eq(memberships.dogId, otherDog))).toHaveLength(0);
+    } finally {
+      await db().execute(sql`update service_days set session_capacity = null where service_date = ${full}`);
+      await rejectApprovalRequest(db(), owner, r.id);
+    }
   });
 });
 
@@ -233,5 +272,32 @@ describe('monthly confirmation (D88)', () => {
     const after = await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, custDog));
     expect(after.length).toBe(before.length);
     await expect(notifyUnconfirmedDays(db(), cust)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('the scheduled tick emails the Owner once per month, however often it runs', async () => {
+    // Pin the clock to the 2nd of a month two months ahead (after the confirm-by day, 09:00 London),
+    // and give a member unconfirmed days in that month.
+    const month = addDays(addDays(`${today.slice(0, 7)}-28`, 7).slice(0, 7) + '-28', 7).slice(0, 7);
+    const dog = await approvedDog(db(), owner, other, 'Hazel');
+    await ownerSetMembershipDays(db(), owner, dog, {
+      weekdays: [1, 2, 3, 4, 5],
+      session: 'full',
+      startsOn: addDays(today, 1),
+    });
+    const now = new Date(`${month}-02T08:30:00Z`);
+    const subject = /unconfirmed membership days/;
+    const ownerMails = () => mail.sent.filter((m) => m.to === owner.email && subject.test(m.subject)).length;
+    const before = ownerMails();
+    const unconfirmed = (await unconfirmedMembers(db(), owner, month)).length;
+    await runTick(db(), SYSTEM, now);
+    await runTick(db(), SYSTEM, new Date(now.getTime() + 3_600_000));
+    await runTick(db(), SYSTEM, new Date(now.getTime() + 86_400_000));
+    expect(ownerMails() - before).toBe(unconfirmed ? 1 : 0);
+    const runs = await db()
+      .select()
+      .from(jobRuns)
+      .where(and(eq(jobRuns.job, 'membership-unconfirmed'), eq(jobRuns.runKey, month)));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe('succeeded');
   });
 });
