@@ -49,6 +49,7 @@ import { appUrl, firstNameOf, ownerEmails, sendSafely } from '../notify';
 import { idOrNotFound, isoDate, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
 import { queueCardRefunds, submitPendingRefunds } from './card-refunds';
+import { invoiceEmailExtras } from './membership-emails';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Q = Db | Tx;
@@ -429,6 +430,7 @@ export async function issueTx(tx: Tx, id: string, now: Date, opts: { requireDeta
     totalPence: inv.totalPence,
     customerId: inv.customerId,
     month: inv.periodMonth,
+    kind: inv.kind,
   };
 }
 
@@ -462,6 +464,7 @@ async function sendInvoice(db: Db, actor: Actor, id: string, now: Date) {
           periodText: formatMonth(issued.month),
         },
         appUrl(`/account/invoices/${id}`),
+        await invoiceEmailExtras(db, { kind: issued.kind, periodMonth: issued.month }, now),
       ),
     );
     await db.update(invoices).set({ emailSentAt: new Date() }).where(eq(invoices.id, id));
@@ -509,6 +512,7 @@ export async function resendInvoice(db: Db, actor: Actor, rawId: string) {
           periodText: formatMonth(inv.periodMonth),
         },
         appUrl(`/account/invoices/${id}`),
+        await invoiceEmailExtras(db, inv),
       ),
     );
   await recordAudit(db, { actor, action: 'invoice.resent', entityType: 'invoice', entityId: id });
