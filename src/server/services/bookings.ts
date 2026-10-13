@@ -21,7 +21,7 @@ import {
   remainingFor,
   type Session,
 } from '@/domain/booking/rules';
-import { addDays, londonDate, type IsoDate } from '@/domain/time';
+import { addDays, formatUkDate, londonDate, type IsoDate } from '@/domain/time';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
@@ -167,7 +167,7 @@ async function validateRequest(db: Db, actor: Actor, input: unknown, now: Date) 
     for (const dog of chosen) {
       // Customers can't override any vaccination block.
       const [block] = allBlocks(blocksForEvaluation(dog.attendance, date));
-      if (block) fields.dates = `${dog.name} on ${date}: ${block}`;
+      if (block) fields.dates = `${dog.name} on ${formatUkDate(date)}: ${block}`;
     }
   }
   if (Object.keys(fields).length) throw new ValidationError('Some of these can’t be booked.', fields);

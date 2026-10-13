@@ -36,7 +36,7 @@ import { recordAssessment, reviewSubmission, updateRequirement } from '@/server/
 import { sendVaccinationReminders } from '@/server/services/reminders';
 import { ConflictError, ValidationError } from '@/server/errors';
 import { isoWeekday } from '@/domain/booking/rules';
-import { addDays, londonDate, londonInstant } from '@/domain/time';
+import { addDays, formatUkDate, londonDate, londonInstant } from '@/domain/time';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
@@ -302,7 +302,11 @@ describe('customer booking (D40, D73, D74)', () => {
     const date = weekdayAhead(5);
     await setPrimary(dogA, addDays(date, -13));
     await expect(book([date])).rejects.toMatchObject({
-      fields: { dates: expect.stringMatching(/first course of vaccinations must be finished at least 14 days/) },
+      fields: {
+        dates: expect.stringMatching(
+          new RegExp(`on ${formatUkDate(date)}: A first course of vaccinations must be finished at least 14 days.*${formatUkDate(addDays(date, 1))}`),
+        ),
+      },
     });
     await setPrimary(dogA, addDays(date, -14));
     await expect(book([date])).resolves.toBeTruthy();
@@ -447,8 +451,11 @@ describe('check-in gate (D42, D73, D74)', () => {
   it('a dog with no problems checks in without a reason and nothing is stored', async () => {
     const dog = await approvedDog(db(), owner, cass, 'Plain Jane');
     const bd = await bookToday(dog);
+    // The booking's own reason (stored only when today is a closed day) must be left exactly as it was.
     await checkIn(db(), owner, bd.id, { version: bd.version, overrideReason: 'ignored' });
-    expect(await fresh(bd.id)).toMatchObject({ status: 'attended', overrideReason: 'Test day' });
+    const after = await fresh(bd.id);
+    expect(after).toMatchObject({ status: 'attended', overrideReason: bd.overrideReason });
+    expect(after.overrideReason ?? '').not.toMatch(/ignored|Check-in/);
   });
 });
 
@@ -665,5 +672,24 @@ describe('reminders at 60, 30, 14 and 7 days (D66, D75)', () => {
       .from(complianceRequirements)
       .where(inArray(complianceRequirements.key, [CORE, LEPTO]));
     expect(rows.every((r) => r.mandatory && r.blocksBooking && r.active)).toBe(true);
+  });
+
+  it('core and lepto must keep at least one reminder day; other requirements may have none', async () => {
+    const all = { mandatory: 'on', blocksBooking: 'on', active: 'on' };
+    for (const key of [CORE, LEPTO])
+      for (const reminderDays of ['', '   '])
+        await expect(updateRequirement(db(), owner, key, { ...all, reminderDays })).rejects.toMatchObject({
+          message: expect.stringMatching(/licence requires.*reminder day/),
+          fields: { reminderDays: expect.stringMatching(/at least one reminder day/) },
+        });
+    const rows = await db()
+      .select()
+      .from(complianceRequirements)
+      .where(inArray(complianceRequirements.key, [CORE, LEPTO]));
+    expect(rows.every((r) => r.reminderDays.length > 0)).toBe(true);
+    await updateRequirement(db(), owner, KC, { ...all, reminderDays: '' });
+    const [kc] = await db().select().from(complianceRequirements).where(eq(complianceRequirements.key, KC));
+    expect(kc!.reminderDays).toEqual([]);
+    await updateRequirement(db(), owner, KC, { ...all, reminderDays: '60, 30, 14, 7' });
   });
 });

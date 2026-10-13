@@ -443,6 +443,11 @@ export async function updateRequirement(db: Db, actor: Actor, key: string, input
     throw new ValidationError('The licence requires this vaccination, so it must stay mandatory and block booking.', {
       mandatory: 'Licence requirement – can’t be turned off',
     });
+  // A licence vaccination must always send renewal reminders.
+  if (isLicenceVaccination(key) && d.reminderDays.length === 0)
+    throw new ValidationError('The licence requires this vaccination, so it must keep at least one reminder day.', {
+      reminderDays: 'Licence requirement – add at least one reminder day, like 60, 30, 14, 7',
+    });
   await db.transaction(async (tx) => {
     const updated = await tx
       .update(complianceRequirements)
