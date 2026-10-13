@@ -64,6 +64,8 @@ Leave out `OWNER_PASSWORD` to have one generated and shown once. Scripts refuse 
 
 First E2E run on a new machine: `pnpm exec playwright install chromium`.
 
+E2E tests start `pnpm start` on port **3100** by default. Set `E2E_PORT` to use another port, for example when several checkouts share a machine: `E2E_PORT=3103 pnpm verify`. They always start a fresh server and won't reuse one already on the port. For local dev only, set `E2E_REUSE_SERVER=1` to reuse it (this is ignored on CI).
+
 ## Card payments
 
 - Out of the box `PAYMENTS_DRIVER=simulated`: booking and invoice payments go to a pretend card page at `/dev/checkout/…` with a **Pay with a test card** button. No account needed; no money moves.

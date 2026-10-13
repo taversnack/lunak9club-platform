@@ -1,6 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = Number(process.env.E2E_PORT ?? 3100);
+/** Port for the E2E server. Override with E2E_PORT when several checkouts share one machine. */
+export const DEFAULT_E2E_PORT = 3100;
+const PORT = Number(process.env.E2E_PORT || DEFAULT_E2E_PORT);
+/**
+ * Never reuse a server that's already on the port (it may be another checkout's build, or a dev
+ * server on a different database). Local dev can opt in with E2E_REUSE_SERVER=1; never on CI.
+ */
+const REUSE_SERVER = !process.env.CI && process.env.E2E_REUSE_SERVER === '1';
 const BASE = `http://localhost:${PORT}`;
 const TEST_DB = process.env.TEST_DATABASE_URL ?? 'postgres://lunak9:lunak9@localhost:5432/lunak9_test';
 export const E2E_MAIL_DIR = '.tmp/e2e-mail';
@@ -25,7 +32,7 @@ export default defineConfig({
     // Runs the production build. `pnpm build` must have run first (pnpm verify does this).
     command: `pnpm start -p ${PORT}`,
     url: `${BASE}/api/health`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: REUSE_SERVER,
     timeout: 60_000,
     env: {
       APP_ENV: 'test',

@@ -7,6 +7,8 @@ type Step = { name: string; cmd: string; optional?: boolean };
 const steps: Step[] = [
   { name: 'Format', cmd: 'pnpm -s format:check' },
   { name: 'Lint', cmd: 'pnpm -s lint' },
+  // Regenerates .next/types (typed routes) so typecheck never runs against stale or missing route types.
+  { name: 'Next typegen', cmd: 'pnpm -s exec next typegen' },
   { name: 'Typecheck', cmd: 'pnpm -s typecheck' },
   { name: 'Unit tests', cmd: 'pnpm -s test' },
   { name: 'Integration + authz tests (migrates test DB from zero)', cmd: 'pnpm -s test:int' },

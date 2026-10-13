@@ -25,7 +25,7 @@ export default async function VaccinationsPage({ params }: { params: Promise<{ d
           A clear photo of the vaccination card or a PDF from your vet is fine. One record can cover several
           vaccinations.
         </p>
-        <ActionForm action={uploadVaccinationAction} encType="multipart/form-data">
+        <ActionForm action={uploadVaccinationAction}>
           <input type="hidden" name="dogId" value={dog.id} />
           <FileField
             name="file"
