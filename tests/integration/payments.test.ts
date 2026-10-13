@@ -42,15 +42,16 @@ import { approvedDog, readyCustomer } from '../support/onboard';
 class TestProvider extends SimulatedPaymentProvider {
   /** Make refunds go through but lose the answer, like a timeout after Stripe created them. */
   loseRefundAnswers = false;
+  /** Refunds are accepted but not settled yet (Stripe's 'pending'); a webhook settles them later. */
+  refundsPending = false;
+  /** Make refunds fail the way an invalid Stripe key does. */
+  badKey = false;
   /** Make each refund call slow, so concurrent runs overlap. */
   delayMs = 0;
   refundCalls = 0;
-  override async refund(paymentId: string, amountPence: number, key: string, reference: string) {
+  override async refund(paymentId: string, amountPence: number, key: string, reference: string, attempt?: number) {
     this.refundCalls++;
     if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
-  /** Make refunds fail the way an invalid Stripe key does. */
-  badKey = false;
-  override async refund(paymentId: string, amountPence: number, key: string, reference: string) {
     if (this.badKey)
       return {
         id: '',
@@ -58,13 +59,6 @@ class TestProvider extends SimulatedPaymentProvider {
         failureReason: 'StripeAuthenticationError: Invalid API Key provided',
         needsOwner: true,
       };
-    const res = await super.refund(paymentId, amountPence, key, reference);
-    return this.loseRefundAnswers
-      ? { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' }
-      : res;
-  /** Refunds are accepted but not settled yet (Stripe's 'pending'); a webhook settles them later. */
-  refundsPending = false;
-  override async refund(paymentId: string, amountPence: number, key: string, reference: string, attempt?: number) {
     const res = await super.refund(paymentId, amountPence, key, reference, attempt);
     if (this.loseRefundAnswers)
       return { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' };
@@ -350,7 +344,6 @@ describe('automatic refunds (D20, D58)', () => {
   });
 
   it('concurrent ticks claim an interrupted refund once; a webhook settling it clears the old reason, is audited and emails the customer', async () => {
-  it('an invalid Stripe key fails the refund for the Owner to see, and emails the Owner once', async () => {
     const date = weekdayAhead(46);
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const a = await payLatest(pia.userId);
@@ -401,6 +394,13 @@ describe('automatic refunds (D20, D58)', () => {
     expect(settledBy[0]!.metadata).toMatchObject({ via: 'webhook' });
     const toPia = mail.sent.filter((m) => m.to === pia.email);
     expect(toPia.map((m) => m.subject)).toEqual([expect.stringMatching(/refund of £50\.00/)]);
+  });
+
+  it('an invalid Stripe key fails the refund for the Owner to see, and emails the Owner once', async () => {
+    const date = weekdayAhead(46);
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
+    const a = await payLatest(pia.userId);
+    const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     await db().execute(sql`delete from notification_log where kind = 'card-refunds-failed'`);
     mail.sent.length = 0;
     stripe.badKey = true;
