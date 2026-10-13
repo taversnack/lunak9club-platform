@@ -324,7 +324,7 @@ export async function ownerCancel(db: Db, actor: Actor, rawId: string, input: un
   if (!['confirmed', 'pending_payment', 'waitlisted', 'offered'].includes(bd.status))
     throw new ConflictError('This booking can’t be cancelled.');
   if (bd.status === 'pending_payment') {
-    await releaseBookingHold(db, bd.bookingId, `Cancelled by Luna’s K9 Club before payment: ${d.reason}`, now);
+    await releaseBookingHold(db, bd.bookingId, bd.id, `Cancelled by Luna’s K9 Club before payment: ${d.reason}`, now);
     await recordAudit(db, { actor, action: 'booking.hold_cancelled', entityType: 'booking_dog', entityId: bd.id });
     return;
   }
@@ -508,6 +508,7 @@ export async function ownerCreateBooking(db: Db, actor: Actor, input: unknown, n
       db,
       {
         bookingId,
+        bookingDogIds: [id],
         customerId: dog.customerId,
         createdBy: actor.kind === 'user' ? actor.userId : null,
         expiresAt: hold,

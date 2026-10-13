@@ -234,6 +234,7 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
   // Priced places are held while the customer pays (D6); free ones are confirmed straight away.
   const hold = holdUntil(now, CUSTOMER_HOLD_MINUTES);
   let bookingId = '';
+  let heldIds: string[] = [];
   await db.transaction(async (tx) => {
     const days = await lockDays(tx, dates, settings, now);
     const existing = await tx
@@ -298,6 +299,7 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
     bookingId = booking!.id;
     if (toInsert.length) {
       const ids = await tx.insert(bookingDogs).values(toInsert).returning({ id: bookingDogs.id });
+      heldIds = ids.map((r) => r.id);
       for (let i = 0; i < ids.length; i++) await writeSnapshot(tx, ids[i]!.id, prices[i]!);
     }
     await recordAudit(tx, {
@@ -317,7 +319,7 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
 
   const checkout = await startBookingCheckout(
     db,
-    { bookingId, customerId: customer.id, createdBy: me.userId, expiresAt: hold },
+    { bookingId, bookingDogIds: heldIds, customerId: customer.id, createdBy: me.userId, expiresAt: hold },
     now,
   );
   // With a payment to make, the confirmation email follows the payment; only waitlist places are emailed now.
@@ -428,7 +430,7 @@ export async function cancelMyBooking(db: Db, actor: Actor, rawId: string, now =
   if (bd.serviceDate <= today) throw new ConflictError('Bookings for today can’t be cancelled online. Please call us.');
   if (bd.status === 'pending_payment') {
     // Not paid yet: cancelling releases every place held for that payment.
-    await releaseBookingHold(db, bd.bookingId, 'Cancelled by the customer before paying', now);
+    await releaseBookingHold(db, bd.bookingId, bd.id, 'Cancelled by the customer before paying', now);
     await recordAudit(db, { actor: me, action: 'booking.hold_cancelled', entityType: 'booking_dog', entityId: bd.id });
     return { late: false, refundedPence: 0 };
   }
@@ -511,7 +513,13 @@ export async function acceptOffer(db: Db, actor: Actor, rawId: string, now = new
   if (!needsPayment) return { checkoutUrl: null };
   const checkout = await startBookingCheckout(
     db,
-    { bookingId: bd.bookingId, customerId: bd.customerId, createdBy: me.userId, expiresAt: hold },
+    {
+      bookingId: bd.bookingId,
+      bookingDogIds: [bd.id],
+      customerId: bd.customerId,
+      createdBy: me.userId,
+      expiresAt: hold,
+    },
     now,
   );
   return { checkoutUrl: checkout?.url ?? null };

@@ -1,8 +1,9 @@
 import 'server-only';
-import { and, asc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
 import {
   bookingDogs,
+  checkoutAttemptDays,
   checkoutAttempts,
   customers,
   dogs,
@@ -35,6 +36,7 @@ import { applyRefundUpdate, queueCardRefunds, submitPendingRefunds } from './car
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 const SYSTEM: Actor = { kind: 'system', job: 'payments' };
+const NO_ID = '00000000-0000-0000-0000-000000000000';
 
 /** Places a customer books are held for 31 minutes while they pay (D6; Stripe's minimum is 30). */
 export const CUSTOMER_HOLD_MINUTES = 31;
@@ -63,7 +65,17 @@ async function customerContact(q: Db | Tx, customerId: string) {
   return row;
 }
 
-async function pendingDays(q: Db | Tx, bookingId: string) {
+/** The booking days an attempt pays for; null for attempts opened before days were recorded. */
+async function attemptDayIds(q: Db | Tx, attemptId: string) {
+  const rows = await q
+    .select({ id: checkoutAttemptDays.bookingDogId })
+    .from(checkoutAttemptDays)
+    .where(eq(checkoutAttemptDays.checkoutAttemptId, attemptId));
+  return rows.length ? rows.map((r) => r.id) : null;
+}
+
+/** Held days on a booking, limited to `ids` when given (one checkout's days). */
+async function pendingDays(q: Db | Tx, bookingId: string, ids: string[] | null) {
   return q
     .select({
       id: bookingDogs.id,
@@ -77,7 +89,13 @@ async function pendingDays(q: Db | Tx, bookingId: string) {
     .from(bookingDogs)
     .innerJoin(dogs, eq(dogs.id, bookingDogs.dogId))
     .innerJoin(priceSnapshots, eq(priceSnapshots.bookingDogId, bookingDogs.id))
-    .where(and(eq(bookingDogs.bookingId, bookingId), eq(bookingDogs.status, 'pending_payment')))
+    .where(
+      and(
+        eq(bookingDogs.bookingId, bookingId),
+        eq(bookingDogs.status, 'pending_payment'),
+        ids ? inArray(bookingDogs.id, ids.length ? ids : [NO_ID]) : undefined,
+      ),
+    )
     .orderBy(asc(bookingDogs.serviceDate), asc(dogs.name));
 }
 
@@ -92,10 +110,19 @@ const describeDays = (days: { dogName: string }[]) => {
  */
 export async function startBookingCheckout(
   db: Db,
-  opts: { bookingId: string; customerId: string; createdBy: string | null; expiresAt: Date; notifyByEmail?: boolean },
+  opts: {
+    bookingId: string;
+    /** The held booking_dogs rows this checkout pays for. Other held days on the booking aren't touched. */
+    bookingDogIds: string[];
+    customerId: string;
+    createdBy: string | null;
+    expiresAt: Date;
+    notifyByEmail?: boolean;
+  },
   now = new Date(),
 ) {
-  const days = await pendingDays(db, opts.bookingId);
+  const days = await pendingDays(db, opts.bookingId, opts.bookingDogIds);
+  const dayIds = days.map((d) => d.id);
   const amount = days.reduce((a, d) => a + d.totalPence, 0);
   if (!days.length || amount <= 0) return null;
   const who = await customerContact(db, opts.customerId);
@@ -114,6 +141,9 @@ export async function startBookingCheckout(
       createdBy: opts.createdBy,
     })
     .returning();
+  await db
+    .insert(checkoutAttemptDays)
+    .values(dayIds.map((id) => ({ checkoutAttemptId: attempt!.id, bookingDogId: id })));
   try {
     const s = await provider.createCheckout({
       reference: attempt!.id,
@@ -148,14 +178,14 @@ export async function startBookingCheckout(
   } catch (err) {
     logger.error({ err: err instanceof Error ? err.name : 'unknown' }, 'checkout could not be started');
     await db.update(checkoutAttempts).set({ status: 'failed' }).where(eq(checkoutAttempts.id, attempt!.id));
-    await releaseHolds(db, opts.bookingId, now, 'Card payment unavailable');
+    await releaseHolds(db, opts.bookingId, now, 'Card payment unavailable', dayIds);
     throw new ConflictError(
       'Card payments aren’t available right now, so nothing has been booked. Please try again shortly.',
     );
   }
 }
 
-async function releaseHolds(q: Db | Tx, bookingId: string, now: Date, note: string) {
+async function releaseHolds(q: Db | Tx, bookingId: string, now: Date, note: string, ids: string[] | null) {
   const released = await q
     .update(bookingDogs)
     .set({
@@ -166,7 +196,13 @@ async function releaseHolds(q: Db | Tx, bookingId: string, now: Date, note: stri
       internalNote: note,
       version: sql`${bookingDogs.version} + 1`,
     })
-    .where(and(eq(bookingDogs.bookingId, bookingId), eq(bookingDogs.status, 'pending_payment')))
+    .where(
+      and(
+        eq(bookingDogs.bookingId, bookingId),
+        eq(bookingDogs.status, 'pending_payment'),
+        ids ? inArray(bookingDogs.id, ids.length ? ids : [NO_ID]) : undefined,
+      ),
+    )
     .returning({ id: bookingDogs.id });
   return released.length;
 }
@@ -260,7 +296,7 @@ async function completeBookingPayment(
   amountPence: number,
   now: Date,
 ) {
-  const days = await pendingDays(tx, attempt.bookingId!);
+  const days = await pendingDays(tx, attempt.bookingId!, await attemptDayIds(tx, attempt.id));
   const settings = await loadSettings(tx);
   const locked = await lockDays(
     tx,
@@ -409,7 +445,9 @@ export async function releaseCheckout(
       .update(checkoutAttempts)
       .set({ status: 'expired', completedAt: now })
       .where(eq(checkoutAttempts.id, attemptId));
-    const n = locked.bookingId ? await releaseHolds(tx, locked.bookingId, now, opts.reason) : 0;
+    const n = locked.bookingId
+      ? await releaseHolds(tx, locked.bookingId, now, opts.reason, await attemptDayIds(tx, locked.id))
+      : 0;
     await recordAudit(tx, {
       actor: SYSTEM,
       action: 'payment.checkout_released',
@@ -456,16 +494,33 @@ export async function reconcileOpenCheckouts(db: Db, now = new Date()) {
   return { checked: open.length, paid };
 }
 
-/** The customer's open booking checkout for this booking (if they cancel or abandon, it's released). */
-export async function releaseBookingHold(db: Db, bookingId: string, reason: string, now = new Date()) {
+/**
+ * Cancel one held (unpaid) day: release the open checkout(s) that include it, which frees the
+ * days paid for together with it, then free the day itself if no checkout covered it (e.g. the
+ * provider was down). Other checkouts on the same booking are left alone.
+ */
+export async function releaseBookingHold(
+  db: Db,
+  bookingId: string,
+  bookingDogId: string,
+  reason: string,
+  now = new Date(),
+) {
   const open = await db
-    .select({ id: checkoutAttempts.id })
+    .selectDistinct({ id: checkoutAttempts.id })
     .from(checkoutAttempts)
-    .where(and(eq(checkoutAttempts.bookingId, bookingId), eq(checkoutAttempts.status, 'open')));
+    .leftJoin(checkoutAttemptDays, eq(checkoutAttemptDays.checkoutAttemptId, checkoutAttempts.id))
+    .where(
+      and(
+        eq(checkoutAttempts.bookingId, bookingId),
+        eq(checkoutAttempts.status, 'open'),
+        // Attempts from before days were recorded have no rows: treat them as covering the booking.
+        or(eq(checkoutAttemptDays.bookingDogId, bookingDogId), isNull(checkoutAttemptDays.bookingDogId)),
+      ),
+    );
   let released = 0;
   for (const a of open) released += (await releaseCheckout(db, a.id, { reason, notify: false }, now)).released;
-  // Holds with no open checkout (e.g. the provider was down) are freed directly.
-  released += await releaseHolds(db, bookingId, now, reason);
+  released += await releaseHolds(db, bookingId, now, reason, [bookingDogId]);
   return released;
 }
 
