@@ -55,6 +55,10 @@ describe('registration, verification, sign-in and reset', () => {
     const session = await authRequest('/get-session', { method: 'GET', cookie: signIn.cookie });
     const body = (await session.res.json()) as { user?: { email: string } } | null;
     expect(body?.user?.email).toBe(email);
+    // The retention job judges inactivity from this; sessions are purged too soon to rely on.
+    const [after] = await getDb().select().from(users).where(eq(users.email, email));
+    expect(after?.lastSignedInAt).toBeInstanceOf(Date);
+    expect(Date.now() - after!.lastSignedInAt!.getTime()).toBeLessThan(60_000);
   });
 
   it('rejects a wrong password without revealing whether the account exists', async () => {

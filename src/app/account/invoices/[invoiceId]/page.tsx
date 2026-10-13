@@ -7,6 +7,7 @@ import { ActionForm, SubmitButton } from '@/ui/form';
 import { payInvoiceAction } from '../../actions';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
+import { orNotFound } from '@/server/not-found';
 import { myInvoice } from '@/server/services/billing';
 import { formatMonth } from '@/domain/billing/rules';
 import { pounds } from '@/domain/pricing/engine';
@@ -30,7 +31,7 @@ export default async function MyInvoicePage({
 }) {
   const [{ invoiceId }, sp] = await Promise.all([params, searchParams]);
   const actor = await requirePermission('account.access');
-  const d = await myInvoice(getDb(), actor, invoiceId);
+  const d = await orNotFound(myInvoice(getDb(), actor, invoiceId));
   const inv = d.inv;
   return (
     <Stack>

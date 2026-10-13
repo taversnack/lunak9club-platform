@@ -5,6 +5,7 @@ import { Alert, Card, Muted, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, Checkbox, SubmitButton, TextArea, TextField } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
+import { orNotFound } from '@/server/not-found';
 import { ownerIncident } from '@/server/services/welfare';
 import { formatDateTimeLondon } from '@/ui/format';
 import { formatUkDate } from '@/domain/time';
@@ -30,7 +31,7 @@ export default async function OwnerIncidentPage({
 }) {
   const [{ incidentId }, sp] = await Promise.all([params, searchParams]);
   const actor = await requirePermission('incidents.manage');
-  const d = await ownerIncident(getDb(), actor, incidentId);
+  const d = await orNotFound(ownerIncident(getDb(), actor, incidentId));
   const i = d.inc;
   return (
     <Stack>
