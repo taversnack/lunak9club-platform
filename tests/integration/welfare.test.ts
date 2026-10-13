@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, like, sql } from 'drizzle-orm';
+import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -353,5 +353,46 @@ describe('retention schedule (D64)', () => {
     // This year's incident and checks are untouched.
     expect((await db().select().from(incidents).where(eq(incidents.dogId, rosaDog))).length).toBe(1);
     expect((await db().select().from(welfareChecks).where(eq(welfareChecks.dogId, rosaDog))).length).toBe(2);
+  });
+
+  it('keeps reminder log rows while their vaccination record exists, so reminders never repeat', async () => {
+    const [sub] = await db()
+      .select()
+      .from(complianceSubmissions)
+      .where(and(eq(complianceSubmissions.dogId, rosaDog), eq(complianceSubmissions.status, 'approved')));
+    const expiry = sub!.expiresOn;
+    const afterExpiry = (days: number) => londonInstant(addDays(expiry, days), '08:00');
+    const mine = () => mail.sent.filter((m) => m.to === rosa.email && m.template.startsWith('compliance.vaccination'));
+    await sendVaccinationReminders(db(), system, afterExpiry(1)); // 'expired' already claimed above
+    const rosaKeys = like(notificationLog.key, `vaccination:${rosaDog}:%`);
+    const before = await db().select().from(notificationLog).where(rosaKeys);
+    expect(before.some((k) => k.key.endsWith(':expired'))).toBe(true);
+    // Rows for records that no longer exist, and other kinds, still go after 90 days.
+    const gone = `vaccination:${rosaDog}:core:2000-01-01:expired`;
+    const booking = `booking-reminder:${rosaDog}:2000-01-01`;
+    await db()
+      .insert(notificationLog)
+      .values([
+        { key: gone, kind: 'vaccination' },
+        { key: booking, kind: 'booking-reminder' },
+      ]);
+    await db()
+      .update(notificationLog)
+      .set({ sentAt: new Date(Date.now() - 200 * 86_400_000) })
+      .where(or(rosaKeys, eq(notificationLog.key, booking)));
+
+    await runRetention(db(), storage, system);
+    const after = await db().select().from(notificationLog).where(rosaKeys);
+    expect(after.map((k) => k.key).sort()).toEqual(before.map((k) => k.key).sort());
+    expect(
+      await db()
+        .select()
+        .from(notificationLog)
+        .where(inArray(notificationLog.key, [gone, booking])),
+    ).toEqual([]);
+
+    mail.sent.length = 0;
+    await sendVaccinationReminders(db(), system, afterExpiry(200));
+    expect(mine()).toHaveLength(0);
   });
 });
