@@ -151,8 +151,14 @@ test('customer adds a dog, vet, onboarding form and vaccination record', async (
   await page.getByRole('checkbox', { name: 'Core vaccinations' }).check();
   await page.getByLabel('Core vaccinations: date given').fill(plusDays(-60));
   await page.getByLabel('Core vaccinations: valid until').fill(plusDays(300));
+  // First-course question (D74): a "yes" needs the date the course finished.
+  await page
+    .getByRole('group', { name: /first course of vaccinations/ })
+    .getByRole('radio', { name: 'Yes' })
+    .check();
   await page.getByRole('button', { name: 'Upload record' }).click();
   await expect(page.getByText(/Please upload a PDF or a photo/)).toBeVisible();
+  await expect(page.getByText(/Enter the date the first course finished/).first()).toBeVisible();
   await axe(page);
 
   await page.getByLabel('Vaccination record', { exact: true }).setInputFiles('tests/e2e/fixtures/vaccination-card.pdf');
@@ -161,6 +167,10 @@ test('customer adds a dog, vet, onboarding form and vaccination record', async (
     await page.getByLabel(`${v}: date given`).fill(plusDays(-60));
     await page.getByLabel(`${v}: valid until`).fill(plusDays(300));
   }
+  await page
+    .getByRole('group', { name: /first course of vaccinations/ })
+    .getByRole('radio', { name: 'No' })
+    .check();
   await page.getByRole('button', { name: 'Upload record' }).click();
   await expect(page.getByText('we’ll check the record')).toBeVisible();
   await expect(page.getByText('Waiting for review').first()).toBeVisible();

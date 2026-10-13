@@ -125,6 +125,8 @@ export async function uploadVaccinationAction(_: ActionState, fd: FormData): Pro
       fileName: file.name,
       bytes: new Uint8Array(await file.arrayBuffer()),
       entries,
+      firstCourse: fd.get('firstCourse'),
+      primaryCourseCompletedOn: fd.get('primaryCourseCompletedOn'),
     });
     redirect(`/account/dogs/${dogId}?saved=upload`);
   });
