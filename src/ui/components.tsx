@@ -1,22 +1,36 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import Link from 'next/link';
 import s from './ui.module.css';
 import { CheckIcon, ErrorIcon, InfoIcon, WarningIcon } from './icons';
 
 const cx = (...c: Array<string | false | undefined>) => c.filter(Boolean).join(' ');
 
-type Variant = 'primary' | 'secondary' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Size = 'md' | 'sm';
 
 export function Button({
   variant = 'primary',
+  size = 'md',
   full,
   className,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; full?: boolean }) {
-  return <button className={cx(s.button, s[variant], full && s.full, className)} {...rest} />;
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size; full?: boolean }) {
+  return (
+    <button
+      className={cx(
+        s.button,
+        variant === 'danger' ? s.buttonDanger : s[variant],
+        size === 'sm' && s.sm,
+        full && s.full,
+        className,
+      )}
+      {...rest}
+    />
+  );
 }
 
-export function buttonClass(variant: Variant = 'primary', full = false): string {
-  return cx(s.button, s[variant], full && s.full);
+export function buttonClass(variant: Variant = 'primary', full = false, size: Size = 'md'): string {
+  return cx(s.button, variant === 'danger' ? s.buttonDanger : s[variant], size === 'sm' && s.sm, full && s.full);
 }
 
 export function Card({
@@ -111,6 +125,105 @@ export function StatusBadge({ tone, children }: { tone: Tone; children: ReactNod
       <Icon />
       {children}
     </span>
+  );
+}
+
+/** Page title with optional lead text and actions; one h1 per page. */
+export function PageHeader({ title, lead, actions }: { title: string; lead?: ReactNode; actions?: ReactNode }) {
+  return (
+    <header className={s.pageHeader}>
+      <div>
+        <h1>{title}</h1>
+        {lead ? <p className={s.muted}>{lead}</p> : null}
+      </div>
+      {actions ? <div className={s.pageActions}>{actions}</div> : null}
+    </header>
+  );
+}
+
+/** Dashboard figure: label, value and optional detail/link. Heading level is configurable for correct outline. */
+export function StatCard({
+  label,
+  value,
+  detail,
+  href,
+  linkText,
+  headingLevel = 2,
+}: {
+  label: string;
+  value: ReactNode;
+  detail?: ReactNode;
+  href?: string;
+  linkText?: string;
+  headingLevel?: 2 | 3;
+}) {
+  const H = headingLevel === 2 ? 'h2' : 'h3';
+  const id = `stat-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  return (
+    <section className={cx(s.card, s.statCard)} aria-labelledby={id}>
+      <H id={id} className={s.statLabel}>
+        {label}
+      </H>
+      <p className={s.bigNumber}>{value}</p>
+      {detail ? <p className={s.statDetail}>{detail}</p> : null}
+      {href && linkText ? <Link href={href}>{linkText}</Link> : null}
+    </section>
+  );
+}
+
+/** Shown when a list or table has nothing in it. Always says what to do next when there is an action. */
+export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className={s.empty} role="status">
+      <p className={s.emptyTitle}>{title}</p>
+      {children ? <div className={s.muted}>{children}</div> : null}
+      {action ? <div>{action}</div> : null}
+    </div>
+  );
+}
+
+/** Scrollable, captioned table wrapper. Caption is required for screen readers (can be visually hidden). */
+export function DataTable({
+  caption,
+  captionHidden,
+  children,
+}: {
+  caption: string;
+  captionHidden?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className={s.tableWrap} role="region" aria-label={caption} tabIndex={0}>
+      <table className={s.table}>
+        <caption className={captionHidden ? 'visually-hidden' : s.caption}>{caption}</caption>
+        {children}
+      </table>
+    </div>
+  );
+}
+
+/** Section navigation. Marks the current item with aria-current, not colour alone. */
+export function SubNav({
+  label,
+  items,
+  current,
+}: {
+  label: string;
+  items: Array<{ href: string; label: string }>;
+  current?: string;
+}) {
+  return (
+    <nav aria-label={label}>
+      <ul className={s.subnavList}>
+        {items.map((i) => (
+          <li key={i.href}>
+            <Link href={i.href} aria-current={i.href === current ? 'page' : undefined}>
+              {i.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 
