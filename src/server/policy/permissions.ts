@@ -30,6 +30,7 @@ export const PERMISSIONS = [
   'incidents.manage',
   'welfare.manage',
   'data_requests.manage',
+  'approvals.manage',
   // Customer (self-scoped: always checked against the record's owner)
   'account.access',
   'customer.self.read',
@@ -43,6 +44,7 @@ export const PERMISSIONS = [
   'invoices.self.read',
   'incidents.self.read',
   'data.self.manage',
+  'approvals.self.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -78,6 +80,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     'incidents.manage',
     'welfare.manage',
     'data_requests.manage',
+    'approvals.manage',
   ],
   customer: [
     'account.access',
@@ -92,6 +95,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     'invoices.self.read',
     'incidents.self.read',
     'data.self.manage',
+    'approvals.self.manage',
   ],
 };
 
@@ -108,6 +112,7 @@ export const SELF_SCOPED_PERMISSIONS: ReadonlySet<Permission> = new Set([
   'invoices.self.read',
   'incidents.self.read',
   'data.self.manage',
+  'approvals.self.manage',
 ]);
 
 export function isRoleKey(value: string): value is RoleKey {
