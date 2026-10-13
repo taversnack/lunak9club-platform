@@ -9,6 +9,7 @@ import {
   signIn,
   signOut,
 } from './helpers';
+import { REQUEST_NOT_SECURED_KEY } from '../../src/domain/booking/wording';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -20,6 +21,8 @@ async function axe(page: Page) {
 /** Request one dog on one day through the booking pages. */
 async function request(page: Page, dog: string, iso: string) {
   await page.goto('/account/book');
+  // D76: the Book page says up front that a request doesn't secure the booking.
+  await expect(page.getByTestId('book-request-not-secured')).toContainText(REQUEST_NOT_SECURED_KEY);
   await page.getByRole('checkbox', { name: dog, exact: true }).check();
   await page.locator(`input[name="date"][value="${iso}"]`).check();
   await page.getByRole('button', { name: 'Check price and availability' }).click();

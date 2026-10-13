@@ -6,6 +6,8 @@ import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
+import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
+import { bookPageState } from '@/domain/booking/book-page';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
@@ -28,6 +30,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
   const { error } = await searchParams;
   const bookable = dogs.filter((d) => d.canBook);
   const trialable = dogs.filter((d) => d.canRequestTrial);
+  const state = bookPageState(dogs);
   // Group into Monday-start weeks for a readable calendar.
   const weeks: (typeof cal.days)[] = [];
   for (const day of cal.days) {
@@ -40,8 +43,11 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
     <Stack>
       <h1>Book day care</h1>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {bookable.length === 0 ? (
-        dogs.length === 0 ? (
+      <Alert tone="info" title="How booking works">
+        <p data-testid="book-request-not-secured">{REQUEST_NOT_SECURED}</p>
+      </Alert>
+      {state !== 'form' ? (
+        state === 'no-dogs' ? (
           <Alert tone="info" title="Add your dog to start booking">
             You haven’t added a dog yet. <Link href="/account/dogs/new">Add a dog</Link> and we’ll take you through the
             rest.
