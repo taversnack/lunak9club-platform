@@ -1,4 +1,5 @@
 import 'server-only';
+export { tickFailed } from './tick-result';
 import { and, eq, lt, or, sql } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
 import { invoices, jobRuns } from '@/infra/db/schema';
