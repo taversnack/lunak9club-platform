@@ -47,9 +47,12 @@ let owner: TestUser;
 let tess: TestUser;
 let tessDog: string;
 
+const usedDates = new Set<string>();
+/** A distinct weekday at least n days ahead (two calls never return the same day, whatever today is). */
 function weekdayAhead(n: number): string {
   let d = addDays(londonDate(new Date()), n);
-  while (isoWeekday(d) > 5) d = addDays(d, 1);
+  while (isoWeekday(d) > 5 || usedDates.has(d)) d = addDays(d, 1);
+  usedDates.add(d);
   return d;
 }
 
