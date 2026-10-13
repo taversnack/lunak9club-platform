@@ -300,13 +300,23 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
                   <span>
                     <strong>{r.dogName}</strong> · {SESSION_LABELS[r.session]}
                     {r.taxi ? ' · taxi' : ''} · {r.customerName}
-                    {r.warning ? <span className={s.hint}> · {r.warning}</span> : null}
+                    {r.warning && !r.giveBlock ? <span className={s.hint}> · {r.warning}</span> : null}
+                    {r.giveBlock ? (
+                      <span id={`give-block-${r.id}`} className={s.hint}>
+                        {' '}
+                        · {r.giveBlock}
+                      </span>
+                    ) : null}
                   </span>
                   <div className={s.row} style={{ justifyContent: 'flex-start' }}>
                     <ActionForm action={givePlaceAction}>
                       <input type="hidden" name="id" value={r.id} />
                       <input type="hidden" name="version" value={r.version} />
-                      <SubmitButton variant="secondary">
+                      <SubmitButton
+                        variant="secondary"
+                        disabled={!!r.giveBlock}
+                        describedBy={r.giveBlock ? `give-block-${r.id}` : undefined}
+                      >
                         Give place <span className="visually-hidden">to {r.dogName}</span>
                       </SubmitButton>
                     </ActionForm>

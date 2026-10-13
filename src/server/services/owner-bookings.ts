@@ -98,6 +98,8 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
     return {
       ...r,
       warning,
+      /** D82: a dog failing the vaccination check for this date can't be given a place. */
+      giveBlock: vacc ? `Can’t give a place: ${vacc}` : null,
       holdLive: r.status === 'pending_payment' && !!r.offerExpiresAt && r.offerExpiresAt > now,
     };
   });
@@ -267,7 +269,8 @@ export async function giveWaitlistPlace(db: Db, actor: Actor, rawId: string, inp
         bd.serviceDate,
       )
     : null;
-  if (vacc) throw new ConflictError(`${row.dogName}: ${vacc}`);
+  // D82: refuse up front, before anything changes, with the reason the Owner sees on the day view.
+  if (vacc) throw new ConflictError(`Can’t give ${row.dogName} a place: ${vacc}`);
   const [snap] = await db
     .select({ totalPence: priceSnapshots.totalPence })
     .from(priceSnapshots)

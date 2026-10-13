@@ -1,6 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, latestEmail, signIn, signOut } from './helpers';
+import {
+  DEMO_CUSTOMER,
+  DEMO_CUSTOMER_2,
+  DEMO_OWNER,
+  latestEmail,
+  setVaccinationExpiry,
+  signIn,
+  signOut,
+} from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -110,7 +118,19 @@ test('Give place: a full day, the waitlist and the Owner choosing the dog', asyn
   await req.getByLabel(/Reason for declining/).fill('Keeping numbers low');
   await req.getByRole('button', { name: /^Decline day/ }).click();
   await expect(page.getByRole('heading', { name: /Requests waiting \(0\)/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Give place to Biscuit' }).click();
+  // D82: a dog failing the vaccination check for the day can't be given the place – shown up front.
+  const dayBefore = new Date(Date.parse(`${dayIso}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  const was = await setVaccinationExpiry('Biscuit', 'vaccination_kennel_cough', dayBefore);
+  expect(was).not.toBeNull();
+  await page.reload();
+  const give = page.getByRole('button', { name: 'Give place to Biscuit' });
+  await expect(give).toBeDisabled();
+  await expect(page.getByText(/Can’t give a place: .*runs out before this date/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Waitlist \(1\)/ })).toBeVisible();
+  await setVaccinationExpiry('Biscuit', 'vaccination_kennel_cough', was!);
+  await page.reload();
+  await expect(give).toBeEnabled();
+  await give.click();
   // Biscuit now has its own booking, held for payment with a pay link emailed (D82).
   await expect(page.getByRole('region', { name: /^Dogs/ })).toContainText('Biscuit');
   await expect(page.getByText(/Payment link sent – held until/).first()).toBeVisible();

@@ -430,6 +430,44 @@ describe('manual waitlist (D81, D82)', () => {
     await expect(giveWaitlistPlace(db(), alice, waiting.id, { version: 1 })).rejects.toBeInstanceOf(AuthorizationError);
   });
 
+  it('Give place blocks a dog failing the vaccination check up front, with the reason (D82)', async () => {
+    const date = weekdayAhead(40);
+    const pip = await onboardedDog(bob, 'Pip');
+    await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
+    await createMyBookings(db(), bob, { dogIds: [pip], dates: [date], session: 'full', taxi: false });
+    const waiting = await rowOf(pip, date);
+    expect(waiting.status).toBe('waitlisted');
+    // The kennel cough cover now runs out the day before; a place frees up.
+    await db()
+      .update(complianceSubmissions)
+      .set({ expiresOn: addDays(date, -1) })
+      .where(
+        and(eq(complianceSubmissions.dogId, pip), eq(complianceSubmissions.requirementKey, 'vaccination_kennel_cough')),
+      );
+    await setDayCapacity(db(), owner, { date, sessionCapacity: 5, taxiCapacity: 20 });
+
+    const day = await ownerDay(db(), owner, date);
+    const listed = day.waitlist.find((r) => r.id === waiting.id)!;
+    expect(listed.giveBlock).toMatch(/^Can’t give a place: .*runs out before this date/);
+
+    mail.sent.length = 0;
+    const auditBefore = await db().execute(
+      sql`select count(*)::int as n from audit_events where entity_id = ${waiting.id}`,
+    );
+    await expect(giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version })).rejects.toThrow(
+      /Can’t give Pip a place: .*runs out before this date/,
+    );
+    const after = await rowOf(pip, date);
+    expect(after.status).toBe('waitlisted');
+    expect(after.version).toBe(waiting.version);
+    expect(after.bookingId).toBe(waiting.bookingId);
+    expect(mail.sent).toHaveLength(0);
+    const auditAfter = await db().execute(
+      sql`select count(*)::int as n from audit_events where entity_id = ${waiting.id}`,
+    );
+    expect(auditAfter.rows[0]).toEqual(auditBefore.rows[0]);
+  });
+
   it('membership waitlist places are confirmed straight away', async () => {
     const date = weekdayAhead(31);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });

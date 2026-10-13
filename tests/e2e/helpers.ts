@@ -70,3 +70,28 @@ export async function signOut(page: Page) {
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/sign-in/);
 }
+
+/**
+ * Test-only: move a demo dog's vaccination expiry in the e2e test database (to rehearse a
+ * vaccination block without waiting months). Returns the previous expiry so it can be restored.
+ */
+export async function setVaccinationExpiry(dogName: string, requirementKey: string, expiresOn: string) {
+  const { Client } = await import('pg');
+  const url = process.env.TEST_DATABASE_URL ?? 'postgres://lunak9:lunak9@localhost:5432/lunak9_test';
+  if (!/test/.test(new URL(url).pathname)) throw new Error('Only for a *test* database');
+  const c = new Client({ connectionString: url });
+  await c.connect();
+  try {
+    const r = await c.query<{ expires_on: string }>(
+      `update compliance_submissions s set expires_on = $3
+         from dogs d, compliance_submissions old
+        where d.id = s.dog_id and d.name = $1 and s.requirement_key = $2 and old.id = s.id
+          and s.status = 'approved'
+        returning to_char(old.expires_on, 'YYYY-MM-DD') as expires_on`,
+      [dogName, requirementKey, expiresOn],
+    );
+    return r.rows[0]?.expires_on ?? null;
+  } finally {
+    await c.end();
+  }
+}
