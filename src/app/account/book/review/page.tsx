@@ -74,7 +74,7 @@ export default async function ReviewPage({
           {request.taxi ? ' with dog taxi' : ''}
         </h2>
         <div className={s.tableWrap} role="region" aria-label="Booking summary" tabIndex={0}>
-          <table className={s.table}>
+          <table className={`${s.table} ${s.stackTable}`}>
             <thead>
               <tr>
                 <th scope="col">Date</th>
@@ -86,13 +86,13 @@ export default async function ReviewPage({
             <tbody>
               {lines.map((l) => (
                 <tr key={`${l.date}-${l.dogId}`}>
-                  <td>{formatUkDate(l.date)}</td>
-                  <td>{l.dogName}</td>
-                  <td>
+                  <td data-primary="">{formatUkDate(l.date)}</td>
+                  <td data-label="Dog">{l.dogName}</td>
+                  <td data-label="What will happen">
                     <StatusBadge tone={outcome[l.outcome].tone}>{outcome[l.outcome].text}</StatusBadge>
                     {l.reason && l.outcome === 'skipped' ? <span className={s.hint}> {l.reason}</span> : null}
                   </td>
-                  <td>
+                  <td data-label="Price">
                     {l.price && l.outcome !== 'skipped' ? (
                       <>
                         {formatPounds(l.price.totalPence)}

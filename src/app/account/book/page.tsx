@@ -6,7 +6,8 @@ import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
-import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
+import b from './book.module.css';
+import { DatePager, StickySubmit } from './date-pager';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,13 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
     weeks.at(-1)!.push(day);
   }
   const open = (w: typeof cal.days) => w.filter((d) => isoWeekday(d.date) <= 5 || d.open);
+  // Two weeks per page keeps the page short on phones (all pages stay in the form).
+  const pairs: (typeof cal.days)[][] = [];
+  for (let n = 0; n < weeks.length; n += 2) pairs.push(weeks.slice(n, n + 2));
+  const rangeLabel = (p: (typeof cal.days)[]) => {
+    const all = p.flat();
+    return `${dayLabel(all[0]!.date)} – ${dayLabel(all.at(-1)!.date)}`;
+  };
 
   return (
     <Stack>
@@ -141,41 +149,40 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                 <span className={s.hint}>
                   Bookings close at 23:59 the day before. Weekends and bank holidays are closed.
                 </span>
-                {weeks.map((w) => (
-                  <div key={w[0]!.date} className={s.week}>
-                    {open(w).map((d) => {
-                      const a = AVAIL[d.availability];
-                      return (
-                        <label key={d.date} className={`${s.day} ${d.open ? '' : s.dayClosed}`}>
-                          <span className={s.dayTop}>
-                            <input type="checkbox" name="date" value={d.date} disabled={!d.open} />
-                            <strong>{dayLabel(d.date)}</strong>
-                          </span>
-                          <StatusBadge tone={a.tone}>{a.text}</StatusBadge>
-                          {d.open ? (
-                            <span className={s.hint}>
-                              {d.left.full > 0
-                                ? `${d.left.full} full-day places`
-                                : `Morning ${Math.max(0, d.left.am)}, afternoon ${Math.max(0, d.left.pm)}`}
+                <DatePager
+                  labels={pairs.map(rangeLabel)}
+                  pages={pairs.map((p) => (
+                    <div key={p[0]![0]!.date} className={b.days}>
+                      {p.flatMap(open).map((d) => {
+                        const a = AVAIL[d.availability];
+                        return (
+                          <label key={d.date} className={b.dayCard}>
+                            <span className={b.dayTop}>
+                              <input type="checkbox" name="date" value={d.date} disabled={!d.open} />
+                              <strong>{dayLabel(d.date)}</strong>
                             </span>
-                          ) : (
-                            <span className={s.hint}>{d.closedReason}</span>
-                          )}
-                          {d.mine.length ? (
-                            <span className={s.hint}>Booked: {d.mine.map((m) => m.dogName).join(', ')}</span>
-                          ) : null}
-                        </label>
-                      );
-                    })}
-                  </div>
-                ))}
+                            <StatusBadge tone={a.tone}>{a.text}</StatusBadge>
+                            {d.open ? (
+                              <span className={b.left}>
+                                {d.left.full > 0
+                                  ? `${d.left.full} left`
+                                  : `AM ${Math.max(0, d.left.am)} · PM ${Math.max(0, d.left.pm)} left`}
+                              </span>
+                            ) : (
+                              <span className={b.left}>{d.closedReason}</span>
+                            )}
+                            {d.mine.length ? (
+                              <span className={b.left}>Booked: {d.mine.map((m) => m.dogName).join(', ')}</span>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ))}
+                />
               </fieldset>
             </Card>
-            <div>
-              <button type="submit" className={`${s.button} ${s.primary}`}>
-                Check price and availability
-              </button>
-            </div>
+            <StickySubmit />
           </Stack>
         </form>
       )}
