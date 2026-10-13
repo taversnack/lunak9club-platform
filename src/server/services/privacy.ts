@@ -7,9 +7,11 @@ import {
   accounts,
   auditEvents,
   bookingDogs,
+  cardRefunds,
   checkoutAttempts,
   complianceSubmissions,
   contacts,
+  creditNotes,
   customers,
   dataRequests,
   documents,
@@ -18,15 +20,19 @@ import {
   dogPermissions,
   dogs,
   incidents,
+  incidentUpdates,
+  invoiceLines,
   invoices,
   jobRuns,
   memberships,
   incidentPhotos,
   notificationLog,
+  payments,
   policyAcknowledgements,
   policyVersions,
   priceSnapshots,
   rateLimits,
+  refundRequests,
   sessions,
   users,
   verifications,
@@ -116,6 +122,7 @@ export async function exportMyData(db: Db, actor: Actor) {
     db.select().from(memberships).where(eq(memberships.customerId, customer.id)),
     db
       .select({
+        id: invoices.id,
         number: invoices.number,
         issueDate: invoices.issueDate,
         dueDate: invoices.dueDate,
@@ -149,7 +156,10 @@ export async function exportMyData(db: Db, actor: Actor) {
         date: welfareChecks.serviceDate,
         ate: welfareChecks.ate,
         drinking: welfareChecks.drinking,
+        toileting: welfareChecks.toileting,
         mood: welfareChecks.mood,
+        concerns: welfareChecks.concerns,
+        medicationGiven: welfareChecks.medicationGiven,
         note: welfareChecks.note,
       })
       .from(welfareChecks)
@@ -166,6 +176,85 @@ export async function exportMyData(db: Db, actor: Actor) {
       .from(complianceSubmissions)
       .where(inArray(complianceSubmissions.dogId, any(dogIds))),
   ]);
+  // Only what the customer can already see in the app: the incident report and the updates shared
+  // with them (never internal notes or private updates), and issued invoices with their lines,
+  // payments, credit notes and refunds (never staff-only reasons, failure details or user ids).
+  const incidentIds = incidentList.map((i) => i.id);
+  const invoiceIds = invs.map((i) => i.id);
+  const [incidentRows, sharedUpdates, lines, paid, credits, refundReqs] = await Promise.all([
+    db
+      .select({
+        id: incidents.id,
+        description: incidents.description,
+        actionTaken: incidents.actionTaken,
+        vetContacted: incidents.vetContacted,
+        vetAdvice: incidents.vetAdvice,
+      })
+      .from(incidents)
+      .where(and(eq(incidents.customerId, customer.id), inArray(incidents.id, any(incidentIds)))),
+    db
+      .select({ incidentId: incidentUpdates.incidentId, body: incidentUpdates.body, at: incidentUpdates.createdAt })
+      .from(incidentUpdates)
+      .where(and(inArray(incidentUpdates.incidentId, any(incidentIds)), eq(incidentUpdates.sharedWithCustomer, true)))
+      .orderBy(incidentUpdates.createdAt),
+    db
+      .select({
+        invoiceId: invoiceLines.invoiceId,
+        date: invoiceLines.serviceDate,
+        description: invoiceLines.description,
+        explanation: invoiceLines.explanation,
+        amountPence: invoiceLines.amountPence,
+      })
+      .from(invoiceLines)
+      .where(inArray(invoiceLines.invoiceId, any(invoiceIds)))
+      .orderBy(invoiceLines.position),
+    db
+      .select({
+        id: payments.id,
+        invoiceId: payments.invoiceId,
+        amountPence: payments.amountPence,
+        method: payments.method,
+        receivedOn: payments.receivedOn,
+      })
+      .from(payments)
+      .where(inArray(payments.invoiceId, any(invoiceIds))),
+    db
+      .select({
+        invoiceId: creditNotes.invoiceId,
+        number: creditNotes.number,
+        issueDate: creditNotes.issueDate,
+        amountPence: creditNotes.amountPence,
+        reason: creditNotes.reason,
+        refundDuePence: creditNotes.refundDuePence,
+        refundState: creditNotes.refundState,
+      })
+      .from(creditNotes)
+      .where(inArray(creditNotes.invoiceId, any(invoiceIds))),
+    db
+      .select({
+        invoiceId: refundRequests.invoiceId,
+        amountPence: refundRequests.amountPence,
+        status: refundRequests.status,
+        requestedAt: refundRequests.createdAt,
+        decidedAt: refundRequests.decidedAt,
+      })
+      .from(refundRequests)
+      .where(eq(refundRequests.customerId, customer.id)),
+  ]);
+  const cardRefundRows = await db
+    .select({
+      paymentId: cardRefunds.paymentId,
+      amountPence: cardRefunds.amountPence,
+      status: cardRefunds.status,
+      requestedAt: cardRefunds.createdAt,
+    })
+    .from(cardRefunds)
+    .where(inArray(cardRefunds.paymentId, any(paid.map((p) => p.id))));
+  const omit = <T extends object, K extends keyof T>(o: T, ...keys: K[]) => {
+    const r = { ...o };
+    for (const k of keys) delete r[k];
+    return r as Omit<T, K>;
+  };
   await recordAudit(db, { actor: me, action: 'data.exported', entityType: 'customer', entityId: customer.id });
   return {
     exportedAt: new Date().toISOString(),
@@ -180,8 +269,9 @@ export async function exportMyData(db: Db, actor: Actor) {
     },
     contacts: myContacts.map(({ customerId: _c, ...c }) => (void _c, c)),
     vets: myVets.map(({ customerId: _c, ...v }) => (void _c, v)),
-    dogs: myDogs.map((d) => ({
-      ...d,
+    // approvedBy (a staff user id) and statusReason (the Owner's note) are staff-only.
+    dogs: myDogs.map(({ approvedBy: _a, statusReason: _r, ...d }) => ({
+      ...(void _a, void _r, d),
       health: health.find((h) => h.dogId === d.id) ?? null,
       behaviour: behaviour.find((b) => b.dogId === d.id) ?? null,
       permissions: perms.find((p) => p.dogId === d.id) ?? null,
@@ -189,10 +279,31 @@ export async function exportMyData(db: Db, actor: Actor) {
     })),
     bookings: bookingRows,
     memberships: mems,
-    invoices: invs,
+    invoices: invs.map((inv) => ({
+      ...omit(inv, 'id'),
+      lines: lines.filter((l) => l.invoiceId === inv.id).map((l) => omit(l, 'invoiceId')),
+      payments: paid
+        .filter((p) => p.invoiceId === inv.id)
+        .map((p) => ({
+          ...omit(p, 'id', 'invoiceId'),
+          cardRefunds: cardRefundRows.filter((r) => r.paymentId === p.id).map((r) => omit(r, 'paymentId')),
+        })),
+      creditNotes: credits.filter((c) => c.invoiceId === inv.id).map((c) => omit(c, 'invoiceId')),
+      refundRequests: refundReqs.filter((r) => r.invoiceId === inv.id).map((r) => omit(r, 'invoiceId')),
+    })),
     documents: docs,
     termsAccepted: acks,
-    incidentReports: incidentList,
+    incidentReports: incidentList.map((i) => {
+      const r = incidentRows.find((x) => x.id === i.id);
+      return {
+        ...i,
+        whatHappened: r?.description ?? null,
+        actionTaken: r?.actionTaken ?? null,
+        vetContacted: r?.vetContacted ?? false,
+        vetAdvice: r?.vetAdvice ?? null,
+        updates: sharedUpdates.filter((u) => u.incidentId === i.id).map((u) => omit(u, 'incidentId')),
+      };
+    }),
     sharedDailyNotes: checks,
     dataRequests: requests,
   };
@@ -583,7 +694,16 @@ export async function runRetention(db: Db, storage: StorageProvider, actor: Acto
     await tx.delete(verifications).where(lt(verifications.expiresAt, at(cut.technical)));
     await tx.delete(rateLimits).where(lt(rateLimits.lastRequest, at(cut.technical).getTime()));
     await tx.delete(webhookEvents).where(lt(webhookEvents.receivedAt, at(cut.technical)));
-    await tx.delete(notificationLog).where(lt(notificationLog.sentAt, at(cut.technical)));
+    // The reminder log is what stops a reminder going twice, so a vaccination reminder's row is kept
+    // while the record it was about exists (an expired record stays due for its 'expired' email).
+    await tx
+      .delete(notificationLog)
+      .where(
+        and(
+          lt(notificationLog.sentAt, at(cut.technical)),
+          sql`not exists (select 1 from compliance_submissions s where ${notificationLog.kind} = 'vaccination' and starts_with(${notificationLog.key}, 'vaccination:' || s.dog_id::text || ':' || s.requirement_key || ':' || s.expires_on::text || ':'))`,
+        ),
+      );
     await tx.delete(jobRuns).where(and(lt(jobRuns.startedAt, at(cut.technical)), ne(jobRuns.status, 'running')));
     const audit = await tx
       .delete(auditEvents)
@@ -614,7 +734,13 @@ export async function runRetention(db: Db, storage: StorageProvider, actor: Acto
         lt(customers.createdAt, at(cut.licence)),
         sql`not exists (select 1 from user_roles r where r.user_id = ${users.id} and r.role_key = 'owner')`,
         sql`not exists (select 1 from booking_dogs b where b.customer_id = ${customers.id} and (b.service_date >= ${cut.licence} or b.created_at >= ${at(cut.licence)}))`,
+        // Primary signal: the last sign-in stored on the user (set on every sign-in, backfilled by
+        // migration 0018). The booking, session and audit checks remain as fallbacks.
+        sql`(${users.lastSignedInAt} is null or ${users.lastSignedInAt} < ${at(cut.licence)})`,
         sql`not exists (select 1 from sessions s where s.user_id = ${users.id} and s.updated_at >= ${at(cut.licence)})`,
+        // Sessions are purged ~90 days after they expire, so they can't show activity going back 3
+        // years. The audit trail (kept 6 years) can: sign-ins and anything else the customer did.
+        sql`not exists (select 1 from audit_events a where a.actor_user_id = ${users.id} and a.occurred_at >= ${at(cut.licence)})`,
       ),
     );
   let anonymised = 0;
