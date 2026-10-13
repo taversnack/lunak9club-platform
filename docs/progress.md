@@ -84,6 +84,7 @@
   - Approve: vaccination re-check; priced days held as `pending_payment` (24 h or until the session starts, min 31 min) with a pay link email (“pay to secure”, deadline in London time); £0 and membership days confirmed. Decline (whole request or one day), withdraw, expiry at the cut-off (one email per request). Owner notes stay in the portal.
   - Manual waitlist: join when full, leave any time, Owner removes; **Give place** makes its own booking and is blocked up front (reason shown, button disabled, refused on the server) for a dog failing the vaccination check. Waitlist offers, offer warnings and the offer-hours setting are retired.
   - Customer **Your requests** page (all approval types) with a withdraw confirmation; a failed approval attempt (e.g. a vaccination ran out) keeps the request waiting and shows the Owner why (`last_error`).
+  - Pay links survive a card-service outage: checkout creation is retried; otherwise the places stay held, the customer gets “Pay now” (created on demand, never duplicated) and a friendly “try again” message, and the Owner sees “Resend pay link” on Requests and the day view; link-less holds lapse at their deadline.
   - Migration `0016_booking_approvals`, generated after Developer 1's 0015 (PR #4) merged (see `drizzle/NOTES.md`).
 
 ## Verification (26 Sep 2026, cloud build workspace)
@@ -125,8 +126,7 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Staff Manager/Staff roles not created (D13) — permission map ready.
 - Web-form consent as “written consent” not yet confirmed by the Owner and council (D71).
 - Register answers are overwritten (with when/who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72, brief recommendation 1).
-- D85 trial defaults (unapproved dogs only, one dog-day per request, ad hoc trial price) were built as described – confirm with the Owner.
-- If opening the checkout fails after an approval, the error is logged and the customer has no pay link until the Owner cancels and rebooks (or the hold lapses).
+- D85: trial requests via approve-then-pay are confirmed; the sub-defaults (unapproved dogs only, one dog-day per request, ad hoc trial price) are Proposed – confirm with the Owner.
 
 - Follow-ups from the vaccination compliance work: (1) licence guidance 23.1 / brief D42 note – require a screening (meet-and-greet) record at check-in, not built yet; (2) titre certificates for DHP not supported (O16); (3) the retention job clears the reminder log after 90 days, so an "expired" reminder can be sent again ~90 days later – assigned to Developer 3; (4) the customer data download doesn't include vaccination record details.
 - `storage.test.ts` now skips cleanly when `moto_server` (local S3) isn't installed (PR #1, merged into main and into this branch's base); it no longer fails `pnpm test:int` on the shared build box.
