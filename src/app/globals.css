@@ -3,6 +3,7 @@
   /* Palette taken from lunak9club.co.uk, darkened where needed to meet WCAG AA. */
   --color-brand-navy: #283039;
   --color-brand-navy-text: #f4efe8;
+  --color-brand-navy-deep: #1a2027;
   --color-brand-sand: #dfc8ad;
   --color-bg: #f7f5f2;
   --color-surface: #ffffff;
@@ -45,9 +46,9 @@
   --weight-bold: 700;
 
   /* Radius: softer corners for cards and controls; pill for badges. */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
   --radius-pill: 999px;
 
   /* Spacing: 4px base. */
@@ -75,6 +76,7 @@
 
   /* Layout and interaction. */
   --content-max: 72rem;
+  --content-wide: 82rem;
   --content-narrow: 36rem;
   --focus-ring: 3px solid var(--color-focus);
   --transition-fast: 120ms ease-out;
@@ -163,5 +165,19 @@ a:hover {
   * {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* Signed-in areas render their own header (AppShell); hide the public one and its spacing there. */
+body:has([data-app-shell]) .site-header {
+  display: none;
+}
+main:has(> [data-app-shell]),
+main:has([data-app-shell]) {
+  padding-top: 0;
+}
+@media (max-width: 899px) {
+  body:has([data-tabbar]) > footer {
+    padding-bottom: calc(var(--space-5) + 64px);
   }
 }

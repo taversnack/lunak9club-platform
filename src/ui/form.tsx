@@ -306,8 +306,29 @@ export function SubmitButton({
       className={`${s.button} ${s[variant]}`}
       disabled={pending}
       aria-disabled={pending}
+      aria-busy={pending || undefined}
     >
+      {pending ? <span className={s.spinner} aria-hidden="true" /> : null}
       {pending ? (pendingText ?? 'Saving…') : children}
+    </button>
+  );
+}
+
+/** Submit button for plain (GET or non-ActionForm) forms: shows a spinner and pending text while submitting. */
+export function PendingButton({
+  children,
+  pendingText = 'Loading…',
+  variant = 'primary',
+}: {
+  children: ReactNode;
+  pendingText?: string;
+  variant?: 'primary' | 'secondary' | 'ghost' | 'cta';
+}) {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" className={`${s.button} ${s[variant]}`} aria-busy={pending || undefined} disabled={pending}>
+      {pending ? <span className={s.spinner} aria-hidden="true" /> : null}
+      {pending ? pendingText : children}
     </button>
   );
 }

@@ -79,3 +79,39 @@ describe('shared UI components', () => {
     expect(out).toContain('Approved');
   });
 });
+
+describe('refresh components', () => {
+  it('Disclosure uses details/summary', async () => {
+    const { Disclosure } = await import('@/ui/components');
+    const out = html(h(Disclosure, { title: 'Health', children: 'x' }));
+    expect(out).toMatch(/<details[^>]*><summary>Health<\/summary>/);
+  });
+  it('ErrorSummary links to fields and is an alert; renders nothing without errors', async () => {
+    const { ErrorSummary } = await import('@/ui/components');
+    const out = html(
+      h(ErrorSummary, { errors: [{ field: 'date', message: 'Choose a date' }, { message: 'General' }] }),
+    );
+    expect(out).toContain('role="alert"');
+    expect(out).toContain('href="#f-date"');
+    expect(html(h(ErrorSummary, { errors: [] }))).toBe('');
+  });
+  it('PageSkeleton announces loading and hides shapes from assistive tech', async () => {
+    const { PageSkeleton } = await import('@/ui/components');
+    const out = html(h(PageSkeleton, {}));
+    expect(out).toContain('role="status"');
+    expect(out).toContain('Loading…');
+    expect(out).toContain('aria-hidden="true"');
+  });
+  it('DateCard gives screen readers the date in words', async () => {
+    const { DateCard } = await import('@/ui/components');
+    const out = html(h(DateCard, { date: '2026-10-16', title: 'Biscuit · Full day' }));
+    expect(out).toContain('Fri 16 Oct');
+    expect(out).toContain('Biscuit · Full day');
+  });
+  it('DataTable stack mode keeps caption and region', async () => {
+    const { DataTable } = await import('@/ui/components');
+    const out = html(h(DataTable, { caption: 'Bookings', stack: true, children: h('tbody') }));
+    expect(out).toContain('<caption');
+    expect(out).toContain('role="region"');
+  });
+});

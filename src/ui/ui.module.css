@@ -103,11 +103,11 @@
   gap: var(--space-2);
   min-height: var(--target-min);
   padding: 0 var(--space-5);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   border: 2px solid transparent;
   font: inherit;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.01em;
   cursor: pointer;
   text-decoration: none;
   transition:
@@ -121,24 +121,40 @@
   cursor: not-allowed;
 }
 .primary {
+  background: var(--color-brand-navy);
+  color: #fff;
+  border-color: var(--color-brand-navy);
+}
+.primary:hover:not([disabled]) {
+  background: var(--color-brand-navy-deep);
+  border-color: var(--color-brand-navy-deep);
+  color: #fff;
+}
+.cta {
   background: var(--color-cta);
   color: var(--color-cta-text);
   border-color: var(--color-cta);
 }
-.primary:hover:not([disabled]) {
+.cta:hover:not([disabled]) {
   background: var(--color-cta-hover);
   border-color: var(--color-cta-hover);
   color: var(--color-cta-text);
 }
 .secondary {
-  background: var(--color-surface);
-  color: var(--color-primary);
-  border-color: var(--color-primary);
+  background: transparent;
+  color: var(--color-brand-navy);
+  border-color: var(--color-brand-navy);
 }
 .secondary:hover:not([disabled]) {
   background: var(--color-surface-muted);
-  color: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
+  color: var(--color-brand-navy);
+}
+.link {
+  background: transparent;
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 0 var(--space-2);
 }
 .ghost {
   background: transparent;
@@ -515,4 +531,219 @@
   text-decoration: underline;
   text-decoration-thickness: 2px;
   background: var(--color-surface-muted);
+}
+
+/* Inputs: rounder, consistent height. */
+.input,
+.textarea {
+  border-radius: var(--radius-md);
+}
+
+/* Stacked tables: under 600px each row becomes a card; cells show their column name from data-label. */
+@media (max-width: 600px) {
+  .stackTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .stackTable,
+  .stackTable tbody,
+  .stackTable tr,
+  .stackTable td {
+    display: block;
+    width: 100%;
+  }
+  .stackTable tr {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .stackTable tr:last-child {
+    border-bottom: 0;
+  }
+  .stackTable td {
+    border: 0;
+    padding: 2px 0;
+  }
+  .stackTable td[data-label]::before {
+    content: attr(data-label) ': ';
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+  .stackTable td[data-primary] {
+    font-weight: var(--weight-bold);
+  }
+  .stackTable td[data-primary]::before {
+    content: none;
+  }
+}
+.nowrap {
+  white-space: nowrap;
+}
+
+/* Pending (busy) buttons */
+.spinner {
+  width: 1em;
+  height: 1em;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Skeletons */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--color-surface-muted) 0%, #f8f4ee 50%, var(--color-surface-muted) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeletonLine {
+  height: 14px;
+  margin: var(--space-2) 0;
+}
+.skeletonTitle {
+  height: 28px;
+  width: 40%;
+  margin-bottom: var(--space-4);
+}
+
+/* Collapsible sections */
+.disclosure {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-lg);
+  list-style: none;
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure > summary::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--transition-fast);
+}
+.disclosure[open] > summary::after {
+  transform: rotate(-135deg);
+}
+.disclosureBody {
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+/* Error summary */
+.errorSummary {
+  border: 2px solid var(--color-danger);
+  background: var(--color-danger-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+.errorSummary h2 {
+  font-size: var(--text-lg);
+  color: var(--color-danger);
+}
+.errorSummary ul {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+.errorSummary a {
+  color: var(--color-danger);
+  font-weight: var(--weight-semibold);
+}
+
+/* Booking/date cards */
+.dateCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+}
+.dateTile {
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 60px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  background: var(--color-brand-navy);
+  color: #fff;
+  text-align: center;
+  line-height: 1.1;
+}
+.dateTile b {
+  font-size: 1.4rem;
+}
+.dateTile span {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.dateCardMain {
+  flex: 1;
+  min-width: 0;
+}
+.dateCardMain h3 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+.dateCardMain p {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.cardList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.cardHead h2 {
+  margin: 0;
+}
+.cardHead a {
+  font-weight: var(--weight-semibold);
+}
+@media (max-width: 600px) {
+  .card {
+    padding: var(--space-4);
+  }
 }
