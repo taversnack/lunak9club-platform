@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { authClient } from '@/infra/auth/client';
 import { Alert, Button, Field, Stack } from '@/ui/components';
 
-export function SignInForm({ notice }: { notice?: 'reset' | 'verified' }) {
+export function SignInForm({ notice }: { notice?: 'reset' | 'verified' | 'welcome' }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [unverified, setUnverified] = useState(false);
@@ -43,6 +43,11 @@ export function SignInForm({ notice }: { notice?: 'reset' | 'verified' }) {
         {notice === 'reset' ? (
           <Alert tone="success" title="Password updated">
             You can now sign in with your new password.
+          </Alert>
+        ) : null}
+        {notice === 'welcome' ? (
+          <Alert tone="success" title="Your account is ready">
+            Sign in with your email address and new password to finish setting up.
           </Alert>
         ) : null}
         {notice === 'verified' ? (

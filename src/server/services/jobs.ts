@@ -15,6 +15,7 @@ import {
   sendPaymentReminders,
 } from './billing';
 import { materialiseMemberships } from './memberships';
+import { notifyUnconfirmedDays } from './membership-workflow';
 import { reconcileOpenCheckouts, releaseExpiredCheckouts } from './payments';
 import { submitPendingRefunds } from './card-refunds';
 import { sendBookingReminders, sendOfferWarnings, sendVaccinationReminders } from './reminders';
@@ -66,6 +67,8 @@ async function once(db: Db, job: string, key: string, fn: () => Promise<Record<s
  * - from the draft day (25th): email the Owner once that next month's drafts are ready
  * - 03:00 daily: retention schedule (D64)
  * - 08:00 daily: vaccination reminders (D66); 17:00 daily: tomorrow's booking reminders (D67)
+ * - from the day after the confirm-by day (the 2nd), 08:00: one Owner email about members who haven't
+ *   confirmed this month's days; their days are kept (D88)
  * - every tick: waitlist offers about to lapse (D67)
  * - every tick: send approved invoices whose send time has come (28th 09:00, D24) and
  *   payment reminders that are due (15:30 on day 4, D25)
@@ -108,6 +111,8 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
   if (time >= '08:00')
     out.push(await once(db, 'vaccination-reminders', today, () => sendVaccinationReminders(db, actor, now)));
   if (time >= '17:00') out.push(await once(db, 'booking-reminders', today, () => sendBookingReminders(db, actor, now)));
+  if (Number(today.slice(8, 10)) > bs.confirmByDay && time >= '08:00')
+    out.push(await once(db, 'membership-unconfirmed', monthOf(today), () => notifyUnconfirmedDays(db, actor, now)));
   const offerWarnings = await sendOfferWarnings(db, actor, now);
 
   const sent = await sendDueInvoices(db, actor, now);
