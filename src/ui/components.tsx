@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
 import Link from 'next/link';
+import type { Route } from 'next';
 import s from './ui.module.css';
 import { CheckIcon, ErrorIcon, InfoIcon, WarningIcon } from './icons';
 
@@ -153,7 +154,7 @@ export function StatCard({
   label: string;
   value: ReactNode;
   detail?: ReactNode;
-  href?: string;
+  href?: Route;
   linkText?: string;
   headingLevel?: 2 | 3;
 }) {
@@ -209,7 +210,7 @@ export function SubNav({
   current,
 }: {
   label: string;
-  items: Array<{ href: string; label: string }>;
+  items: Array<{ href: Route; label: string }>;
   current?: string;
 }) {
   return (

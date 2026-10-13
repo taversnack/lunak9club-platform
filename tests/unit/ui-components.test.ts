@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createElement as h } from 'react';
+import type { Route } from 'next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Button, DataTable, EmptyState, PageHeader, StatCard, StatusBadge, SubNav, buttonClass } from '@/ui/components';
 
@@ -22,7 +23,12 @@ describe('shared UI components', () => {
 
   it('StatCard labels its section by its heading', () => {
     const out = html(
-      h(StatCard, { label: 'Upcoming bookings', value: '£120.00', href: '/admin/bookings', linkText: 'See bookings' }),
+      h(StatCard, {
+        label: 'Upcoming bookings',
+        value: '£120.00',
+        href: '/admin/bookings' as Route,
+        linkText: 'See bookings',
+      }),
     );
     expect(out).toContain('aria-labelledby="stat-upcoming-bookings"');
     expect(out).toMatch(/<h2 id="stat-upcoming-bookings"/);
@@ -57,8 +63,8 @@ describe('shared UI components', () => {
         label: 'Account',
         current: '/account/bookings',
         items: [
-          { href: '/account', label: 'Overview' },
-          { href: '/account/bookings', label: 'Bookings' },
+          { href: '/account' as Route, label: 'Overview' },
+          { href: '/account/bookings' as Route, label: 'Bookings' },
         ],
       }),
     );
