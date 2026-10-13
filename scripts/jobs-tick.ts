@@ -2,7 +2,7 @@
 // Optional: JOBS_NOW=2026-10-28T09:05:00Z pnpm jobs:tick   to rehearse a date locally.
 import { assertSafeDatabaseUrl } from './_env';
 import { createDb } from '../src/infra/db/client';
-import { runTick } from '../src/server/services/jobs';
+import { runTick, tickFailed } from '../src/server/services/jobs';
 
 const { db, pool } = createDb(assertSafeDatabaseUrl(process.env.DATABASE_URL));
 const now = process.env.JOBS_NOW ? new Date(process.env.JOBS_NOW) : new Date();
@@ -10,3 +10,9 @@ if (Number.isNaN(now.getTime())) throw new Error('JOBS_NOW is not a valid date')
 const result = await runTick(db, { kind: 'system', job: 'scheduler' }, now);
 await pool.end();
 console.log(JSON.stringify(result, null, 2));
+// Exit non-zero when anything failed, so cron/CI notice (the Owner is also emailed by the tick).
+if (tickFailed(result)) {
+  const daily = result.jobs.filter((j) => j.status === 'failed').map((j) => j.job);
+  console.error(`Tick finished with failures: ${[...daily, ...result.failed].join(', ')}`);
+  process.exitCode = 1;
+}
