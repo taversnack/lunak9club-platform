@@ -37,6 +37,7 @@ export async function approvedDog(db: Db, owner: TestUser, user: TestUser, name:
     dogId: id,
     fileName: 'v.pdf',
     bytes: PDF,
+    firstCourse: 'no',
     entries: ['vaccination_core', 'vaccination_leptospirosis', 'vaccination_kennel_cough'].map((k) => ({
       requirementKey: k,
       expiresOn: addDays(today, 200),
@@ -65,4 +66,35 @@ export async function releaseMemberDays(db: Db) {
     sql`update booking_dogs set status = 'cancelled', cancelled_at = now(), late_cancellation = false where kind = 'membership' and status in ('confirmed', 'waitlisted', 'offered')`,
   );
   await db.execute(sql`update memberships set status = 'ended' where status in ('active', 'requested')`);
+}
+
+/** Upload and approve vaccination records for a dog (one record covering `keys`). */
+export async function approveVaccinations(
+  db: Db,
+  owner: TestUser,
+  user: TestUser,
+  dogId: string,
+  keys: string[],
+  opts: { expiresOn?: string; primaryCourseCompletedOn?: string } = {},
+) {
+  const expiresOn = opts.expiresOn ?? addDays(londonDate(new Date()), 200);
+  await uploadVaccinationRecord(db, storage, user, {
+    dogId,
+    fileName: 'v.pdf',
+    bytes: PDF,
+    firstCourse: opts.primaryCourseCompletedOn ? 'yes' : 'no',
+    primaryCourseCompletedOn: opts.primaryCourseCompletedOn,
+    // Date given (D68) is separate from the first-course date (D74); use the course end, or today.
+    entries: keys.map((k) => ({
+      requirementKey: k,
+      expiresOn,
+      administeredOn: opts.primaryCourseCompletedOn ?? londonDate(new Date()),
+    })),
+  });
+  const subs = await db
+    .select()
+    .from(complianceSubmissions)
+    .where(and(eq(complianceSubmissions.dogId, dogId), eq(complianceSubmissions.status, 'pending_review')));
+  for (const s of subs)
+    await reviewSubmission(db, owner, s.id, { decision: 'approve', expiresOn: s.expiresOn, version: s.version });
 }
