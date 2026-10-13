@@ -10,7 +10,7 @@ import { billingOverview, ownerInvoices, type InvoiceFilter } from '@/server/ser
 import { formatMonth } from '@/domain/billing/rules';
 import { pounds } from '@/domain/pricing/engine';
 import { formatUkDate } from '@/domain/time';
-import { runBillingNowAction } from '../actions';
+import { runBillingNowAction } from '../../actions';
 
 export const metadata: Metadata = { title: 'Invoices' };
 export const dynamic = 'force-dynamic';
