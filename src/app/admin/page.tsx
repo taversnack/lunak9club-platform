@@ -5,7 +5,7 @@ import s from '@/ui/ui.module.css';
 import { Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
 import { requirePermission } from '@/server/session';
 import { listRecentAuditEvents } from '@/server/queries/audit';
-import { reviewQueue } from '@/server/services/owner-review';
+import { listRequirements, reviewQueue } from '@/server/services/owner-review';
 import { ownerDay } from '@/server/services/owner-bookings';
 import { getDb } from '@/infra/db/client';
 import { formatDateTimeLondon } from '@/ui/format';
@@ -15,6 +15,7 @@ import { expiringVaccinations } from '@/server/services/reminders';
 import { ownerDataRequests } from '@/server/services/privacy';
 import { formatUkDate, londonDate } from '@/domain/time';
 import { pounds } from '@/domain/pricing/engine';
+import { reminderDaysCopy } from '@/domain/compliance/reminder-copy';
 
 export const metadata: Metadata = { title: 'Owner dashboard' };
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminHome() {
   const actor = await requirePermission('admin.access');
   const db = getDb();
-  const [events, queue, today, billing, welfare, expiring, requests] = await Promise.all([
+  const [events, queue, today, billing, welfare, expiring, requests, requirements] = await Promise.all([
     listRecentAuditEvents(db, actor, 20),
     reviewQueue(db, actor),
     ownerDay(db, actor, londonDate(new Date())),
@@ -30,6 +31,7 @@ export default async function AdminHome() {
     welfareOverview(db, actor),
     expiringVaccinations(db, actor),
     ownerDataRequests(db, actor),
+    listRequirements(db, actor),
   ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
@@ -106,7 +108,7 @@ export default async function AdminHome() {
               ))}
             </ul>
           )}
-          <p className={s.hint}>Customers are reminded automatically 30, 14 and 7 days before.</p>
+          <p className={s.hint}>{reminderDaysCopy(requirements)}</p>
         </Card>
         {waitingRequests ? (
           <Card aria-labelledby="requests">

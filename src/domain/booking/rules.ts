@@ -120,18 +120,6 @@ export function cancellationTerms(
   return { late: now >= deadline, deadline };
 }
 
-export type VaccinationFact = { label: string; expiresOn: IsoDate | null; mandatory: boolean; blocksBooking: boolean };
-
-/** D40: a mandatory vaccination must still be valid on the booked date. */
-export function vaccinationBlockForDate(vaccinations: readonly VaccinationFact[], date: IsoDate): string | null {
-  for (const v of vaccinations) {
-    if (!v.mandatory || !v.blocksBooking) continue;
-    if (!v.expiresOn) return `${v.label} is missing.`;
-    if (v.expiresOn < date) return `${v.label} runs out before this date.`;
-  }
-  return null;
-}
-
 export function formatPounds(pence: number): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
 }
