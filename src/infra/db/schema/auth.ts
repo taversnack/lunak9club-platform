@@ -16,6 +16,9 @@ export const users = pgTable('users', {
   email: text().notNull().unique(),
   emailVerified: boolean().notNull().default(false),
   image: text(),
+  // Set on every sign-in. The retention job judges 3-year inactivity from it (sessions are
+  // purged ~90 days after expiry, so they can't). Null for users who have never signed in.
+  lastSignedInAt: timestamp({ withTimezone: true }),
   ...timestamps,
 });
 

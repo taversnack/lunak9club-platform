@@ -46,6 +46,9 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
       '/account/terms',
       '/account/dogs/new',
       '/account/invoices',
+      '/account/book',
+      '/account/bookings',
+      '/account/requests',
     ]) {
       await page.goto(path);
       await scan(page);
@@ -63,6 +66,9 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
       '/admin/invoices',
       '/admin/refunds',
       '/admin/settings/business',
+      '/admin/approvals',
+      '/admin/bookings',
+      '/admin/settings/availability',
     ]) {
       await page.goto(path);
       await scan(page);

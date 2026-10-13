@@ -19,6 +19,10 @@ export type CheckoutState = {
   paymentId: string | null;
 };
 
+/**
+ * `failed` means the provider definitely rejected the refund. `pending` with an empty id means the
+ * outcome is unknown (timeout, connection or provider error): the refund may or may not exist.
+ */
 export type RefundResult = { id: string; status: 'succeeded' | 'pending' | 'failed'; failureReason?: string };
 
 export type WebhookEvent = {
@@ -27,6 +31,8 @@ export type WebhookEvent = {
   /** Checkout session id for checkout.* events; refund id for refund.* events. */
   objectId: string;
   refundStatus?: RefundResult['status'];
+  /** refund.* events: our card_refunds.id, from the refund's metadata. */
+  refundReference?: string;
 };
 
 export interface PaymentProvider {
@@ -35,7 +41,8 @@ export interface PaymentProvider {
   getCheckout(id: string): Promise<CheckoutState>;
   /** Stop an open checkout so it can't be paid. Returns the final state (it may already be complete). */
   expireCheckout(id: string): Promise<CheckoutState>;
-  refund(paymentId: string, amountPence: number, idempotencyKey: string): Promise<RefundResult>;
+  /** `reference` is our card_refunds.id, stored on the provider's refund so it can be found again. */
+  refund(paymentId: string, amountPence: number, idempotencyKey: string, reference: string): Promise<RefundResult>;
   /** Verify the signature and parse. Throws if the signature is wrong. */
   parseWebhook(rawBody: string, signature: string | null): WebhookEvent;
 }

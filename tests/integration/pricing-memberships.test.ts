@@ -3,7 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
 import { bookingDogs, customers, memberships, priceBooks, priceSnapshots } from '@/infra/db/schema';
-import { createMyBookings, previewMyBookings } from '@/server/services/bookings';
+import { previewMyBookings } from '@/server/services/bookings';
 import { ownerCreateBooking } from '@/server/services/owner-bookings';
 import {
   addCustomerRate,
@@ -27,6 +27,7 @@ import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
 import { changeEffectiveDate } from '@/domain/membership/rules';
 import { addDays, londonDate } from '@/domain/time';
+import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
 import { approvedDog, readyCustomer, releaseMemberDays } from '../support/onboard';
@@ -81,9 +82,9 @@ describe('prices on bookings', () => {
     const preview = await previewMyBookings(db(), dan, { dogIds: [danDog], dates: [d1], session: 'full', taxi: true });
     expect(preview.totalPence).toBe(5000);
     expect(preview.lines[0]!.price!.explanation).toBe('Ad hoc rate, full day: £50.00; dog taxi included');
-    const r = await createMyBookings(db(), dan, { dogIds: [danDog], dates: [d1], session: 'full', taxi: true });
+    const r = await requestAndApprove(db(), dan, { dogIds: [danDog], dates: [d1], session: 'full', taxi: true }, owner);
     expect(r.totalPence).toBe(5000);
-    const h = await createMyBookings(db(), dan, { dogIds: [danDog], dates: [d2], session: 'am', taxi: false });
+    const h = await requestAndApprove(db(), dan, { dogIds: [danDog], dates: [d2], session: 'am', taxi: false }, owner);
     expect(h.totalPence).toBe(2500);
     const rows = await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, danDog));
     for (const row of rows) expect(await snapshotFor(row.id)).toBeTruthy();

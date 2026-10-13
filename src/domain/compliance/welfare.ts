@@ -37,6 +37,14 @@ export const CONCERN_LABELS: Record<string, string> = {
   pain: 'Signs of pain or suffering',
 };
 
+/**
+ * Concerns to list next to a note that already shows its drinking label: drinking changes are
+ * stored as concerns too (so they trigger sharing), but listing them again repeats the label.
+ */
+export function concernsToList(concerns: readonly string[]) {
+  return concerns.filter((c) => c !== 'drinking_more' && c !== 'drinking_less');
+}
+
 /** The concerns recorded on a check, including drinking changes, and whether it must be shared (D63). */
 export function welfareConcerns(drinking: 'normal' | 'more' | 'less', concerns: readonly string[]) {
   const all = new Set(concerns.filter((c) => (MUST_TELL_OWNER as readonly string[]).includes(c)));

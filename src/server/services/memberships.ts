@@ -1,4 +1,5 @@
 import 'server-only';
+import { LIVE_STATUSES, OPEN_STATUSES } from '@/domain/booking/rules';
 import { raiseRefundRequests, refreshMembershipDrafts } from './billing';
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -202,7 +203,7 @@ async function cancelDaysAfter(
       and(
         eq(bookingDogs.membershipId, membershipId),
         gt(bookingDogs.serviceDate, lastDay),
-        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'waitlisted', 'offered']),
+        inArray(bookingDogs.status, [...OPEN_STATUSES]),
       ),
     )
     .returning({ id: bookingDogs.id });
@@ -415,14 +416,7 @@ export async function materialiseMemberships(
           and(
             eq(bookingDogs.dogId, m.dogId),
             inArray(bookingDogs.serviceDate, dates),
-            inArray(bookingDogs.status, [
-              'confirmed',
-              'pending_payment',
-              'waitlisted',
-              'offered',
-              'attended',
-              'no_show',
-            ]),
+            inArray(bookingDogs.status, [...LIVE_STATUSES]),
           ),
         );
       const heldSet = new Set(held.map((h) => h.serviceDate));
