@@ -74,3 +74,15 @@
 | Members' extra days at member rate; other dogs at ad hoc | `pricing-memberships.test.ts` |
 | Customers can't manage prices/memberships of others | `pricing-memberships.test.ts` |
 | End-to-end: prices shown, request, Owner approval, member-rate bookings; axe on each page | `membership.spec.ts` |
+
+## Membership workflow (D86–D91) → tests
+
+| Criterion | Test |
+|---|---|
+| Owner creates an account; invite is 7-day, single use, resend replaces it; finish signup sets a password | `tests/integration/membership-workflow.test.ts` (Owner creates a customer) |
+| Customer days go to approval; one pending request per dog; the decline note never appears in email | same file (membership.days approvals) |
+| Move one day: same month only; approved move swaps the date | same file (move_once) |
+| Owner changes days without approval; customer emailed, no sensitive data; customers can't | same file (Owner changes days) |
+| Monthly confirmation is idempotent; the job only counts, keeps days, names nobody | same file (monthly confirmation) |
+| Owner change starts from the first month not invoiced; full day blocks | `tests/integration/pricing-memberships.test.ts` |
+| Customer chooses days → Owner approves in Approvals → days at member rate | `tests/e2e/membership.spec.ts` |

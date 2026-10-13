@@ -93,6 +93,8 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Phase 7 done; awaiting Owner review. Next: Phase 8 (hardening and launch).
 - Dog register fields (D68–D72) built on `dev2/dog-register-fields` (draft PR). **Developer 1’s migration must be regenerated as 0015 after 0014 lands** (see `drizzle/NOTES.md`); Developer 1 uses decision IDs from D73.
 
+- **Membership workflow (Developer 1, branch dev1/membership-workflow, 13 Oct 2026, local only):** Owner-created accounts with 7-day invites (D86), per-dog offers and `membership.days` approvals (D87), monthly confirmation and job (D88), Owner day changes (D89), `membership.move_once` (D90), portal-only decision notes (D91). Migration 0017. Built on Developer 2's approval requests (merged from dev2/booking-approval 58c6d2d; its migration 0016 isn't committed yet).
+
 ## Decisions
 - See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed), D71 (web-form consent as written consent).
 
