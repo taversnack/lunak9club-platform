@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Route } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Alert, Card, Muted, Stack } from '@/ui/components';
@@ -23,6 +23,10 @@ export default async function ApprovalsPage({
   return (
     <Stack>
       <h1>Requests</h1>
+      <p className={s.hint}>
+        Every kind of request, oldest first. Notes you add are shown to the customer in their account only – never
+        emailed.
+      </p>
       {sp.approved ? <Alert tone="success">Request approved. The customer has been emailed.</Alert> : null}
       {sp.declined ? (
         <Alert tone="info">
@@ -54,6 +58,16 @@ export default async function ApprovalsPage({
                       ))}
                     </ul>
                   )}
+                  {c.links?.length ? (
+                    <p className={s.hint}>
+                      {c.links.map((k, i) => (
+                        <span key={k.href + i}>
+                          {i ? ' · ' : ''}
+                          <Link href={k.href as Route}>{k.label}</Link>
+                        </span>
+                      ))}
+                    </p>
+                  ) : null}
                 </div>
               ))}
               <div className={s.two}>

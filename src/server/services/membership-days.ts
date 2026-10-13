@@ -76,7 +76,7 @@ export async function fullDatesFor(
       and(
         eq(bookingDogs.dogId, dogId),
         inArray(bookingDogs.serviceDate, dates),
-        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'offered']),
+        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'requested']),
       ),
     );
   const mine = new Set(held.map((h) => h.d));

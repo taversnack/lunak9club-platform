@@ -77,3 +77,57 @@ describe('approval registry', () => {
     expect(() => registerApprovalType({ ...def, type: 'nodot' })).toThrow(/Invalid/);
   });
 });
+
+describe('approval and booking-request emails (D76, D80)', () => {
+  it('the request email carries the agreed "does not secure" wording', async () => {
+    const { bookingRequestedMessage } = await import('@/infra/email/templates');
+    const { REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } = await import('@/domain/booking/wording');
+    const m = bookingRequestedMessage(
+      'a@example.test',
+      'Alice',
+      [{ dogName: 'Biscuit', dateText: 'Mon 2 Nov 2026', sessionText: 'Full day', outcome: 'requested' }],
+      'https://app.test/account/bookings',
+    );
+    expect(REQUEST_NOT_SECURED).toContain(REQUEST_NOT_SECURED_KEY);
+    expect(m.text).toContain(REQUEST_NOT_SECURED);
+    expect(m.html).toContain(REQUEST_NOT_SECURED_KEY);
+  });
+
+  it('the approval email says pay to secure, with the link and the London deadline', async () => {
+    const { paymentLinkMessage } = await import('@/infra/email/templates');
+    const { PAY_TO_SECURE_KEY } = await import('@/domain/booking/wording');
+    const m = paymentLinkMessage(
+      'a@example.test',
+      'Alice',
+      {
+        amountText: '£50.00',
+        forText: 'day care for Biscuit (1 session)',
+        untilText: '3 Nov 2026, 08:00',
+        approved: true,
+      },
+      'https://app.test/api/payments/pay/abc',
+    );
+    expect(m.template).toBe('booking.request-approved');
+    for (const part of [m.text, m.html]) {
+      expect(part).toContain(PAY_TO_SECURE_KEY);
+      expect(part).toContain('https://app.test/api/payments/pay/abc');
+      expect(part).toContain('3 Nov 2026, 08:00');
+    }
+  });
+
+  it('decision emails have no place for the Owner’s note', async () => {
+    const { approvalDecisionMessage } = await import('@/infra/email/templates');
+    // The template takes only label, summary and outcome – a note can't be passed in.
+    expect(approvalDecisionMessage.length).toBe(4);
+    for (const outcome of ['approved', 'rejected', 'withdrawn', 'expired'] as const) {
+      const m = approvalDecisionMessage(
+        'a@example.test',
+        'Alice',
+        { label: 'Booking request', summary: 'Day care · 1 dog-day · £50.00', outcome },
+        'https://app.test/account/bookings',
+      );
+      expect(Object.keys(m).sort()).toEqual(['html', 'subject', 'template', 'text', 'to']);
+      expect(m.text).not.toMatch(/note|reason/i);
+    }
+  });
+});

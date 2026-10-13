@@ -16,8 +16,11 @@ export type ApprovalRecord<P> = {
   updatedAt: Date;
 };
 
-/** Extra facts shown to the Owner beside a request (e.g. the other dogs booked that day). Plain text only. */
-export type OwnerContextSection = { heading: string; lines: string[] };
+/**
+ * Extra facts shown to the Owner beside a request (e.g. the other dogs booked that day). Plain text,
+ * plus optional links to Owner pages (relative `/admin/…` paths only).
+ */
+export type OwnerContextSection = { heading: string; lines: string[]; links?: { label: string; href: string }[] };
 
 /** Generic customer emails that a type can switch off (because it sends its own, e.g. a payment link). */
 export type GenericCustomerEmail = Exclude<ApprovalStatus, 'pending'>;

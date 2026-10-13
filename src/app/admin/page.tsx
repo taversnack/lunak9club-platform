@@ -16,6 +16,7 @@ import { expiringVaccinations } from '@/server/services/reminders';
 import { ownerDataRequests } from '@/server/services/privacy';
 import { formatUkDate, londonDate } from '@/domain/time';
 import { pounds } from '@/domain/pricing/engine';
+import { pendingApprovalCount } from '@/server/services/approvals';
 import { reminderDaysCopy } from '@/domain/compliance/reminder-copy';
 
 export const metadata: Metadata = { title: 'Owner dashboard' };
@@ -25,23 +26,30 @@ export default async function AdminHome() {
   const actor = await requirePermission('admin.access');
   const db = getDb();
   const thisMonth = londonDate(new Date()).slice(0, 7);
-  const [events, queue, today, billing, welfare, expiring, requests, requirements, unconfirmed] = await Promise.all([
-    listRecentAuditEvents(db, actor, 20),
-    reviewQueue(db, actor),
-    ownerDay(db, actor, londonDate(new Date())),
-    billingOverview(db, actor),
-    welfareOverview(db, actor),
-    expiringVaccinations(db, actor),
-    ownerDataRequests(db, actor),
-    listRequirements(db, actor),
-    unconfirmedMembers(db, actor, thisMonth),
-  ]);
+  const [events, queue, today, billing, welfare, expiring, requests, approvals, requirements, unconfirmed] =
+    await Promise.all([
+      listRecentAuditEvents(db, actor, 20),
+      reviewQueue(db, actor),
+      ownerDay(db, actor, londonDate(new Date())),
+      billingOverview(db, actor),
+      welfareOverview(db, actor),
+      expiringVaccinations(db, actor),
+      ownerDataRequests(db, actor),
+      pendingApprovalCount(db, actor),
+      listRequirements(db, actor),
+      unconfirmedMembers(db, actor, thisMonth),
+    ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
   return (
     <Stack>
       <h1>Owner dashboard</h1>
       <Grid>
+        <Card aria-labelledby="approvals">
+          <h2 id="approvals">Requests waiting</h2>
+          <p className={s.bigNumber}>{approvals}</p>
+          <Link href="/admin/approvals">Open requests</Link>
+        </Card>
         <Card aria-labelledby="records">
           <h2 id="records">Records to review</h2>
           <p className={s.bigNumber}>{queue.pending.length}</p>

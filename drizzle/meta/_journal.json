@@ -117,7 +117,14 @@
     {
       "idx": 16,
       "version": "7",
-      "when": 1791894132756,
+      "when": 1791897511358,
+      "tag": "0016_booking_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791898566522,
       "tag": "0017_membership_workflow",
       "breakpoints": true
     }

@@ -156,7 +156,7 @@ export async function checkMoveOnce(tx: Tx, customerId: string, p: MoveOncePaylo
       and(
         eq(bookingDogs.dogId, bd.dogId),
         eq(bookingDogs.serviceDate, p.toDate),
-        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'waitlisted', 'offered', 'attended', 'no_show']),
+        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'waitlisted', 'requested', 'attended', 'no_show']),
       ),
     );
   if (clash) throw new ConflictError(`${p.dogName} is already booked on ${formatUkDate(p.toDate)}.`);

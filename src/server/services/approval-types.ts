@@ -5,11 +5,13 @@ import 'server-only';
  * calls registerApprovalType() at load time. approvals.ts loads this file before it uses the registry,
  * so pages, actions and jobs never depend on import order.
  *
- * Planned registrations:
- *   booking.request       – Developer 2: src/server/services/booking-requests.ts (phase B)
+ * Registered:
+ *   booking.request       – src/server/services/booking-requests.ts (D76–D85)
+ * Planned:
  *   membership.days       – Developer 1
  *   membership.move_once  – Developer 1
  *
  * Add a line like:  import './booking-requests';
  */
+import './booking-requests';
 import './membership-approvals';

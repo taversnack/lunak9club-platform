@@ -22,4 +22,14 @@
 
 **Ordering note (4 Oct 2026):** 0014 was generated on `dev2/dog-register-fields`. Developer 1’s next migration (vaccination override and reminder rules) must be **regenerated as 0015 after 0014 lands on main** – rebase, delete the locally generated file and its `meta/*_snapshot.json`/`_journal.json` entry, then run `pnpm db:generate` again – otherwise its snapshot misses these columns and `drizzle-kit check` fails.
 
+**0016_booking_approvals (generated 13 Oct 2026 after 0015 / PR #4 merged to main):** `pnpm db:generate --name booking_approvals`, with the data step hand-added after the old check is dropped and **before** the new check constraints are recreated:
+
+```sql
+UPDATE "booking_dogs" SET "status" = 'waitlisted', "offer_expires_at" = NULL WHERE "status" = 'offered';
+```
+
+| Migration | Purpose | Data impact | Rollback / recovery | Destructive |
+|---|---|---|---|---|
+| 0016_booking_approvals | `approval_requests` (status check, `last_error`/`last_error_at` for a failed approval attempt, status/created index, one pending request per type + subject); booking_dogs status `requested`/`rejected` added and `offered` removed (checks and live/place partial indexes recreated); offer check limited to `pending_payment`; drop `booking_settings.waitlist_offer_hours` | Converts any `offered` rows to `waitlisted` (D84); drops one settings column | Drop `approval_requests`; restore the previous checks/indexes once no `requested`/`rejected` rows exist (cancel them first); re-add `waitlist_offer_hours integer NOT NULL DEFAULT 12` and set it back to the previous value from the audit log/backup. Converted offers can't be told apart afterwards – take a backup first | Yes (drops a column) |
+
 **Numbering note (13 Oct 2026):** migration numbers follow merge order – 0015 is Developer 1's `0015_vaccination_compliance` (PR #4) and 0016 is Developer 2's approval tables (`dev2/booking-approval`). Neither is on this branch yet, so `0017_membership_workflow` is generated against a local, uncommitted stand-in of Developer 2's `approval_requests` table. When 0015 and 0016 land, merge main and regenerate 0017 so its snapshot follows 0016.

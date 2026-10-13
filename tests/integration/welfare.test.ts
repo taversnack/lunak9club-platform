@@ -19,7 +19,6 @@ import {
   users,
   welfareChecks,
 } from '@/infra/db/schema';
-import { createMyBookings } from '@/server/services/bookings';
 import {
   acknowledgeIncident,
   addIncidentUpdate,
@@ -30,12 +29,13 @@ import {
   setIncidentStatus,
   setWelfareShared,
 } from '@/server/services/welfare';
-import { sendBookingReminders, sendOfferWarnings, sendVaccinationReminders } from '@/server/services/reminders';
+import { sendBookingReminders, sendVaccinationReminders } from '@/server/services/reminders';
 import { decideErasure, exportMyData, myDataRequests, requestErasure, runRetention } from '@/server/services/privacy';
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, londonDate, londonInstant } from '@/domain/time';
+import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, PNG, type TestUser } from '../support/factories';
 import { approvedDog, readyCustomer } from '../support/onboard';
@@ -114,10 +114,10 @@ describe('vaccination reminders (D11, D66)', () => {
   });
 });
 
-describe('booking and offer reminders (D67)', () => {
+describe('booking reminders (D67)', () => {
   it('emails the day before at 17:00, once', async () => {
     const date = weekdayAhead(50);
-    await createMyBookings(db(), sam, { dogIds: [samDog], dates: [date], session: 'full', taxi: true });
+    await requestAndApprove(db(), sam, { dogIds: [samDog], dates: [date], session: 'full', taxi: true }, owner);
     await payOpenCheckouts(db());
     const evening = londonInstant(addDays(date, -1), '17:05');
     mail.sent.length = 0;
@@ -126,24 +126,6 @@ describe('booking and offer reminders (D67)', () => {
     const r = mail.sent.filter((m) => m.to === sam.email && m.template === 'booking.reminder');
     expect(r).toHaveLength(1);
     expect(r[0]!.text).toContain('Pippin');
-  });
-
-  it('warns when a place offer has under 2 hours left, once', async () => {
-    const date = weekdayAhead(51);
-    const expires = new Date(Date.now() + 90 * 60_000);
-    const [b] = (
-      await db().execute<{ id: string }>(
-        sql`insert into bookings (customer_id, created_by, source) select customer_id, ${sam.userId}, 'customer' from dogs where id = ${samDog} returning id`,
-      )
-    ).rows;
-    await db().execute(sql`insert into service_days (service_date) values (${date}) on conflict do nothing`);
-    await db().execute(
-      sql`insert into booking_dogs (booking_id, customer_id, dog_id, service_date, session, status, offer_expires_at) select ${b!.id}, customer_id, id, ${date}, 'am', 'offered', ${expires} from dogs where id = ${samDog}`,
-    );
-    mail.sent.length = 0;
-    await sendOfferWarnings(db(), system);
-    await sendOfferWarnings(db(), system);
-    expect(mail.sent.filter((m) => m.template === 'booking.offer-lapsing' && m.to === sam.email)).toHaveLength(1);
   });
 });
 

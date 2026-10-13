@@ -613,7 +613,7 @@ async function hasMemberDays(db: Db, customerId: string, month: Month) {
         eq(bookingDogs.kind, 'membership'),
         gte(bookingDogs.serviceDate, first),
         lte(bookingDogs.serviceDate, last),
-        inArray(bookingDogs.status, ['confirmed', 'waitlisted', 'offered']),
+        inArray(bookingDogs.status, ['confirmed', 'waitlisted']),
       ),
     );
   return (row?.n ?? 0) > 0;
@@ -709,7 +709,7 @@ export async function unconfirmedMembers(db: Db, actor: Actor, month: Month) {
         eq(bookingDogs.kind, 'membership'),
         gte(bookingDogs.serviceDate, first),
         lte(bookingDogs.serviceDate, last),
-        inArray(bookingDogs.status, ['confirmed', 'waitlisted', 'offered']),
+        inArray(bookingDogs.status, ['confirmed', 'waitlisted']),
         isNull(membershipMonthConfirmations.id),
         isNull(customers.anonymisedAt),
       ),

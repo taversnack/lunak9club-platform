@@ -26,6 +26,9 @@ export const approvalRequests = pgTable(
     decidedBy: text().references(() => users.id, { onDelete: 'set null' }),
     decidedAt: timestamp({ withTimezone: true }),
     reason: text(),
+    /** Why the last attempt to approve failed (e.g. the day is now full); shown to the Owner only. */
+    lastError: text(),
+    lastErrorAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true })
       .notNull()

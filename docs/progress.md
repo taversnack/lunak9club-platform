@@ -25,7 +25,7 @@
   - Migrations 0004–0005: booking_settings, closures (E&W bank holidays to 2028), service_days, bookings, booking_dogs (one live booking per dog per day; status/offer/cancel/check-out constraints).
   - Pure rules (`src/domain/booking/rules.ts`): London times incl. clock changes, 23:59 cut-off, 90-day window, sessions and capacity (full day = morning + afternoon), taxi seats, 48 h cancellation, vaccination-by-date, estimate.
   - Atomic booking: each day's row is locked before capacity is checked; 12 simultaneous requests for 2 places → exactly 2 booked, 10 waitlisted (tested on separate connections).
-  - Customer: calendar with availability text, multi-dog/multi-date booking, review page with estimate and cancellation terms, bookings list, cancel with free/late notice, accept waitlist offers.
+  - Customer: calendar with availability text, multi-dog/multi-date booking, review page with estimate and cancellation terms, bookings list, cancel with free/late notice, accept waitlist offers *(offers retired by D81/D82)*.
   - Owner: day view (capacity, dogs, warnings, taxi run, waitlist, per-day capacity, notes, cancel), week and month views, book a dog with audited overrides, check-in/out/no-show/undo, opening settings and closures, CSV exports (formula-injection safe, audited).
   - Seed: approved demo dogs Biscuit (Casey) and Rex (Jordan).
 
@@ -78,6 +78,13 @@
   - Migration: `0015_vaccination_compliance` (nullable column, default change, guarded UPDATE), after Developer 2's `0014_dog_register_fields`; branch stacked on `dev2/dog-register-fields` (PR #3). The first-course date is separate from the per-vaccination date given (D68).
   - Docs: D11, D40, D42, D66 amended; D73–D75 added; O15 closed; O16 (titre certificates) opened.
 
+- 2026-10-13 — **Booking requests and approvals** (D76–D85), branch `dev2/booking-approval`:
+  - Generic approvals: `approval_requests` (one pending per subject), type registry, state machine, `approvals.manage` / `approvals.self.manage`; Owner **Requests** page (all types, oldest first) with nav link and dashboard count.
+  - `booking.request`: customer bookings (ad hoc, members' extra days, trial days) become `requested` days that hold their place with the price fixed at request time; no payment until approved. Wording “does not secure your booking” on the form, the confirmation screen and a new confirmation email.
+  - Approve: vaccination re-check; priced days held as `pending_payment` (24 h or until the session starts, min 31 min) with a pay link email (“pay to secure”, deadline in London time); £0 and membership days confirmed. Decline (whole request or one day), withdraw, expiry at the cut-off (one email per request). Owner notes stay in the portal.
+  - Manual waitlist: join when full, leave any time, Owner removes; **Give place** makes its own booking and is blocked up front (reason shown, button disabled, refused on the server) for a dog failing the vaccination check. Waitlist offers, offer warnings and the offer-hours setting are retired.
+  - **Migration 0016 pending** – generated only after Developer 1's 0015 (PR #4) is on main (see `drizzle/NOTES.md`).
+
 ## Verification (26 Sep 2026, cloud build workspace)
 Phase 7 (4 Oct): `pnpm verify` → OVERALL PASS. 93 unit, 116 integration/authz (incl. 12 welfare/privacy), E2E incident → customer acknowledgement → daily check → data download on mobile + desktop; a11y scans on all new pages.
 
@@ -98,6 +105,7 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 
 ## Current
 - Phase 7 done; awaiting Owner review. Next: Phase 8 (hardening and launch).
+- Booking requests and approvals (D76–D85) built on `dev2/booking-approval`; migration 0016 and the PR wait for PR #4 (0015).
 - Dog register fields (D68–D72) built on `dev2/dog-register-fields` (draft PR). **Developer 1’s migration must be regenerated as 0015 after 0014 lands** (see `drizzle/NOTES.md`); Developer 1 uses decision IDs from D73.
 
 - **Membership workflow (Developer 1, branch dev1/membership-workflow, 13 Oct 2026, local only):** Owner-created accounts with 7-day invites (D86), per-dog offers and `membership.days` approvals (D87), monthly confirmation and job (D88), Owner day changes (D89), `membership.move_once` (D90), portal-only decision notes (D91). Migration 0017. Built on Developer 2's approval requests (merged from dev2/booking-approval 58c6d2d; its migration 0016 isn't committed yet).
@@ -109,7 +117,6 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Nothing calls the scheduler in production yet (O12) – decide with hosting (O6).
 - Card payments tested against the simulated provider and Stripe’s SDK types only; needs a run with real Stripe test keys (O13).
 - Checking in a dog whose Owner-made booking is still awaiting payment isn’t possible – the customer pays first (or the Owner cancels and rebooks at £0 with a customer rate).
-- Booking reminders and waitlist-offer expiry emails not yet sent (scheduler exists now; Phase 7).
 - No virus scanning of uploads (D30) — decide before launch.
 - Terms are a placeholder (D34) — solicitor-reviewed text needed.
 - CI skips the S3 adapter test (no S3 server in CI); covered locally.
@@ -119,6 +126,8 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Staff Manager/Staff roles not created (D13) — permission map ready.
 - Web-form consent as “written consent” not yet confirmed by the Owner and council (D71).
 - Register answers are overwritten (with when/who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72, brief recommendation 1).
+- D85 trial defaults (unapproved dogs only, one dog-day per request, ad hoc trial price) were built as described – confirm with the Owner.
+- If opening the checkout fails after an approval, the error is logged and the customer has no pay link until the Owner cancels and rebooks (or the hold lapses).
 
 - Follow-ups from the vaccination compliance work: (1) licence guidance 23.1 / brief D42 note – require a screening (meet-and-greet) record at check-in, not built yet; (2) titre certificates for DHP not supported (O16); (3) the retention job clears the reminder log after 90 days, so an "expired" reminder can be sent again ~90 days later – assigned to Developer 3; (4) the customer data download doesn't include vaccination record details.
 - `storage.test.ts` now skips cleanly when `moto_server` (local S3) isn't installed (PR #1, merged into main and into this branch's base); it no longer fails `pnpm test:int` on the shared build box.

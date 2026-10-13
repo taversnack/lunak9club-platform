@@ -290,12 +290,17 @@ export function SubmitButton({
   variant = 'primary',
   name,
   value,
+  disabled = false,
+  describedBy,
 }: {
   children: ReactNode;
   pendingText?: string;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   name?: string;
   value?: string;
+  /** Blocked for a reason shown next to the button (pass its id as describedBy). */
+  disabled?: boolean;
+  describedBy?: string;
 }) {
   const { pending } = useFormStatus();
   return (
@@ -304,8 +309,9 @@ export function SubmitButton({
       name={name}
       value={value}
       className={`${s.button} ${s[variant]}`}
-      disabled={pending}
-      aria-disabled={pending}
+      disabled={pending || disabled}
+      aria-disabled={pending || disabled}
+      aria-describedby={describedBy}
     >
       {pending ? (pendingText ?? 'Saving…') : children}
     </button>

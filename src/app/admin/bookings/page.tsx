@@ -14,7 +14,7 @@ import {
   attendanceAction,
   dayCapacityAction,
   internalNoteAction,
-  offerPlaceAction,
+  givePlaceAction,
   ownerCancelAction,
 } from '../actions';
 
@@ -224,7 +224,7 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
                     <SubmitButton variant="secondary">Save note</SubmitButton>
                   </div>
                 </ActionForm>
-                {r.status === 'confirmed' || r.status === 'offered' || r.status === 'pending_payment' ? (
+                {r.status === 'confirmed' || r.status === 'pending_payment' ? (
                   <ActionForm action={ownerCancelAction}>
                     <input type="hidden" name="id" value={r.id} />
                     <input type="hidden" name="version" value={r.version} />
@@ -239,6 +239,49 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
             </li>
           ))}
         </ul>
+      </Card>
+
+      <Card aria-labelledby="requests">
+        <h2 id="requests">Requests waiting ({day.requests.length})</h2>
+        <p className={s.hint}>
+          Requested days hold their place until you decide. Approve or decline whole requests under{' '}
+          <Link href="/admin/approvals">Requests</Link>; decline a single day here.
+        </p>
+        {day.requests.length === 0 ? (
+          <Muted>No requests for this day.</Muted>
+        ) : (
+          <ul className={s.list}>
+            {day.requests.map((r) => (
+              <li key={r.id} className={s.listItem} style={{ display: 'block' }}>
+                <p>
+                  <strong>
+                    <Link href={`/admin/dogs/${r.dogId}`}>{r.dogName}</Link>
+                  </strong>{' '}
+                  · {SESSION_LABELS[r.session]}
+                  {r.taxi ? ' · taxi' : ''} · <Link href={`/admin/customers/${r.customerId}`}>{r.customerName}</Link>{' '}
+                  <StatusBadge tone="warning">Requested</StatusBadge>
+                  {r.kind === 'trial' ? ' · trial day' : ''}
+                  {r.warning ? <span className={s.hint}> · {r.warning}</span> : null}
+                </p>
+                <details>
+                  <summary>
+                    Decline this day <span className="visually-hidden">for {r.dogName}</span>
+                  </summary>
+                  <ActionForm action={ownerCancelAction}>
+                    <input type="hidden" name="id" value={r.id} />
+                    <input type="hidden" name="version" value={r.version} />
+                    <TextField name="reason" label={`Reason for declining ${r.dogName} (not emailed)`} required />
+                    <div>
+                      <SubmitButton variant="danger">
+                        Decline day <span className="visually-hidden">for {r.dogName}</span>
+                      </SubmitButton>
+                    </div>
+                  </ActionForm>
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
       <Card aria-labelledby="taxi">
@@ -278,25 +321,57 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
         {day.waitlist.length === 0 ? (
           <Muted>Nobody waiting.</Muted>
         ) : (
-          <ul className={s.list}>
-            {day.waitlist.map((r) => (
-              <li key={r.id} className={s.listItem}>
-                <span>
-                  <strong>{r.dogName}</strong> · {SESSION_LABELS[r.session]}
-                  {r.taxi ? ' · taxi' : ''} · {r.customerName}
-                  {r.status === 'offered' ? <span className={s.hint}> (last offer lapsed)</span> : null}
-                  {r.warning ? <span className={s.hint}> · {r.warning}</span> : null}
-                </span>
-                <ActionForm action={offerPlaceAction}>
-                  <input type="hidden" name="id" value={r.id} />
-                  <input type="hidden" name="version" value={r.version} />
-                  <SubmitButton variant="secondary">
-                    Offer place <span className="visually-hidden">{r.dogName}</span>
-                  </SubmitButton>
-                </ActionForm>
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className={s.hint}>
+              In the order people joined. Nothing happens automatically: “Give place” books the dog you choose as its
+              own booking (a payment link is emailed for priced days).
+            </p>
+            <ol className={s.list}>
+              {day.waitlist.map((r) => (
+                <li key={r.id} className={s.listItem}>
+                  <span>
+                    <strong>{r.dogName}</strong> · {SESSION_LABELS[r.session]}
+                    {r.taxi ? ' · taxi' : ''} · {r.customerName}
+                    {r.warning && !r.giveBlock ? <span className={s.hint}> · {r.warning}</span> : null}
+                    {r.giveBlock ? (
+                      <span id={`give-block-${r.id}`} className={s.hint}>
+                        {' '}
+                        · {r.giveBlock}
+                      </span>
+                    ) : null}
+                  </span>
+                  <div className={s.row} style={{ justifyContent: 'flex-start' }}>
+                    <ActionForm action={givePlaceAction}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <input type="hidden" name="version" value={r.version} />
+                      <SubmitButton
+                        variant="secondary"
+                        disabled={!!r.giveBlock}
+                        describedBy={r.giveBlock ? `give-block-${r.id}` : undefined}
+                      >
+                        Give place <span className="visually-hidden">to {r.dogName}</span>
+                      </SubmitButton>
+                    </ActionForm>
+                    <details>
+                      <summary>
+                        Remove from waitlist <span className="visually-hidden">{r.dogName}</span>
+                      </summary>
+                      <ActionForm action={ownerCancelAction}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <input type="hidden" name="version" value={r.version} />
+                        <TextField name="reason" label={`Reason for removing ${r.dogName}`} required />
+                        <div>
+                          <SubmitButton variant="danger">
+                            Remove <span className="visually-hidden">{r.dogName}</span>
+                          </SubmitButton>
+                        </div>
+                      </ActionForm>
+                    </details>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </>
         )}
       </Card>
 
