@@ -512,7 +512,21 @@ describe('your data export: contents (D65)', () => {
     expect(json).not.toContain('STAFF-ONLY');
     expect(json).not.toContain(owner.userId);
     expect(data.dogs[0]).not.toHaveProperty('approvedBy');
-    expect(data.dogs[0]).not.toHaveProperty('statusReason');
+    // An active dog's reason isn't shown to the customer, so it isn't exported either.
+    expect(data.dogs[0]!.statusReason).toBeNull();
     expect(json).not.toContain('watch with big dogs');
+  });
+
+  it('includes the reason the customer sees when their dog is suspended or rejected, never approvedBy', async () => {
+    for (const status of ['suspended', 'rejected'] as const) {
+      const reason = `Reason shown to the customer (${status})`;
+      await db().update(dogs).set({ status, statusReason: reason }).where(eq(dogs.id, rosaDog));
+      const data = await exportMyData(db(), rosa);
+      const dog = data.dogs.find((d) => d.id === rosaDog)!;
+      expect(dog).toMatchObject({ status, statusReason: reason });
+      expect(dog).not.toHaveProperty('approvedBy');
+      expect(JSON.stringify(data)).not.toContain(owner.userId);
+    }
+    await db().update(dogs).set({ status: 'approved', statusReason: null }).where(eq(dogs.id, rosaDog));
   });
 });

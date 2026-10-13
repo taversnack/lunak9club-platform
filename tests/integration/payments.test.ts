@@ -47,10 +47,27 @@ class TestProvider extends SimulatedPaymentProvider {
   override async refund(paymentId: string, amountPence: number, key: string, reference: string) {
     this.refundCalls++;
     if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
+  /** Make refunds fail the way an invalid Stripe key does. */
+  badKey = false;
+  override async refund(paymentId: string, amountPence: number, key: string, reference: string) {
+    if (this.badKey)
+      return {
+        id: '',
+        status: 'failed' as const,
+        failureReason: 'StripeAuthenticationError: Invalid API Key provided',
+        needsOwner: true,
+      };
     const res = await super.refund(paymentId, amountPence, key, reference);
     return this.loseRefundAnswers
       ? { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' }
       : res;
+  /** Refunds are accepted but not settled yet (Stripe's 'pending'); a webhook settles them later. */
+  refundsPending = false;
+  override async refund(paymentId: string, amountPence: number, key: string, reference: string, attempt?: number) {
+    const res = await super.refund(paymentId, amountPence, key, reference, attempt);
+    if (this.loseRefundAnswers)
+      return { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' };
+    return this.refundsPending && res.status === 'succeeded' ? { ...res, status: 'pending' as const } : res;
   }
   override parseWebhook(raw: string, signature: string | null): WebhookEvent {
     if (signature !== 'valid') throw new Error('No signatures found matching the expected signature');
@@ -336,6 +353,7 @@ describe('automatic refunds (D20, D58)', () => {
   });
 
   it('concurrent ticks claim an interrupted refund once; a webhook settling it clears the old reason, is audited and emails the customer', async () => {
+  it('an invalid Stripe key fails the refund for the Owner to see, and emails the Owner once', async () => {
     const date = weekdayAhead(46);
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const a = await payLatest(pia.userId);
@@ -386,6 +404,27 @@ describe('automatic refunds (D20, D58)', () => {
     expect(settledBy[0]!.metadata).toMatchObject({ via: 'webhook' });
     const toPia = mail.sent.filter((m) => m.to === pia.email);
     expect(toPia.map((m) => m.subject)).toEqual([expect.stringMatching(/refund of £50\.00/)]);
+    await db().execute(sql`delete from notification_log where kind = 'card-refunds-failed'`);
+    mail.sent.length = 0;
+    stripe.badKey = true;
+    await cancelMyBooking(db(), pia, bd!.id);
+    const [pay] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    const [r] = await db().select().from(cardRefunds).where(eq(cardRefunds.paymentId, pay!.id));
+    // Not stuck in 'submitted': it's failed, with the reason, in the Owner's list to try again.
+    expect(r).toMatchObject({ status: 'failed', failureReason: expect.stringMatching(/Invalid API Key/) });
+    expect((await ownerCardRefunds(db(), owner)).failed.map((x) => x.r.id)).toContain(r!.id);
+    const toOwner = mail.sent.filter((m) => m.to === owner.email && /need your attention/.test(m.subject));
+    expect(toOwner).toHaveLength(1);
+    expect(toOwner[0]!.text).toMatch(/Stripe refused our API key/);
+    expect(toOwner[0]!.text).toContain('/admin/refunds');
+    // Trying again with the key still wrong fails again, but doesn't email again the same day.
+    await retryCardRefund(db(), owner, r!.id);
+    expect(mail.sent.filter((m) => m.to === owner.email && /need your attention/.test(m.subject))).toHaveLength(1);
+    // Once the key is fixed, Try again sends it.
+    stripe.badKey = false;
+    await retryCardRefund(db(), owner, r!.id);
+    const [ok] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
+    expect(ok!.status).toBe('succeeded');
   });
 
   it('a refund whose answer was lost stays pending, and the webhook settles it by our id without a second refund', async () => {

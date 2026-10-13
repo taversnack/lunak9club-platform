@@ -8,6 +8,10 @@ import { appUrl, firstNameOf, sendSafely } from '../notify';
 import { claimNotification } from './reminders';
 import { getPaymentProvider } from '@/infra/payments';
 import { logger } from '@/infra/logger';
+import { ownerBillingMessage } from '@/infra/email/templates';
+import { londonDate } from '@/domain/time';
+import { appUrl, ownerEmails, sendSafely } from '../notify';
+import { claimNotification } from './reminders';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
 import { ConflictError, NotFoundError } from '../errors';
@@ -82,8 +86,9 @@ async function maybeCloseCreditNote(q: Q, creditNoteId: string | null) {
 }
 
 /**
- * Send queued refunds to the payment provider. Safe to call repeatedly: each refund's id is its
- * idempotency key, so the provider never pays out twice. Called after the queuing transaction
+ * Send queued refunds to the payment provider. Safe to call repeatedly: each attempt has its own
+ * idempotency key (our id, plus the attempt number from the second attempt on), so the provider
+ * never pays out twice for one attempt, while a retry after a failure really sends the money again. Called after the queuing transaction
  * commits, and by the scheduler as a safety net.
  */
 export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}) {
@@ -132,6 +137,24 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
     if (!claimed || !providerPaymentId) continue;
     claimedCount++;
     const res = await provider.refund(providerPaymentId, r.amountPence, `refund-${r.id}`, r.id);
+  let accountProblem = false;
+  for (const { r, providerPaymentId } of rows) {
+    // Claim it so two runs don't submit at the same moment. A new or failed refund starts a new
+    // attempt (a failed provider refund is finished, so retrying needs a new one with a new key); one
+    // interrupted mid-submit resends the same attempt with the same key, so the provider dedupes it.
+    const resend = r.status === 'submitted';
+    const [claimed] = await db
+      .update(cardRefunds)
+      .set({
+        status: 'submitted',
+        ...(resend ? {} : { attempts: sql`${cardRefunds.attempts} + 1`, providerRefundId: null }),
+      })
+      .where(and(eq(cardRefunds.id, r.id), eq(cardRefunds.status, r.status)))
+      .returning({ id: cardRefunds.id, attempts: cardRefunds.attempts });
+    if (!claimed || !providerPaymentId) continue;
+    const attempt = Math.max(claimed.attempts, 1);
+    const key = attempt > 1 ? `refund-${r.id}-${attempt}` : `refund-${r.id}`;
+    const res = await provider.refund(providerPaymentId, r.amountPence, key, r.id, attempt);
     // 'pending' with no id means we don't know whether it went through: it stays 'submitted' with no
     // provider id, so the safety net above sends it again (the provider dedupes) or the webhook,
     // matched on our id, settles it.
@@ -158,7 +181,8 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
     }
     if (status === 'failed') {
       failed++;
-      logger.warn({ refund: r.id }, 'card refund failed');
+      if (res.needsOwner) accountProblem = true;
+      logger.warn({ refund: r.id, needsOwner: Boolean(res.needsOwner) }, 'card refund failed');
     }
   }
   return { succeeded, failed, claimed: claimedCount };
@@ -191,6 +215,32 @@ async function emailRefundSent(db: Db, refundId: string) {
   } catch (err) {
     logger.error({ refund: refundId, err: err instanceof Error ? err.name : 'unknown' }, 'refund email failed');
   }
+  if (failed) await tellOwnerRefundsFailed(db, failed, accountProblem);
+  return { succeeded, failed };
+}
+
+/**
+ * Email the Owner that card refunds need attention (at most once a day): they're listed under
+ * Refunds with a 'Try again' button. Best effort: the refund state is already saved.
+ */
+async function tellOwnerRefundsFailed(db: Db, count: number, accountProblem: boolean) {
+  try {
+    if (!(await claimNotification(db, `card-refunds-failed:${londonDate(new Date())}`, 'card-refunds-failed'))) return;
+    const why = accountProblem
+      ? 'Stripe refused our API key (it may be wrong, revoked or missing the refunds permission), so no money has been sent. Please check the Stripe key in the server settings, then use Try again on each refund.'
+      : 'The card provider rejected them, so no money has been sent. Please check each one and use Try again, or refund the customer another way.';
+    for (const to of await ownerEmails(db))
+      await sendSafely(
+        ownerBillingMessage(
+          to,
+          'Card refunds need your attention',
+          `${count === 1 ? 'A card refund' : `${count} card refunds`} could not be sent. ${why}`,
+          appUrl('/admin/refunds'),
+        ),
+      );
+  } catch (err) {
+    logger.error({ err: err instanceof Error ? err.name : 'unknown' }, 'refund failure alert failed');
+  }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -204,14 +254,22 @@ export async function applyRefundUpdate(
   providerRefundId: string,
   status: 'succeeded' | 'pending' | 'failed',
   reference?: string,
+  attempt?: number,
 ) {
   // First news of a refund whose create call we never heard back from: record its id, which also
-  // stops the safety net from sending it again.
+  // stops the safety net from sending it again. Only for the current attempt: late news about an
+  // earlier, failed attempt must not attach that old refund again.
   if (reference && UUID.test(reference))
     await db
       .update(cardRefunds)
       .set({ providerRefundId })
-      .where(and(eq(cardRefunds.id, reference), isNull(cardRefunds.providerRefundId)));
+      .where(
+        and(
+          eq(cardRefunds.id, reference),
+          isNull(cardRefunds.providerRefundId),
+          attempt ? eq(cardRefunds.attempts, attempt) : undefined,
+        ),
+      );
   if (status === 'pending') return;
   const [r] = await db
     .update(cardRefunds)
