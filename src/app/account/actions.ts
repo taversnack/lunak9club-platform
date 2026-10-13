@@ -179,7 +179,9 @@ export async function withdrawRequestAction(_: ActionState, fd: FormData): Promi
     const actor = await requirePermission('account.access');
     await withdrawMyApprovalRequest(getDb(), actor, String(fd.get('requestId') ?? ''));
     revalidatePath('/account/bookings');
-    redirect('/account/bookings?withdrawn=1');
+    revalidatePath('/account/requests');
+    // Only two fixed destinations – never a caller-supplied URL.
+    redirect(fd.get('from') === 'requests' ? '/account/requests?withdrawn=1' : '/account/bookings?withdrawn=1');
   });
 }
 
