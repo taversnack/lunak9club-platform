@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut } from './helpers';
+import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut, navTo } from './helpers';
 
 const plusDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
@@ -26,7 +26,7 @@ async function asCustomer(page: Page) {
 
 test('customer completes profile, contacts and terms', async ({ page }) => {
   await asCustomer(page);
-  await page.getByRole('link', { name: 'Your details' }).click();
+  await navTo(page, 'Your account', 'Your details');
   await page.getByLabel('Mobile phone number').fill('123');
   await page.getByRole('button', { name: 'Save details' }).click();
   await expect(page.getByText('Error: Enter a UK phone number, like 07700 900123')).toBeVisible();
@@ -37,7 +37,7 @@ test('customer completes profile, contacts and terms', async ({ page }) => {
   await page.getByRole('button', { name: 'Save details' }).click();
   await expect(page.getByText('Your details are saved.')).toBeVisible();
 
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Contacts' }).click();
+  await navTo(page, 'Your account', 'Contacts');
   await page.getByLabel('Full name').fill('Sam Neighbour');
   await page.getByLabel('Phone number').fill('07700 900456');
   await page.getByLabel(/Emergency contact/).check();
@@ -45,7 +45,7 @@ test('customer completes profile, contacts and terms', async ({ page }) => {
   await expect(page.getByText('Contact added.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove Sam Neighbour' }).first()).toBeVisible();
 
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Terms' }).click();
+  await navTo(page, 'Your account', 'Terms');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('terms');
   if ((await page.getByText(/You accepted this version/).count()) === 0) {
     await page.getByLabel('I have read and accept these terms').check();
@@ -56,7 +56,7 @@ test('customer completes profile, contacts and terms', async ({ page }) => {
 
 test('customer adds a dog, vet, onboarding form and vaccination record', async ({ page }) => {
   await asCustomer(page);
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Add a dog' }).click();
+  await navTo(page, 'Your account', 'Add a dog');
   await page.getByRole('button', { name: 'Save and continue' }).click();
   await expect(page.getByText('Error: Enter your dog’s name')).toBeVisible();
   await axe(page);
@@ -188,7 +188,7 @@ test('another customer cannot open this dog or its document', async ({ page }) =
 test('owner reviews records, records assessments and approves the dog', async ({ page }) => {
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Reviews' }).click();
+  await navTo(page, 'Owner', 'Reviews');
   await page.getByRole('link', { name: dogName }).first().click();
   await expect(page.getByRole('heading', { name: dogName, level: 1 })).toBeVisible();
   await expect(page.getByText('Very friendly, loves fetch')).toBeVisible();

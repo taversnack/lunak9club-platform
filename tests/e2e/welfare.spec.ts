@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut } from './helpers';
+import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut, navTo } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -21,7 +21,7 @@ test('Owner reports an incident and records a daily check that must be shared', 
   const { dog, label } = who(info.project.name);
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Incidents' }).click();
+  await navTo(page, 'Owner', 'Incidents');
   await expect(page.getByRole('heading', { name: 'Incidents', level: 1 })).toBeVisible();
   await axe(page);
   await page.getByRole('link', { name: 'Report an incident' }).click();
@@ -74,7 +74,7 @@ test('the customer reads the report (but not internal notes), acknowledges it an
   await page.getByRole('button', { name: 'I’ve read this' }).click();
   await expect(page.getByText(/You confirmed you’d read this/)).toBeVisible();
 
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Your data' }).click();
+  await navTo(page, 'Your account', 'Your data');
   await expect(page.getByRole('heading', { name: 'Your data', level: 1 })).toBeVisible();
   await axe(page);
   const exp = await page.request.get('/api/account/export');

@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut } from './helpers';
+import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut, navTo } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -17,7 +17,7 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
 }, info) => {
   await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
   await expect(page).toHaveURL(/\/account$/);
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Book', exact: true }).click();
+  await navTo(page, 'Your account', 'Book', true);
   await expect(page.getByRole('heading', { name: 'Book day care' })).toBeVisible();
   await axe(page);
 

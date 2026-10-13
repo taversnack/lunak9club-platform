@@ -114,7 +114,7 @@ export default async function BookingsPage({
           <Muted>No bookings yet.</Muted>
         ) : (
           <div className={s.tableWrap} role="region" aria-label="Upcoming bookings" tabIndex={0}>
-            <table className={s.table}>
+            <table className={`${s.table} ${s.stackTable}`}>
               <thead>
                 <tr>
                   <th scope="col">Date</th>
@@ -130,14 +130,14 @@ export default async function BookingsPage({
               <tbody>
                 {upcoming.map((b) => (
                   <tr key={b.id}>
-                    <td>{formatUkDate(b.serviceDate)}</td>
-                    <td>{b.dogName}</td>
-                    <td>
+                    <td data-primary="">{formatUkDate(b.serviceDate)}</td>
+                    <td data-label="Dog">{b.dogName}</td>
+                    <td data-label="Session">
                       {SESSION_LABELS[b.session]}
                       {b.taxi ? ' + taxi' : ''}
                       {b.kind === 'membership' ? <div className={s.hint}>Membership day</div> : null}
                     </td>
-                    <td>{b.pricePence != null ? formatPounds(b.pricePence) : '–'}</td>
+                    <td data-label="Price">{b.pricePence != null ? formatPounds(b.pricePence) : '–'}</td>
                     <td>
                       <StatusBadge tone={STATUS[b.status]!.tone}>
                         {b.status === 'offered' && !b.offerLive ? 'Offer lapsed' : STATUS[b.status]!.text}
