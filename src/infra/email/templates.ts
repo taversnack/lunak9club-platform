@@ -415,3 +415,62 @@ export function erasureDecisionMessage(
     html: layout(title, `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(body)}</p>`, ''),
   };
 }
+
+// Approval requests (D77). Polite standard wording only: the summary comes from the request type's
+// describe() (never sensitive), and the Owner's note is never included – the customer reads it in the portal.
+export function approvalRequestedOwnerMessage(to: string, p: { label: string }, url: string): EmailMessage {
+  const title = `New ${p.label.toLowerCase()} to review`;
+  return {
+    to,
+    template: 'approval.owner-new',
+    subject: `${BRAND}: ${title.toLowerCase()}`,
+    text: `A customer has sent a ${p.label.toLowerCase()}. Review it here:\n${url}`,
+    html: layout(
+      title,
+      `<p>A customer has sent a ${escapeHtml(p.label.toLowerCase())}.</p>${button(url, 'Review requests')}`,
+      '',
+    ),
+  };
+}
+
+export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn' | 'expired';
+
+const APPROVAL_COPY: Record<ApprovalOutcome, { title: (label: string) => string; body: string }> = {
+  approved: {
+    title: (l) => `Your ${l} has been approved`,
+    body: 'Good news – we’ve approved your request.',
+  },
+  rejected: {
+    title: (l) => `About your ${l}`,
+    body: 'Thank you for your request. Unfortunately we can’t accept it this time, and nothing has been charged. Please sign in to see more, or get in touch if you have any questions.',
+  },
+  withdrawn: {
+    title: (l) => `Your ${l} has been withdrawn`,
+    body: 'As you asked, we’ve withdrawn your request. Nothing has been charged.',
+  },
+  expired: {
+    title: (l) => `Your ${l} is no longer open`,
+    body: 'We’re sorry we couldn’t answer your request in time, so it has closed and nothing has been charged. You’re welcome to send a new one.',
+  },
+};
+
+export function approvalDecisionMessage(
+  to: string,
+  firstName: string,
+  p: { label: string; summary: string; outcome: ApprovalOutcome },
+  url: string,
+): EmailMessage {
+  const copy = APPROVAL_COPY[p.outcome];
+  const title = copy.title(p.label.toLowerCase());
+  return {
+    to,
+    template: `approval.${p.outcome}`,
+    subject: `${BRAND}: ${title.charAt(0).toLowerCase()}${title.slice(1)}`,
+    text: `Hi ${firstName},\n\n${copy.body}\n\n${p.summary}\n\nSee the details in your account:\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(copy.body)}</p><p>${escapeHtml(p.summary)}</p>${button(url, 'See the details')}`,
+      '',
+    ),
+  };
+}
