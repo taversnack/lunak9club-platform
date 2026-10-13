@@ -76,6 +76,7 @@ export class StripePaymentProvider implements PaymentProvider {
     amountPence: number,
     idempotencyKey: string,
     reference: string,
+    attempt = 1,
   ): Promise<RefundResult> {
     try {
       // An earlier attempt may have created the refund even though we never got the answer (e.g. a
@@ -87,7 +88,7 @@ export class StripePaymentProvider implements PaymentProvider {
             payment_intent: paymentId,
             amount: amountPence,
             reason: 'requested_by_customer',
-            metadata: { cardRefundId: reference },
+            metadata: { cardRefundId: reference, attempt: String(attempt) },
           },
           { idempotencyKey },
         ));
@@ -105,16 +106,29 @@ export class StripePaymentProvider implements PaymentProvider {
       // Only a definite rejection is a failure. Timeouts, connection, rate-limit and Stripe-side
       // errors leave the outcome unknown: report it as pending so the refund is tried again later
       // (same idempotency key, and findRefund stops a second refund).
+      // An authentication or permission error (bad, revoked or restricted key) is also definite:
+      // Stripe refused the request, so no refund exists. It won't clear by itself, so the Owner
+      // has to be told rather than the refund sitting in 'submitted' being resent for ever.
+      const account =
+        err instanceof Stripe.errors.StripeAuthenticationError || err instanceof Stripe.errors.StripePermissionError;
       const rejected =
-        err instanceof Stripe.errors.StripeCardError || err instanceof Stripe.errors.StripeInvalidRequestError;
+        account ||
+        err instanceof Stripe.errors.StripeCardError ||
+        err instanceof Stripe.errors.StripeInvalidRequestError;
       const reason = err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 200) : 'unknown';
-      return { id: '', status: rejected ? 'failed' : 'pending', failureReason: reason };
+      return {
+        id: '',
+        status: rejected ? 'failed' : 'pending',
+        failureReason: reason,
+        ...(account ? { needsOwner: true } : {}),
+      };
     }
   }
 
+  /** Our refund on this payment that hasn't failed. A failed or cancelled one is never reused. */
   private async findRefund(paymentId: string, reference: string): Promise<Stripe.Refund | null> {
     for await (const r of this.stripe.refunds.list({ payment_intent: paymentId, limit: 100 }))
-      if (r.metadata?.cardRefundId === reference) return r;
+      if (r.metadata?.cardRefundId === reference && r.status !== 'failed' && r.status !== 'canceled') return r;
     return null;
   }
 
@@ -132,6 +146,14 @@ export class StripePaymentProvider implements PaymentProvider {
             : 'pending'
         : undefined;
     const refundReference = e.type.startsWith('refund.') ? obj.metadata?.cardRefundId : undefined;
-    return { id: e.id, type: e.type, objectId: obj.id, refundStatus, refundReference };
+    const attempt = e.type.startsWith('refund.') ? Number(obj.metadata?.attempt) : NaN;
+    return {
+      id: e.id,
+      type: e.type,
+      objectId: obj.id,
+      refundStatus,
+      refundReference,
+      ...(Number.isInteger(attempt) && attempt > 0 ? { refundAttempt: attempt } : {}),
+    };
   }
 }
