@@ -270,9 +270,11 @@ export async function exportMyData(db: Db, actor: Actor) {
     },
     contacts: myContacts.map(({ customerId: _c, ...c }) => (void _c, c)),
     vets: myVets.map(({ customerId: _c, ...v }) => (void _c, v)),
-    // approvedBy (a staff user id) and statusReason (the Owner's note) are staff-only.
-    dogs: myDogs.map(({ approvedBy: _a, statusReason: _r, ...d }) => ({
-      ...(void _a, void _r, d),
+    // approvedBy (a staff user id) is staff-only. statusReason is included only when the dog is
+    // suspended or rejected, because that's when the customer sees it on their dog's page.
+    dogs: myDogs.map(({ approvedBy: _a, statusReason, ...d }) => ({
+      ...(void _a, d),
+      statusReason: d.status === 'suspended' || d.status === 'rejected' ? statusReason : null,
       health: health.find((h) => h.dogId === d.id) ?? null,
       behaviour: behaviour.find((b) => b.dogId === d.id) ?? null,
       permissions: perms.find((p) => p.dogId === d.id) ?? null,
