@@ -88,3 +88,33 @@ test('the customer reads the report (but not internal notes), acknowledges it an
   await page.goto(`/admin/incidents/${incidentId}`);
   await expect(page).toHaveURL(/\/access-denied$/);
 });
+
+test('missing incidents and dog check pages, and other customers’ incidents, are 404 not 500', async ({
+  page,
+}, info) => {
+  const other = info.project.name === 'mobile' ? DEMO_CUSTOMER : DEMO_CUSTOMER_2;
+  const missing = '00000000-0000-4000-8000-000000000000';
+  await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
+  await expect(page).toHaveURL(/\/admin$/);
+  for (const path of [
+    `/admin/incidents/${missing}`,
+    '/admin/incidents/garbage',
+    `/admin/dogs/${missing}/check`,
+    '/admin/dogs/garbage/check',
+    `/admin/invoices/${missing}`,
+  ])
+    expect((await page.goto(path))?.status(), path).toBe(404);
+  await page.goto('/admin');
+  await signOut(page);
+  await signIn(page, other.email, other.password);
+  await expect(page).toHaveURL(/\/account$/);
+  for (const path of [
+    `/account/incidents/${incidentId}`,
+    `/account/incidents/${missing}`,
+    '/account/incidents/garbage',
+    `/account/invoices/${missing}`,
+  ])
+    expect((await page.goto(path))?.status(), path).toBe(404);
+  await page.goto('/account');
+  await signOut(page);
+});

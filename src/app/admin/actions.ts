@@ -18,6 +18,7 @@ import {
   ownerEndMembership,
 } from '@/server/services/memberships';
 import { redirect } from 'next/navigation';
+import { resendPayLink } from '@/server/services/payments';
 import {
   approveInvoice,
   decideRefund,
@@ -44,7 +45,7 @@ import {
   checkIn,
   checkOut,
   markNoShow,
-  offerPlace,
+  giveWaitlistPlace,
   ownerCancel,
   ownerCreateBooking,
   removeClosure,
@@ -127,12 +128,20 @@ export async function attendanceAction(_: ActionState, fd: FormData): Promise<Ac
   });
 }
 
-export async function offerPlaceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+/** Give place (D82): the waitlisted dog gets its own booking (pay link, or confirmed if £0 / membership). */
+export async function givePlaceAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
     const actor = await requirePermission('bookings.manage');
-    await offerPlace(getDb(), actor, String(fd.get('id') ?? ''), obj(fd));
+    const r = await giveWaitlistPlace(getDb(), actor, String(fd.get('id') ?? ''), obj(fd));
     revalidatePath('/admin/bookings');
-    return { status: 'success', message: 'Place offered – the customer has been emailed.' };
+    return {
+      status: 'success',
+      message: r.payLinkFailed
+        ? 'Place given and held, but the payment link couldn’t be created. Use “Resend pay link” on this day to try again.'
+        : r.needsPayment
+          ? 'Place given – the customer has been emailed a link to pay.'
+          : 'Place given and booked – the customer has been emailed.',
+    };
   });
 }
 
@@ -437,5 +446,16 @@ export async function decideErasureAction(_: ActionState, fd: FormData): Promise
     const approve = fd.get('decision') === 'approve';
     const r = await decideErasure(getDb(), getStorage(), actor, String(fd.get('id') ?? ''), approve, obj(fd));
     redirect(`/admin/data-requests?done=${approve ? (r.completed ? 'erased' : 'closed') : 'declined'}`);
+  });
+}
+
+/** Owner: email the pay link again, creating the checkout if it couldn't be made before. */
+export async function resendPayLinkAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('bookings.manage');
+    await resendPayLink(getDb(), actor, String(fd.get('bookingId') ?? ''));
+    revalidatePath('/admin/bookings');
+    revalidatePath('/admin/approvals');
+    return { status: 'success', message: 'Pay link sent – the customer has been emailed.' };
   });
 }

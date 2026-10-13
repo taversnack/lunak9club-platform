@@ -18,18 +18,20 @@ export default async function CancelPage({ params }: { params: Promise<{ booking
   const actor = await requirePermission('account.access');
   const { bookingId } = await params;
   const { upcoming, freeCancellationHours } = await myBookings(getDb(), actor);
-  const b = upcoming.find((x) => x.id === bookingId && x.cancellable);
+  const b = upcoming.find((x) => x.id === bookingId && (x.cancellable || x.withdrawable));
   if (!b) notFound();
   const charged = b.status === 'confirmed' && b.late;
   return (
     <Card>
       <Stack>
-        <h1>Cancel this booking?</h1>
+        <h1>{b.withdrawable ? 'Withdraw this requested day?' : 'Cancel this booking?'}</h1>
         <p>
           <strong>{b.dogName}</strong> – {formatUkDate(b.serviceDate)}, {SESSION_LABELS[b.session]}
           {b.taxi ? ' with taxi' : ''}
         </p>
-        {b.status === 'pending_payment' ? (
+        {b.withdrawable ? (
+          <Alert tone="info">This day hasn’t been approved or paid for, so there’s no charge.</Alert>
+        ) : b.status === 'pending_payment' ? (
           <Alert tone="info">
             This hasn’t been paid yet, so there’s nothing to pay. Every place held for the same payment is released.
           </Alert>
@@ -47,7 +49,7 @@ export default async function CancelPage({ params }: { params: Promise<{ booking
           <input type="hidden" name="bookingId" value={b.id} />
           <div className={s.row} style={{ justifyContent: 'flex-start' }}>
             <SubmitButton variant="danger" pendingText="Cancelling…">
-              Yes, cancel booking
+              {b.withdrawable ? 'Yes, withdraw this day' : 'Yes, cancel booking'}
             </SubmitButton>
             <Link href="/account/bookings">No, keep it</Link>
           </div>

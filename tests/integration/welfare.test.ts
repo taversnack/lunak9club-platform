@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, like, sql } from 'drizzle-orm';
+import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,18 +8,21 @@ import { setEmailProvider } from '@/infra/email/providers';
 import { FsStorageProvider } from '@/infra/storage/fs';
 import {
   accounts,
+  auditEvents,
   bookingDogs,
   complianceSubmissions,
   customers,
   dataRequests,
   documents,
   dogs,
+  invoiceLines,
+  invoices,
+  payments,
   incidents,
   notificationLog,
   users,
   welfareChecks,
 } from '@/infra/db/schema';
-import { createMyBookings } from '@/server/services/bookings';
 import {
   acknowledgeIncident,
   addIncidentUpdate,
@@ -30,12 +33,13 @@ import {
   setIncidentStatus,
   setWelfareShared,
 } from '@/server/services/welfare';
-import { sendBookingReminders, sendOfferWarnings, sendVaccinationReminders } from '@/server/services/reminders';
+import { sendBookingReminders, sendVaccinationReminders } from '@/server/services/reminders';
 import { decideErasure, exportMyData, myDataRequests, requestErasure, runRetention } from '@/server/services/privacy';
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, londonDate, londonInstant } from '@/domain/time';
+import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, PNG, type TestUser } from '../support/factories';
 import { approvedDog, readyCustomer } from '../support/onboard';
@@ -114,10 +118,10 @@ describe('vaccination reminders (D11, D66)', () => {
   });
 });
 
-describe('booking and offer reminders (D67)', () => {
+describe('booking reminders (D67)', () => {
   it('emails the day before at 17:00, once', async () => {
     const date = weekdayAhead(50);
-    await createMyBookings(db(), sam, { dogIds: [samDog], dates: [date], session: 'full', taxi: true });
+    await requestAndApprove(db(), sam, { dogIds: [samDog], dates: [date], session: 'full', taxi: true }, owner);
     await payOpenCheckouts(db());
     const evening = londonInstant(addDays(date, -1), '17:05');
     mail.sent.length = 0;
@@ -126,24 +130,6 @@ describe('booking and offer reminders (D67)', () => {
     const r = mail.sent.filter((m) => m.to === sam.email && m.template === 'booking.reminder');
     expect(r).toHaveLength(1);
     expect(r[0]!.text).toContain('Pippin');
-  });
-
-  it('warns when a place offer has under 2 hours left, once', async () => {
-    const date = weekdayAhead(51);
-    const expires = new Date(Date.now() + 90 * 60_000);
-    const [b] = (
-      await db().execute<{ id: string }>(
-        sql`insert into bookings (customer_id, created_by, source) select customer_id, ${sam.userId}, 'customer' from dogs where id = ${samDog} returning id`,
-      )
-    ).rows;
-    await db().execute(sql`insert into service_days (service_date) values (${date}) on conflict do nothing`);
-    await db().execute(
-      sql`insert into booking_dogs (booking_id, customer_id, dog_id, service_date, session, status, offer_expires_at) select ${b!.id}, customer_id, id, ${date}, 'am', 'offered', ${expires} from dogs where id = ${samDog}`,
-    );
-    mail.sent.length = 0;
-    await sendOfferWarnings(db(), system);
-    await sendOfferWarnings(db(), system);
-    expect(mail.sent.filter((m) => m.template === 'booking.offer-lapsing' && m.to === sam.email)).toHaveLength(1);
   });
 });
 
@@ -291,6 +277,58 @@ describe('your data (UK GDPR, D65)', () => {
     const [u2] = await db().select().from(users).where(eq(users.id, sam.userId));
     expect(u2!.name).toBe('Former customer');
   });
+
+  it('only anonymises customers with no sign-in or other activity for 3 years', async () => {
+    const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
+    // Joined 4 years ago, never booked; sessions long since purged. Only the audit trail remains.
+    async function oldCustomer(name: string, activity: { action: string; at: Date }[]) {
+      const u = await makeUser(db(), 'customer', name);
+      const [c] = await db()
+        .insert(customers)
+        .values({ userId: u.userId, createdAt: daysAgo(4 * 365) })
+        .returning();
+      for (const a of activity)
+        await db().insert(auditEvents).values({
+          actorType: 'user',
+          actorUserId: u.userId,
+          action: a.action,
+          entityType: 'user',
+          entityId: u.userId,
+          occurredAt: a.at,
+        });
+      return c!.id;
+    }
+    const signedIn = await oldCustomer('Returning Rae', [
+      { action: 'auth.signed_in', at: daysAgo(4 * 365) },
+      { action: 'auth.signed_in', at: daysAgo(180) },
+    ]);
+    const uploaded = await oldCustomer('Uploader Uma', [{ action: 'document.uploaded', at: daysAgo(400) }]);
+    const gone = await oldCustomer('Gone Gil', [{ action: 'auth.signed_in', at: daysAgo(4 * 365) }]);
+
+    // Tester phase 7 (retention_before/after.txt, "Ximena SignedInLastYear"): signed in a year ago,
+    // session since purged, no audit row for it. users.last_signed_in_at must keep her.
+    const lastYear = await oldCustomer('Ximena SignedInLastYear', []);
+    const [ly] = await db().select().from(customers).where(eq(customers.id, lastYear));
+    await db()
+      .update(users)
+      .set({ lastSignedInAt: daysAgo(365) })
+      .where(eq(users.id, ly!.userId));
+    const longAgo = await oldCustomer('Long-ago Lou', []);
+    const [la] = await db().select().from(customers).where(eq(customers.id, longAgo));
+    await db()
+      .update(users)
+      .set({ lastSignedInAt: daysAgo(4 * 365) })
+      .where(eq(users.id, la!.userId));
+
+    await runRetention(db(), storage, system);
+    const anonymised = async (id: string) =>
+      (await db().select().from(customers).where(eq(customers.id, id)))[0]!.anonymisedAt !== null;
+    expect(await anonymised(lastYear)).toBe(false);
+    expect(await anonymised(longAgo)).toBe(true);
+    expect(await anonymised(signedIn)).toBe(false);
+    expect(await anonymised(uploaded)).toBe(false);
+    expect(await anonymised(gone)).toBe(true);
+  });
 });
 
 describe('retention schedule (D64)', () => {
@@ -353,5 +391,128 @@ describe('retention schedule (D64)', () => {
     // This year's incident and checks are untouched.
     expect((await db().select().from(incidents).where(eq(incidents.dogId, rosaDog))).length).toBe(1);
     expect((await db().select().from(welfareChecks).where(eq(welfareChecks.dogId, rosaDog))).length).toBe(2);
+  });
+
+  it('keeps reminder log rows while their vaccination record exists, so reminders never repeat', async () => {
+    const [sub] = await db()
+      .select()
+      .from(complianceSubmissions)
+      .where(and(eq(complianceSubmissions.dogId, rosaDog), eq(complianceSubmissions.status, 'approved')));
+    const expiry = sub!.expiresOn;
+    const afterExpiry = (days: number) => londonInstant(addDays(expiry, days), '08:00');
+    const mine = () => mail.sent.filter((m) => m.to === rosa.email && m.template.startsWith('compliance.vaccination'));
+    await sendVaccinationReminders(db(), system, afterExpiry(1)); // 'expired' already claimed above
+    const rosaKeys = like(notificationLog.key, `vaccination:${rosaDog}:%`);
+    const before = await db().select().from(notificationLog).where(rosaKeys);
+    expect(before.some((k) => k.key.endsWith(':expired'))).toBe(true);
+    // Rows for records that no longer exist, and other kinds, still go after 90 days.
+    const gone = `vaccination:${rosaDog}:core:2000-01-01:expired`;
+    const booking = `booking-reminder:${rosaDog}:2000-01-01`;
+    await db()
+      .insert(notificationLog)
+      .values([
+        { key: gone, kind: 'vaccination' },
+        { key: booking, kind: 'booking-reminder' },
+      ]);
+    await db()
+      .update(notificationLog)
+      .set({ sentAt: new Date(Date.now() - 200 * 86_400_000) })
+      .where(or(rosaKeys, eq(notificationLog.key, booking)));
+
+    await runRetention(db(), storage, system);
+    const after = await db().select().from(notificationLog).where(rosaKeys);
+    expect(after.map((k) => k.key).sort()).toEqual(before.map((k) => k.key).sort());
+    expect(
+      await db()
+        .select()
+        .from(notificationLog)
+        .where(inArray(notificationLog.key, [gone, booking])),
+    ).toEqual([]);
+
+    mail.sent.length = 0;
+    await sendVaccinationReminders(db(), system, afterExpiry(200));
+    expect(mine()).toHaveLength(0);
+  });
+});
+
+// Runs last: it adds a shared daily note and an invoice that the tests above don't expect.
+describe('your data export: contents (D65)', () => {
+  it('includes incident details, full daily notes and money, but nothing staff-only', async () => {
+    const [cust] = await db().select().from(customers).where(eq(customers.userId, rosa.userId));
+    await db().update(dogs).set({ statusReason: 'Owner-only: watch with big dogs' }).where(eq(dogs.id, rosaDog));
+    await db()
+      .insert(welfareChecks)
+      .values({
+        dogId: rosaDog,
+        serviceDate: today,
+        ate: 'some',
+        drinking: 'normal',
+        toileting: 'unusual',
+        mood: 'settled',
+        concerns: ['pain'],
+        medicationGiven: 'Half a Metacam at lunch',
+        shared: true,
+      });
+    const [inv] = await db()
+      .insert(invoices)
+      .values({ customerId: cust!.id, periodMonth: today.slice(0, 7), totalPence: 3200 })
+      .returning();
+    await db().insert(invoiceLines).values({
+      invoiceId: inv!.id,
+      position: 1,
+      serviceDate: today,
+      description: 'Day care – Clover',
+      explanation: 'Standard day',
+      amountPence: 3200,
+    });
+    await db()
+      .update(invoices)
+      .set({
+        status: 'issued',
+        number: 'INV-EXPORT-1',
+        issueDate: today,
+        dueDate: today,
+        issuedAt: new Date(),
+        billToName: 'Rosa',
+        sellerDetails: {
+          tradingName: 'Luna',
+          legalName: 'Luna Ltd',
+          companyNumber: '1',
+          registeredOffice: 'x',
+          contactEmail: 'a@b.test',
+          contactPhone: '1',
+        },
+      })
+      .where(eq(invoices.id, inv!.id));
+    await db().insert(payments).values({
+      invoiceId: inv!.id,
+      amountPence: 3200,
+      method: 'manual',
+      receivedOn: today,
+      reason: 'STAFF-ONLY: cash in the till drawer',
+      recordedBy: owner.userId,
+    });
+
+    const data = await exportMyData(db(), rosa);
+    const json = JSON.stringify(data);
+    const report = data.incidentReports[0]!;
+    expect(report.whatHappened).toContain('graze');
+    expect(report.actionTaken).toContain('saline');
+    expect(report.updates.map((u) => u.body)).toEqual(['Paw looked fine at pick-up.']);
+    expect(json).not.toContain('gate latch'); // private update
+    const note = data.sharedDailyNotes.find((n) => n.medicationGiven);
+    expect(note).toMatchObject({
+      toileting: 'unusual',
+      concerns: ['pain'],
+      medicationGiven: 'Half a Metacam at lunch',
+    });
+    const exported = data.invoices.find((i) => i.number === 'INV-EXPORT-1')!;
+    expect(exported.lines).toEqual([expect.objectContaining({ description: 'Day care – Clover', amountPence: 3200 })]);
+    expect(exported.payments).toEqual([expect.objectContaining({ amountPence: 3200, method: 'manual' })]);
+    expect(json).not.toContain('STAFF-ONLY');
+    expect(json).not.toContain(owner.userId);
+    expect(data.dogs[0]).not.toHaveProperty('approvedBy');
+    expect(data.dogs[0]).not.toHaveProperty('statusReason');
+    expect(json).not.toContain('watch with big dogs');
   });
 });

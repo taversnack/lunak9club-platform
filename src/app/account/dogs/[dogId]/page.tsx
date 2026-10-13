@@ -4,7 +4,7 @@ import s from '@/ui/ui.module.css';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { myDogWelfare, myIncidents } from '@/server/services/welfare';
-import { CONCERN_LABELS } from '@/domain/compliance/welfare';
+import { CONCERN_LABELS, concernsToList } from '@/domain/compliance/welfare';
 import { formatDateTimeLondon } from '@/ui/format';
 import { ATE_LABELS, DRINKING_LABELS, INCIDENT_KIND_LABELS, MOOD_LABELS } from '@/ui/welfare-labels';
 
@@ -247,7 +247,11 @@ export default async function DogPage({
                   <li key={n.id}>
                     <strong>{formatUkDate(n.serviceDate)}</strong>: {ATE_LABELS[n.ate]} · {DRINKING_LABELS[n.drinking]}{' '}
                     · {MOOD_LABELS[n.mood]}
-                    {n.concerns.length ? ` · ${n.concerns.map((c) => CONCERN_LABELS[c]).join(', ')}` : ''}
+                    {concernsToList(n.concerns).length
+                      ? ` · ${concernsToList(n.concerns)
+                          .map((c) => CONCERN_LABELS[c])
+                          .join(', ')}`
+                      : ''}
                     {n.medicationGiven ? ` · Medication given: ${n.medicationGiven}` : ''}
                     {n.note ? <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{n.note}</p> : null}
                   </li>

@@ -2,11 +2,17 @@ import { defineConfig, devices } from '@playwright/test';
 
 import { testDatabaseUrl } from './tests/support/test-db-url'; // also loads .env
 
-// Use a port of your own (E2E_PORT) when several checkouts share a machine: Playwright reuses any server
-// already listening there. E2E_HOST defaults to 127.0.0.1 because `localhost` may not resolve to loopback.
-const PORT = Number(process.env.E2E_PORT ?? 3100);
-const HOST = process.env.E2E_HOST ?? '127.0.0.1';
-const BASE = process.env.E2E_BASE_URL ?? `http://${HOST}:${PORT}`;
+/** Port for the E2E server. Override with E2E_PORT when several checkouts share one machine. */
+export const DEFAULT_E2E_PORT = 3100;
+const PORT = Number(process.env.E2E_PORT || DEFAULT_E2E_PORT);
+/**
+ * Never reuse a server that's already on the port (it may be another checkout's build, or a dev
+ * server on a different database). Local dev can opt in with E2E_REUSE_SERVER=1; never on CI.
+ */
+const REUSE_SERVER = !process.env.CI && process.env.E2E_REUSE_SERVER === '1';
+// E2E_HOST defaults to 127.0.0.1 because `localhost` may not resolve to loopback on every machine.
+const HOST = process.env.E2E_HOST || '127.0.0.1';
+const BASE = process.env.E2E_BASE_URL || `http://${HOST}:${PORT}`;
 const TEST_DB = testDatabaseUrl();
 export const E2E_MAIL_DIR = '.tmp/e2e-mail';
 
@@ -30,7 +36,7 @@ export default defineConfig({
     // Runs the production build. `pnpm build` must have run first (pnpm verify does this).
     command: `pnpm start -p ${PORT}`,
     url: `${BASE}/api/health`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: REUSE_SERVER,
     timeout: 60_000,
     env: {
       APP_ENV: 'test',
