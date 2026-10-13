@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth';
+import { eq } from 'drizzle-orm';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
 import { getDb } from '../db/client';
@@ -104,6 +105,11 @@ function createAuth() {
         create: {
           after: async (session) => {
             await audit('auth.signed_in', session.userId);
+            // Inactivity (retention) is judged from this, not from sessions, which are purged.
+            await db
+              .update(schema.users)
+              .set({ lastSignedInAt: session.createdAt ?? new Date() })
+              .where(eq(schema.users.id, session.userId));
           },
         },
       },

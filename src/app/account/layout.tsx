@@ -12,7 +12,7 @@ const tabs: NavItem[] = [
 ];
 
 const groups: NavGroup[] = [
-  { label: 'Day care', items: tabs },
+  { label: 'Day care', items: [...tabs.slice(0, 3), { href: '/account/requests', label: 'Requests' }, tabs[3]!] },
   {
     label: 'Your account',
     items: [

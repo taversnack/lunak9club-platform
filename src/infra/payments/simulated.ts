@@ -10,7 +10,7 @@ type Session = CheckoutRequest & { id: string; status: CheckoutState['status']; 
 export class SimulatedPaymentProvider implements PaymentProvider {
   readonly name = 'simulated' as const;
   readonly sessions = new Map<string, Session>();
-  readonly refunds: { id: string; paymentId: string; amountPence: number; key: string }[] = [];
+  readonly refunds: { id: string; paymentId: string; amountPence: number; key: string; reference: string }[] = [];
   /** Tests can make the next refunds fail. */
   failRefunds = false;
 
@@ -54,12 +54,12 @@ export class SimulatedPaymentProvider implements PaymentProvider {
     return s;
   }
 
-  async refund(paymentId: string, amountPence: number, key: string): Promise<RefundResult> {
-    const existing = this.refunds.find((r) => r.key === key);
+  async refund(paymentId: string, amountPence: number, key: string, reference: string): Promise<RefundResult> {
+    const existing = this.refunds.find((r) => r.key === key || r.reference === reference);
     if (existing) return { id: existing.id, status: 'succeeded' };
     if (this.failRefunds) return { id: '', status: 'failed', failureReason: 'Simulated refund failure' };
     const id = `sim_re_${randomUUID()}`;
-    this.refunds.push({ id, paymentId, amountPence, key });
+    this.refunds.push({ id, paymentId, amountPence, key, reference });
     return { id, status: 'succeeded' };
   }
 

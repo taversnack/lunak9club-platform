@@ -18,6 +18,14 @@ test('customer registers, confirms email and reaches their account', async ({ pa
   await page.goto(await latestLink(email, 'auth.verify-email'));
   await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByRole('heading', { name: 'Hello, Riley' })).toBeVisible();
+
+  // No dogs yet: Book says to add one first, not that a dog needs approving.
+  await page.goto('/account/book');
+  await expect(page.getByText('Add your dog to start booking')).toBeVisible();
+  await expect(page.getByText('needs to be approved')).toHaveCount(0);
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Add your dog' }).getByRole('link', { name: 'Add a dog' }),
+  ).toHaveAttribute('href', '/account/dogs/new');
 });
 
 test('registration form explains errors next to each field', async ({ page }) => {
@@ -47,7 +55,9 @@ test('owner signs in to the owner dashboard and sees recent activity', async ({ 
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole('heading', { name: 'Owner dashboard' })).toBeVisible();
-  await expect(page.getByRole('table')).toContainText('auth.signed_in');
+  // Plain-English activity, not raw event codes.
+  await expect(page.getByRole('table')).toContainText('Signed in');
+  await expect(page.getByRole('table')).not.toContainText('auth.signed_in');
   await signOut(page);
   await page.goto('/admin');
   await expect(page).toHaveURL(/\/sign-in$/);

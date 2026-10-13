@@ -1,4 +1,5 @@
 import 'server-only';
+import { PLACE_STATUSES } from '@/domain/booking/rules';
 import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
 import { bookingDogs, bookingSettings, closures, serviceDays } from '@/infra/db/schema';
@@ -50,10 +51,7 @@ export async function daysOverview(db: Q, dates: IsoDate[], settings: Settings, 
       })
       .from(bookingDogs)
       .where(
-        and(
-          inArray(bookingDogs.serviceDate, dates),
-          inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'attended', 'no_show', 'offered', 'waitlisted']),
-        ),
+        and(inArray(bookingDogs.serviceDate, dates), inArray(bookingDogs.status, [...PLACE_STATUSES, 'waitlisted'])),
       ),
   ]);
   const days = new Map(dayRows.map((d) => [d.serviceDate, d]));
@@ -95,12 +93,7 @@ export async function lockDays(tx: Tx, dates: IsoDate[], settings: Settings, now
       offerExpiresAt: bookingDogs.offerExpiresAt,
     })
     .from(bookingDogs)
-    .where(
-      and(
-        inArray(bookingDogs.serviceDate, sorted),
-        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'attended', 'no_show', 'offered']),
-      ),
-    );
+    .where(and(inArray(bookingDogs.serviceDate, sorted), inArray(bookingDogs.status, [...PLACE_STATUSES])));
   const out = new Map<IsoDate, { used: { am: number; pm: number; taxi: number }; cap: Capacity }>();
   for (const d of locked) {
     out.set(d.serviceDate, {
