@@ -120,6 +120,26 @@ export class PayLinkUnavailableError extends ConflictError {
   }
 }
 
+/** Another request is still creating the checkout – not a failure; the customer tries again shortly. */
+export class PayLinkPreparingError extends ConflictError {
+  constructor() {
+    super('Your payment page is being prepared. Please try again in a moment.');
+    this.name = 'PayLinkPreparingError';
+  }
+}
+
+/** How long a request waits for a checkout another request is creating (tests may shorten it). */
+export const checkoutWait = { totalMs: 6000, stepMs: 150 };
+
+async function waitForCheckout(db: Db, attemptId: string) {
+  const deadline = Date.now() + checkoutWait.totalMs;
+  for (;;) {
+    const [a] = await db.select().from(checkoutAttempts).where(eq(checkoutAttempts.id, attemptId));
+    if (!a || a.status !== 'creating' || Date.now() >= deadline) return a ?? null;
+    await new Promise((r) => setTimeout(r, checkoutWait.stepMs));
+  }
+}
+
 /**
  * Open a card checkout for the places held on a booking, or reuse the one already open for the
  * same amount (so a retry, a resend or a second click never makes a duplicate). Only days still
@@ -188,7 +208,7 @@ export async function startBookingCheckout(
       if (a.status === 'open' && a.url && a.amountPence === amount) return { reuse: a, stale };
       // Another request is creating the link right now.
       if (a.status === 'creating' && a.amountPence === amount && a.createdAt > new Date(now.getTime() - 2 * 60_000))
-        return { busy: true as const, stale };
+        return { busy: a.id, stale };
       // Wrong amount (a day was cancelled since) or abandoned: close it without touching the holds.
       await tx
         .update(checkoutAttempts)
@@ -216,7 +236,15 @@ export async function startBookingCheckout(
     await notify(claim.reuse.id, claim.reuse.expiresAt);
     return { attemptId: claim.reuse.id, url: claim.reuse.url!, amountPence: amount, reused: true };
   }
-  if ('busy' in claim) throw new ConflictError('Your payment link is being prepared. Please try again in a moment.');
+  if ('busy' in claim && claim.busy) {
+    // Another request is creating this checkout: wait briefly and hand over the same one.
+    const ready = await waitForCheckout(db, claim.busy);
+    if (ready?.status === 'open' && ready.url) {
+      await notify(ready.id, ready.expiresAt);
+      return { attemptId: ready.id, url: ready.url, amountPence: amount, reused: true };
+    }
+    throw new PayLinkPreparingError();
+  }
   const attempt = claim.attempt!;
 
   const tries = Math.max(1, opts.tries ?? 1);

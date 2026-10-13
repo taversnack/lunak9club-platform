@@ -3,7 +3,7 @@ import { getDb } from '@/infra/db/client';
 import { getActor } from '@/server/session';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { ConflictError, NotFoundError } from '@/server/errors';
-import { resumeCheckoutUrl } from '@/server/services/payments';
+import { PayLinkPreparingError, PayLinkUnavailableError, resumeCheckoutUrl } from '@/server/services/payments';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +20,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ attemptI
   } catch (e) {
     if (e instanceof AuthorizationError || e instanceof NotFoundError)
       return new Response('Not found', { status: 404 });
-    if (e instanceof ConflictError)
+    // Someone else's click is creating the same checkout: a neutral "being prepared" page, never the failure one.
+    if (e instanceof PayLinkPreparingError)
+      return NextResponse.redirect(new URL('/account/bookings?payment=preparing', base), 303);
+    if (e instanceof PayLinkUnavailableError)
       return NextResponse.redirect(new URL('/account/bookings?payment=unavailable', base), 303);
+    if (e instanceof ConflictError)
+      return NextResponse.redirect(new URL('/account/bookings?payment=expired', base), 303);
     throw e;
   }
 }

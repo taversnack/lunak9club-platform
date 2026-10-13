@@ -45,6 +45,7 @@ import {
   bookingsMissingPayLink,
   checkoutRetry,
   myHoldsWithoutPayLink,
+  PayLinkPreparingError,
   PayLinkUnavailableError,
   payForMyBooking,
   releaseExpiredCheckouts,
@@ -515,11 +516,41 @@ describe('pay links when the card service is down', () => {
 
   it('the Owner resend creates the missing link; simultaneous clicks make one checkout', async () => {
     const r = await approvedWith(3, bob, await onboardedDog(bob, 'Twin'));
-    const both = await Promise.allSettled([
-      payForMyBooking(db(), bob, r.bookingId),
-      payForMyBooking(db(), bob, r.bookingId),
-    ]);
-    expect(both.some((b) => b.status === 'fulfilled')).toBe(true);
+    // A slow card service: five clicks at once all get the same checkout – none sees a failure.
+    const sim = simulated();
+    const real = sim.createCheckout.bind(sim);
+    const spy = vi.spyOn(sim, 'createCheckout').mockImplementation(async (req) => {
+      await new Promise((res) => setTimeout(res, 400));
+      return real(req);
+    });
+    const clicks = await Promise.allSettled(Array.from({ length: 5 }, () => payForMyBooking(db(), bob, r.bookingId)));
+    const providerCalls = spy.mock.calls.length;
+    spy.mockRestore();
+    expect(clicks.map((c) => c.status)).toEqual(Array(5).fill('fulfilled'));
+    const urls = new Set(clicks.map((c) => (c as PromiseFulfilledResult<{ url: string | null }>).value.url));
+    expect(urls.size).toBe(1);
+    expect(providerCalls).toBe(1);
+    // If the other click is still creating it after the wait, the answer is "being prepared", not a failure.
+    const { checkoutWait } = await import('@/server/services/payments');
+    const saved = { ...checkoutWait };
+    checkoutWait.totalMs = 0;
+    const [live] = (await attemptsFor(r.bookingId)).filter((a) => a.status === 'open');
+    await db().update(checkoutAttempts).set({ status: 'expired' }).where(eq(checkoutAttempts.id, live!.id));
+    const [creating] = await db()
+      .insert(checkoutAttempts)
+      .values({
+        purpose: 'booking',
+        customerId: live!.customerId,
+        bookingId: r.bookingId,
+        amountPence: live!.amountPence,
+        description: 'test',
+        provider: 'simulated',
+        expiresAt: live!.expiresAt,
+      })
+      .returning();
+    await expect(payForMyBooking(db(), bob, r.bookingId)).rejects.toBeInstanceOf(PayLinkPreparingError);
+    Object.assign(checkoutWait, saved);
+    await db().update(checkoutAttempts).set({ status: 'failed' }).where(eq(checkoutAttempts.id, creating!.id));
     mail.sent.length = 0;
     await resendPayLink(db(), owner, r.bookingId);
     expect((await attemptsFor(r.bookingId)).filter((a) => a.status === 'open')).toHaveLength(1);
