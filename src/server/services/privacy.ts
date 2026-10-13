@@ -623,7 +623,13 @@ export async function runRetention(db: Db, storage: StorageProvider, actor: Acto
         lt(customers.createdAt, at(cut.licence)),
         sql`not exists (select 1 from user_roles r where r.user_id = ${users.id} and r.role_key = 'owner')`,
         sql`not exists (select 1 from booking_dogs b where b.customer_id = ${customers.id} and (b.service_date >= ${cut.licence} or b.created_at >= ${at(cut.licence)}))`,
+        // Primary signal: the last sign-in stored on the user (set on every sign-in, backfilled by
+        // migration 0018). The booking, session and audit checks remain as fallbacks.
+        sql`(${users.lastSignedInAt} is null or ${users.lastSignedInAt} < ${at(cut.licence)})`,
         sql`not exists (select 1 from sessions s where s.user_id = ${users.id} and s.updated_at >= ${at(cut.licence)})`,
+        // Sessions are purged ~90 days after they expire, so they can't show activity going back 3
+        // years. The audit trail (kept 6 years) can: sign-ins and anything else the customer did.
+        sql`not exists (select 1 from audit_events a where a.actor_user_id = ${users.id} and a.occurred_at >= ${at(cut.licence)})`,
       ),
     );
   let anonymised = 0;
