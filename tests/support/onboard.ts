@@ -72,5 +72,7 @@ export async function releaseMemberDays(db: Db) {
  * next 60 days; a membership can't be approved onto a full day (D90), so give days their normal capacity.
  */
 export async function clearDayLimits(db: Db) {
-  await db.execute(sql`update service_days set session_capacity = null, taxi_capacity = null where service_date >= current_date`);
+  await db.execute(
+    sql`update service_days set session_capacity = null, taxi_capacity = null where service_date >= current_date`,
+  );
 }

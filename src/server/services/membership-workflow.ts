@@ -1,3 +1,4 @@
+import { subjectKey } from '@/domain/approvals/rules';
 import 'server-only';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
@@ -479,7 +480,7 @@ export async function requestMyMembershipDays(db: Db, actor: Actor, input: unkno
   const r = await createApprovalRequest(db, me, {
     type: 'membership.days',
     customerId: customer.id,
-    subjectKey: `dog:${dog.id}`,
+    subjectKey: subjectKey('dog', dog.id),
     payload,
   });
   return { id: r.id, startsOn };
@@ -520,7 +521,7 @@ export async function requestMyMoveOnce(db: Db, actor: Actor, input: unknown, no
   const r = await createApprovalRequest(db, me, {
     type: 'membership.move_once',
     customerId: customer.id,
-    subjectKey: `booking_dog:${row.bd.id}`,
+    subjectKey: subjectKey('booking_dog', row.bd.id),
     payload,
   });
   return { id: r.id };
