@@ -25,6 +25,8 @@ export const businessSettings = pgTable(
     draftDay: integer().notNull().default(25),
     sendDay: integer().notNull().default(28),
     sendTime: text().notNull().default('09:00'),
+    /** Day of the month by which members confirm that month's days (D88). */
+    confirmByDay: integer().notNull().default(1),
     updatedAt: timestamp({ withTimezone: true })
       .notNull()
       .defaultNow()
@@ -42,6 +44,7 @@ export const businessSettings = pgTable(
       'business_settings_times_chk',
       sql`${t.reminderTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' and ${t.sendTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`,
     ),
+    check('business_settings_confirm_by_chk', sql`${t.confirmByDay} between 1 and 28`),
     check('business_settings_prefix_chk', sql`${t.invoicePrefix} ~ '^[A-Z0-9][A-Z0-9-]{0,15}$'`),
   ],
 );
