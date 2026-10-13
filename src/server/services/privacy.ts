@@ -53,6 +53,7 @@ import { idOrNotFound, optionalText, parseInput } from '../validation';
 import { asUser, getMyCustomer } from './customers';
 import { balances } from './billing';
 import { myIncidents } from './welfare';
+import { myApprovalRequests } from './approvals';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -256,6 +257,9 @@ export async function exportMyData(db: Db, actor: Actor) {
     for (const k of keys) delete r[k];
     return r as Omit<T, K>;
   };
+  // Requests (bookings, trial days…) exactly as the customer sees them under Requests, including
+  // the Owner's note. Staff-only fields (who decided, the last approval error) are never selected.
+  const requestRows = await myApprovalRequests(db, me, { status: 'all' });
   await recordAudit(db, { actor: me, action: 'data.exported', entityType: 'customer', entityId: customer.id });
   return {
     exportedAt: new Date().toISOString(),
@@ -296,6 +300,7 @@ export async function exportMyData(db: Db, actor: Actor) {
     })),
     documents: docs,
     termsAccepted: acks,
+    approvalRequests: requestRows.map(({ reason, ...r }) => ({ ...r, statusReason: reason })),
     incidentReports: incidentList.map((i) => {
       const r = incidentRows.find((x) => x.id === i.id);
       return {
