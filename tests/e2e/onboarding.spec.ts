@@ -225,8 +225,12 @@ test('owner reviews records, records assessments and approves the dog', async ({
     await assess.getByRole('group', { name: 'Assessment' }).getByRole('radio', { name: kind }).check();
     await assess.getByRole('group', { name: 'Outcome' }).getByRole('radio', { name: 'Passed', exact: true }).check();
     await assess.getByRole('button', { name: 'Record assessment' }).click();
+    // "Assessment recorded." is still on screen from the first save, so on its own it doesn't prove the
+    // second one finished. Wait until this assessment is in the refreshed list before moving on.
+    await expect(assess.getByRole('listitem').filter({ hasText: kind })).toContainText('Passed');
     await expect(assess.getByText('Assessment recorded.')).toBeVisible();
   }
+  await expect(assess.getByRole('listitem')).toHaveCount(2);
   await page.reload();
   await expect(page.getByText('Ready for approval')).toBeVisible();
   await page.getByLabel('Change status to').selectOption('approved');
