@@ -18,7 +18,10 @@ import {
 } from '@/infra/db/schema';
 import { checkUpload, safeDisplayName } from '@/domain/documents/file-type';
 import { welfareConcerns } from '@/domain/compliance/welfare';
-import { isIsoDate, londonDate, londonInstant } from '@/domain/time';
+import { formatUkDate, isIsoDate, londonDate, londonInstant } from '@/domain/time';
+
+/** "today" or "on 12 October 2026" for emails (events can be recorded after the day). */
+const dayText = (date: string, now: Date) => (date === londonDate(now) ? 'today' : `on ${formatUkDate(date)}`);
 import { incidentMessage, welfareNoteMessage } from '@/infra/email/templates';
 import { logger } from '@/infra/logger';
 import { assertAuthorized, type Actor } from '../policy/authorize';
@@ -156,7 +159,7 @@ export async function reportIncident(
     incidentMessage(
       owner.email,
       firstNameOf(owner.name),
-      { dogName: owner.dog.name, update: false },
+      { dogName: owner.dog.name, update: false, dayText: dayText(d.occurredOn, now) },
       appUrl(`/account/incidents/${id}`),
     ),
   );
@@ -396,7 +399,13 @@ export async function recordWelfareCheck(db: Db, actor: Actor, input: unknown, n
   });
   if (mustShare)
     await sendSafely(
-      welfareNoteMessage(owner.email, firstNameOf(owner.name), owner.dog.name, appUrl(`/account/dogs/${owner.dog.id}`)),
+      welfareNoteMessage(
+        owner.email,
+        firstNameOf(owner.name),
+        owner.dog.name,
+        dayText(d.serviceDate, now),
+        appUrl(`/account/dogs/${owner.dog.id}`),
+      ),
     );
   return { id, shared, autoShared: mustShare, concerns };
 }

@@ -312,7 +312,8 @@ export function vaccinationReminderMessage(
   return {
     to,
     template: p.expired ? 'compliance.vaccination-expired' : 'compliance.vaccination-reminder',
-    subject: `${BRAND}: ${title.charAt(0).toLowerCase()}${title.slice(1)}`,
+    // Never lowercase the dog's name (it can start the title).
+    subject: `${BRAND}: ${p.expired ? title : `please update ${p.dogName}'s records`}`,
     text: `Hi ${firstName},\n\n${body} Sign in to see which record:\n${url}`,
     html: layout(
       title,
@@ -361,10 +362,13 @@ export function offerLapsingMessage(
 export function incidentMessage(
   to: string,
   firstName: string,
-  p: { dogName: string; update: boolean },
+  /** dayText: "today" or "on 12 October 2026" – the day it happened, which may be before today. */
+  p: { dogName: string; update: boolean; dayText?: string },
   url: string,
 ): EmailMessage {
-  const title = p.update ? `An update about ${p.dogName}` : `Something happened at day care today – ${p.dogName}`;
+  const title = p.update
+    ? `An update about ${p.dogName}`
+    : `Something happened at day care ${p.dayText ?? 'today'} – ${p.dogName}`;
   const body = p.update
     ? `We've added an update to an incident report about ${p.dogName}.`
     : `We've written an incident report about ${p.dogName} so you know exactly what happened and what we did.`;
@@ -381,16 +385,23 @@ export function incidentMessage(
   };
 }
 
-export function welfareNoteMessage(to: string, firstName: string, dogName: string, url: string): EmailMessage {
-  const title = `A note about ${dogName} today`;
+/** dayText: "today" or "on 12 October 2026" – the day of the check, which may be before today. */
+export function welfareNoteMessage(
+  to: string,
+  firstName: string,
+  dogName: string,
+  dayText: string,
+  url: string,
+): EmailMessage {
+  const title = `A note about ${dogName} ${dayText}`;
   return {
     to,
     template: 'welfare.note',
-    subject: `${BRAND}: ${title.toLowerCase()}`,
-    text: `Hi ${firstName},\n\nWe noticed something about ${dogName} today that we'd like you to know about. Please sign in to read our note:\n${url}`,
+    subject: `${BRAND}: a note about ${dogName} ${dayText}`,
+    text: `Hi ${firstName},\n\nWe noticed something about ${dogName} ${dayText} that we'd like you to know about. Please sign in to read our note:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We noticed something about ${escapeHtml(dogName)} today that we'd like you to know about.</p>${button(url, 'Read the note')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We noticed something about ${escapeHtml(dogName)} ${escapeHtml(dayText)} that we'd like you to know about.</p>${button(url, 'Read the note')}`,
       '',
     ),
   };
