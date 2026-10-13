@@ -10,7 +10,8 @@ import { addMyContact, removeMyContact, updateMyProfile } from '@/server/service
 import { createMyDog, saveMyDogVet, submitMyOnboardingForm, updateMyDogDetails } from '@/server/services/dogs';
 import { uploadVaccinationRecord } from '@/server/services/documents';
 import { acceptTerms } from '@/server/services/policies';
-import { acceptOffer, cancelMyBooking, createMyBookings } from '@/server/services/bookings';
+import { cancelMyBooking, createMyBookings, leaveWaitlist } from '@/server/services/bookings';
+import { withdrawMyApprovalRequest } from '@/server/services/approvals';
 import { startInvoiceCheckout } from '@/server/services/payments';
 import { acknowledgeIncident } from '@/server/services/welfare';
 import { requestErasure, withdrawErasureRequest } from '@/server/services/privacy';
@@ -142,12 +143,12 @@ export async function confirmBookingAction(_: ActionState, fd: FormData): Promis
       taxi: fd.get('taxi') === '1',
       ifFull: String(fd.get('ifFull') ?? 'waitlist'),
       customerNote: String(fd.get('customerNote') ?? ''),
+      trial: fd.get('trial') === '1',
     });
     const n = (k: string) => r.outcomes.filter((o) => o.outcome === k).length;
     revalidatePath('/account/bookings');
-    // Priced places are held while the customer pays on the card payment page (D6).
-    if (r.checkoutUrl) redirect(r.checkoutUrl as Route);
-    redirect(`/account/bookings?booked=${n('confirmed')}&waitlisted=${n('waitlisted')}&skipped=${n('skipped')}`);
+    // Nothing is charged until the Owner approves (D76, D78).
+    redirect(`/account/bookings?requested=${n('requested')}&waitlisted=${n('waitlisted')}&skipped=${n('skipped')}`);
   });
 }
 
@@ -160,13 +161,23 @@ export async function cancelBookingAction(_: ActionState, fd: FormData): Promise
   });
 }
 
-export async function acceptOfferAction(_: ActionState, fd: FormData): Promise<ActionState> {
+/** Leave the waitlist (D81). On-screen confirmation only – no email. */
+export async function leaveWaitlistAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
     const actor = await requirePermission('account.access');
-    const r = await acceptOffer(getDb(), actor, String(fd.get('bookingId') ?? ''));
+    await leaveWaitlist(getDb(), actor, String(fd.get('bookingId') ?? ''));
     revalidatePath('/account/bookings');
-    if (r.checkoutUrl) redirect(r.checkoutUrl as Route);
-    return { status: 'success', message: 'Place accepted – see you then!' };
+    redirect('/account/bookings?left=waitlist');
+  });
+}
+
+/** Withdraw a whole booking request (D79). No charge; the standard "withdrawn" email follows. */
+export async function withdrawRequestAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    await withdrawMyApprovalRequest(getDb(), actor, String(fd.get('requestId') ?? ''));
+    revalidatePath('/account/bookings');
+    redirect('/account/bookings?withdrawn=1');
   });
 }
 

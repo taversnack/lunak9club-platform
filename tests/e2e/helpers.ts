@@ -31,6 +31,34 @@ export async function latestLink(to: string, template: string): Promise<string> 
   throw new Error(`No ${template} email for ${to}`);
 }
 
+/** The most recent email sent to `to` for a template (polls briefly). */
+export async function latestEmail(
+  to: string,
+  template: string,
+): Promise<{ text: string; html: string; subject: string }> {
+  for (let i = 0; i < 30; i++) {
+    if (existsSync(MAIL_DIR)) {
+      const m = readdirSync(MAIL_DIR)
+        .sort()
+        .reverse()
+        .map(
+          (f) =>
+            JSON.parse(readFileSync(join(MAIL_DIR, f), 'utf8')) as {
+              to: string;
+              template: string;
+              text: string;
+              html: string;
+              subject: string;
+            },
+        )
+        .find((x) => x.to === to && x.template === template);
+      if (m) return m;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`No ${template} email for ${to}`);
+}
+
 export async function signIn(page: Page, email: string, password: string) {
   await page.goto('/sign-in');
   await page.getByLabel('Email address').fill(email);

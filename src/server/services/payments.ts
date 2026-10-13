@@ -92,7 +92,15 @@ const describeDays = (days: { dogName: string }[]) => {
  */
 export async function startBookingCheckout(
   db: Db,
-  opts: { bookingId: string; customerId: string; createdBy: string | null; expiresAt: Date; notifyByEmail?: boolean },
+  opts: {
+    bookingId: string;
+    customerId: string;
+    createdBy: string | null;
+    expiresAt: Date;
+    notifyByEmail?: boolean;
+    /** The email follows an approved booking request (D80): "pay to secure" wording. */
+    approvedRequest?: boolean;
+  },
   now = new Date(),
 ) {
   const days = await pendingDays(db, opts.bookingId);
@@ -140,7 +148,12 @@ export async function startBookingCheckout(
         paymentLinkMessage(
           who.email,
           firstNameOf(who.name),
-          { amountText: pounds(amount), forText: describeDays(days), untilText: formatDateTimeLondon(opts.expiresAt) },
+          {
+            amountText: pounds(amount),
+            forText: describeDays(days),
+            untilText: formatDateTimeLondon(opts.expiresAt),
+            approved: opts.approvedRequest,
+          },
           appUrl(`/api/payments/pay/${attempt!.id}`),
         ),
       );

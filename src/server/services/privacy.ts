@@ -1,4 +1,5 @@
 import 'server-only';
+import { OPEN_STATUSES } from '@/domain/booking/rules';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
@@ -50,7 +51,7 @@ import { myIncidents } from './welfare';
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 const SYSTEM: Actor = { kind: 'system', job: 'retention' };
-const LIVE = ['confirmed', 'pending_payment', 'waitlisted', 'offered'] as const;
+const LIVE = OPEN_STATUSES;
 
 /** Address used once a customer's real email has been removed. Never deliverable. */
 const erasedEmail = (customerId: string) => `erased-${customerId}@invalid.lunak9club.test`;

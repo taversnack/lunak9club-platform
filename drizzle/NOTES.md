@@ -19,3 +19,13 @@
 | 0014_dog_register_fields | Licence register fields (D68–D70): `compliance_submissions.administered_on`; `dog_health_profiles` last worming/flea dates, exercise restriction flag + details, insured/insurer/policy number; `dog_permissions` seven consents each with `_at` and `_by` (FK users, ON DELETE SET NULL); `dogs.agreed_vet_id` (FK vets, ON DELETE SET NULL) + `vet_agreed_at`; check constraints keeping each set consistent | Additive only: every new column is nullable with no default (metadata-only `ADD COLUMN`); existing rows stay NULL and satisfy every new check (D72 – shown as “Missing”, never blocking). The checks are validated against existing rows when added (brief lock on small tables) | Drop the new constraints, then the new columns. Only loses data entered since 0014; no backfill needed | No |
 
 **Ordering note (4 Oct 2026):** 0014 was generated on `dev2/dog-register-fields`. Developer 1’s next migration (vaccination override and reminder rules) must be **regenerated as 0015 after 0014 lands on main** – rebase, delete the locally generated file and its `meta/*_snapshot.json`/`_journal.json` entry, then run `pnpm db:generate` again – otherwise its snapshot misses these columns and `drizzle-kit check` fails.
+
+**0016_booking_approvals (planned, 13 Oct 2026 – generate only after 0015 / PR #4 is on main):** `pnpm db:generate --name booking_approvals`, then hand-add the data step **before** the check constraints are recreated:
+
+```sql
+UPDATE "booking_dogs" SET "status" = 'waitlisted', "offer_expires_at" = NULL WHERE "status" = 'offered';
+```
+
+| Migration | Purpose | Data impact | Rollback / recovery | Destructive |
+|---|---|---|---|---|
+| 0016_booking_approvals | `approval_requests` (status check, status/created index, one pending request per type + subject); booking_dogs status `requested`/`rejected` added and `offered` removed (checks and live/place partial indexes recreated); offer check limited to `pending_payment`; drop `booking_settings.waitlist_offer_hours` | Converts any `offered` rows to `waitlisted` (D84); drops one settings column | Drop `approval_requests`; restore the previous checks/indexes once no `requested`/`rejected` rows exist (cancel them first); re-add `waitlist_offer_hours integer NOT NULL DEFAULT 12` and set it back to the previous value from the audit log/backup. Converted offers can't be told apart afterwards – take a backup first | Yes (drops a column) |

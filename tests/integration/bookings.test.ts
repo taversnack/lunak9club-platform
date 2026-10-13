@@ -6,13 +6,7 @@ import { bookingDogs, bookingSettings, complianceSubmissions, dogs, serviceDays 
 import { addMyContact, updateMyProfile } from '@/server/services/customers';
 import { createMyDog, submitMyOnboardingForm, saveMyDogVet } from '@/server/services/dogs';
 import { acceptTerms, myTermsStatus } from '@/server/services/policies';
-import {
-  acceptOffer,
-  bookingCalendar,
-  cancelMyBooking,
-  createMyBookings,
-  myBookings,
-} from '@/server/services/bookings';
+import { bookingCalendar, cancelMyBooking, myBookings } from '@/server/services/bookings';
 import {
   addClosure,
   attendanceCsv,
@@ -21,7 +15,7 @@ import {
   csvCell,
   emergencyCsv,
   markNoShow,
-  offerPlace,
+  giveWaitlistPlace,
   ownerCancel,
   ownerCreateBooking,
   ownerDay,
@@ -32,6 +26,7 @@ import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { addDays, londonDate } from '@/domain/time';
 import { isoWeekday } from '@/domain/booking/rules';
+import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
@@ -136,12 +131,17 @@ describe('customer booking', () => {
     const d1 = weekdayAhead(3);
     const d2 = weekdayAhead(4);
     bookedDate = d1;
-    const r = await createMyBookings(db(), alice, {
-      dogIds: [aliceDog, aliceDog2],
-      dates: [d1, d2],
-      session: 'full',
-      taxi: true,
-    });
+    const r = await requestAndApprove(
+      db(),
+      alice,
+      {
+        dogIds: [aliceDog, aliceDog2],
+        dates: [d1, d2],
+        session: 'full',
+        taxi: true,
+      },
+      owner,
+    );
     expect(r.outcomes.map((o) => o.outcome)).toEqual(['confirmed', 'confirmed', 'confirmed', 'confirmed']);
     // Places are held until paid (D6), then confirmed with a receipt.
     expect(r.checkoutUrl).toMatch(/\/dev\/checkout\//);
@@ -159,23 +159,28 @@ describe('customer booking', () => {
         (await db().execute<{ email: string }>(sql`select email from users where id = ${alice.userId}`)).rows[0]!.email,
       )?.template,
     ).toBe('payment.received');
-    const again = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [d1], session: 'am', taxi: false });
+    const again = await requestAndApprove(
+      db(),
+      alice,
+      { dogIds: [aliceDog], dates: [d1], session: 'am', taxi: false },
+      owner,
+    );
     expect(again.outcomes[0]).toMatchObject({ outcome: 'skipped', reason: 'Already booked' });
   });
 
   it('refuses today, weekends, closures and dates beyond a vaccination expiry', async () => {
     await expect(
-      createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [today], session: 'full', taxi: false }),
+      requestAndApprove(db(), alice, { dogIds: [aliceDog], dates: [today], session: 'full', taxi: false }, owner),
     ).rejects.toBeInstanceOf(ValidationError);
     let sat = addDays(today, 1);
     while (isoWeekday(sat) !== 6) sat = addDays(sat, 1);
     await expect(
-      createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [sat], session: 'full', taxi: false }),
+      requestAndApprove(db(), alice, { dogIds: [aliceDog], dates: [sat], session: 'full', taxi: false }, owner),
     ).rejects.toMatchObject({ fields: { dates: expect.stringMatching(/closed/) } });
     const closedDay = weekdayAhead(20);
     await addClosure(db(), owner, { date: closedDay, reason: 'Staff training' });
     await expect(
-      createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [closedDay], session: 'full', taxi: false }),
+      requestAndApprove(db(), alice, { dogIds: [aliceDog], dates: [closedDay], session: 'full', taxi: false }, owner),
     ).rejects.toMatchObject({ fields: { dates: expect.stringMatching(/Staff training/) } });
     // Vaccinations expire in 200 days; the booking window is 90, so shorten one expiry to test D40.
     const soon = weekdayAhead(10);
@@ -190,7 +195,12 @@ describe('customer booking', () => {
         ),
       );
     await expect(
-      createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [weekdayAhead(12)], session: 'full', taxi: false }),
+      requestAndApprove(
+        db(),
+        alice,
+        { dogIds: [aliceDog], dates: [weekdayAhead(12)], session: 'full', taxi: false },
+        owner,
+      ),
     ).rejects.toMatchObject({
       fields: { dates: expect.stringMatching(/Core vaccinations runs out before this date/) },
     });
@@ -209,10 +219,20 @@ describe('customer booking', () => {
   it('won’t book a dog that isn’t approved, or another customer’s dog', async () => {
     const newDog = await createMyDog(db(), alice, { ...validDog, name: 'Pending' });
     await expect(
-      createMyBookings(db(), alice, { dogIds: [newDog], dates: [weekdayAhead(5)], session: 'full', taxi: false }),
+      requestAndApprove(
+        db(),
+        alice,
+        { dogIds: [newDog], dates: [weekdayAhead(5)], session: 'full', taxi: false },
+        owner,
+      ),
     ).rejects.toMatchObject({ fields: { dogIds: expect.stringMatching(/can’t be booked yet/) } });
     await expect(
-      createMyBookings(db(), alice, { dogIds: [bobDog], dates: [weekdayAhead(5)], session: 'full', taxi: false }),
+      requestAndApprove(
+        db(),
+        alice,
+        { dogIds: [bobDog], dates: [weekdayAhead(5)], session: 'full', taxi: false },
+        owner,
+      ),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
@@ -231,13 +251,18 @@ describe('capacity and concurrency', () => {
     const pools = racers.map(() => createDb(process.env.DATABASE_URL!));
     const results = await Promise.all(
       racers.map((r, i) =>
-        createMyBookings(pools[i]!.db, r.user, {
-          dogIds: [r.dog],
-          dates: [date],
-          session: 'full',
-          taxi: false,
-          ifFull: 'waitlist',
-        }),
+        requestAndApprove(
+          pools[i]!.db,
+          r.user,
+          {
+            dogIds: [r.dog],
+            dates: [date],
+            session: 'full',
+            taxi: false,
+            ifFull: 'waitlist',
+          },
+          owner,
+        ),
       ),
     );
     await Promise.all(pools.map((p) => p.pool.end()));
@@ -256,22 +281,27 @@ describe('capacity and concurrency', () => {
     const date = weekdayAhead(7);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
     expect(
-      (await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'am', taxi: false })).outcomes[0]!
-        .outcome,
+      (await requestAndApprove(db(), bob, { dogIds: [bobDog], dates: [date], session: 'am', taxi: false }, owner))
+        .outcomes[0]!.outcome,
     ).toBe('confirmed');
     expect(
       (
-        await createMyBookings(db(), alice, {
-          dogIds: [aliceDog],
-          dates: [date],
-          session: 'full',
-          taxi: false,
-          ifFull: 'skip',
-        })
+        await requestAndApprove(
+          db(),
+          alice,
+          {
+            dogIds: [aliceDog],
+            dates: [date],
+            session: 'full',
+            taxi: false,
+            ifFull: 'skip',
+          },
+          owner,
+        )
       ).outcomes[0],
     ).toMatchObject({ outcome: 'skipped', reason: 'Full' });
     expect(
-      (await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'pm', taxi: false }))
+      (await requestAndApprove(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'pm', taxi: false }, owner))
         .outcomes[0]!.outcome,
     ).toBe('confirmed');
   });
@@ -287,78 +317,32 @@ describe('capacity and concurrency', () => {
     const date = weekdayAhead(8);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 20, taxiCapacity: 1 });
     expect(
-      (await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: true })).outcomes[0]!
-        .outcome,
+      (await requestAndApprove(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: true }, owner))
+        .outcomes[0]!.outcome,
     ).toBe('confirmed');
     expect(
       (
-        await createMyBookings(db(), alice, {
-          dogIds: [aliceDog],
-          dates: [date],
-          session: 'full',
-          taxi: true,
-          ifFull: 'skip',
-        })
+        await requestAndApprove(
+          db(),
+          alice,
+          {
+            dogIds: [aliceDog],
+            dates: [date],
+            session: 'full',
+            taxi: true,
+            ifFull: 'skip',
+          },
+          owner,
+        )
       ).outcomes[0],
     ).toMatchObject({ outcome: 'skipped', reason: 'Taxi is full' });
-  });
-});
-
-describe('waitlist offers', () => {
-  it('Owner offers a freed place; customer accepts; lapsed offers can’t be accepted', async () => {
-    const date = weekdayAhead(9);
-    await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
-    await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
-    const w = await createMyBookings(db(), alice, {
-      dogIds: [aliceDog],
-      dates: [date],
-      session: 'full',
-      taxi: false,
-      ifFull: 'waitlist',
-    });
-    expect(w.outcomes[0]!.outcome).toBe('waitlisted');
-    const [waiting] = await db()
-      .select()
-      .from(bookingDogs)
-      .where(and(eq(bookingDogs.dogId, aliceDog), eq(bookingDogs.serviceDate, date)));
-    await expect(offerPlace(db(), owner, waiting!.id, { version: waiting!.version })).rejects.toThrow(/no free place/);
-
-    const [bobs] = await db()
-      .select()
-      .from(bookingDogs)
-      .where(and(eq(bookingDogs.dogId, bobDog), eq(bookingDogs.serviceDate, date)));
-    await cancelMyBooking(db(), bob, bobs!.id);
-    await offerPlace(db(), owner, waiting!.id, { version: waiting!.version });
-    const [offered] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, waiting!.id));
-    expect(offered!.status).toBe('offered');
-    // The offer holds the place: Bob can't rebook it.
-    expect(
-      (
-        await createMyBookings(db(), bob, {
-          dogIds: [bobDog],
-          dates: [date],
-          session: 'full',
-          taxi: false,
-          ifFull: 'skip',
-        })
-      ).outcomes[0]!.outcome,
-    ).toBe('skipped');
-    await expect(acceptOffer(db(), alice, waiting!.id, new Date(Date.now() + 13 * 3_600_000))).rejects.toThrow(
-      /lapsed/,
-    );
-    await expect(acceptOffer(db(), bob, waiting!.id)).rejects.toBeInstanceOf(NotFoundError);
-    const accepted = await acceptOffer(db(), alice, waiting!.id);
-    expect(accepted.checkoutUrl).toBeTruthy();
-    await payOpenCheckouts(db());
-    const [done] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, waiting!.id));
-    expect(done!.status).toBe('confirmed');
   });
 });
 
 describe('cancellations', () => {
   it('is free 48 hours or more ahead and late (charged) inside 48 hours', async () => {
     const date = weekdayAhead(10);
-    await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false }, owner);
     await payOpenCheckouts(db());
     const [bd] = await db()
       .select()
@@ -482,7 +466,7 @@ describe('access control', () => {
     const [bd] = await db().select().from(bookingDogs).limit(1);
     await expect(ownerDay(db(), alice, today)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(checkIn(db(), alice, bd!.id, { version: 1 })).rejects.toBeInstanceOf(AuthorizationError);
-    await expect(offerPlace(db(), alice, bd!.id, { version: 1 })).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(giveWaitlistPlace(db(), alice, bd!.id, { version: 1 })).rejects.toBeInstanceOf(AuthorizationError);
     await expect(attendanceCsv(db(), alice, today)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(
       setDayCapacity(db(), alice, { date: today, sessionCapacity: 99, taxiCapacity: 99 }),

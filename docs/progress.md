@@ -100,7 +100,6 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Nothing calls the scheduler in production yet (O12) – decide with hosting (O6).
 - Card payments tested against the simulated provider and Stripe’s SDK types only; needs a run with real Stripe test keys (O13).
 - Checking in a dog whose Owner-made booking is still awaiting payment isn’t possible – the customer pays first (or the Owner cancels and rebooks at £0 with a customer rate).
-- Booking reminders and waitlist-offer expiry emails not yet sent (scheduler exists now; Phase 7).
 - No virus scanning of uploads (D30) — decide before launch.
 - Terms are a placeholder (D34) — solicitor-reviewed text needed.
 - CI skips the S3 adapter test (no S3 server in CI); covered locally.
@@ -110,6 +109,8 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Staff Manager/Staff roles not created (D13) — permission map ready.
 - Web-form consent as “written consent” not yet confirmed by the Owner and council (D71).
 - Register answers are overwritten (with when/who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72, brief recommendation 1).
+- D85 trial defaults (unapproved dogs only, one dog-day per request, ad hoc trial price) were built as described – confirm with the Owner.
+- If opening the checkout fails after an approval, the error is logged and the customer has no pay link until the Owner cancels and rebooks (or the hold lapses).
 - The 2-week primary-course rule (O15) isn’t enforced, although the date given is now recorded.
 
 ## Next

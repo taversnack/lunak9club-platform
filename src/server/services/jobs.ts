@@ -17,7 +17,8 @@ import {
 import { materialiseMemberships } from './memberships';
 import { reconcileOpenCheckouts, releaseExpiredCheckouts } from './payments';
 import { submitPendingRefunds } from './card-refunds';
-import { sendBookingReminders, sendOfferWarnings, sendVaccinationReminders } from './reminders';
+import { sendBookingReminders, sendVaccinationReminders } from './reminders';
+import { expireBookingRequests } from './booking-requests';
 import { runRetention } from './privacy';
 import { getStorage } from '@/infra/storage';
 
@@ -66,7 +67,7 @@ async function once(db: Db, job: string, key: string, fn: () => Promise<Record<s
  * - from the draft day (25th): email the Owner once that next month's drafts are ready
  * - 03:00 daily: retention schedule (D64)
  * - 08:00 daily: vaccination reminders (D66); 17:00 daily: tomorrow's booking reminders (D67)
- * - every tick: waitlist offers about to lapse (D67)
+ * - every tick: close booking requests whose cut-off (23:59 the day before) has passed (D79)
  * - every tick: send approved invoices whose send time has come (28th 09:00, D24) and
  *   payment reminders that are due (15:30 on day 4, D25)
  */
@@ -108,7 +109,7 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
   if (time >= '08:00')
     out.push(await once(db, 'vaccination-reminders', today, () => sendVaccinationReminders(db, actor, now)));
   if (time >= '17:00') out.push(await once(db, 'booking-reminders', today, () => sendBookingReminders(db, actor, now)));
-  const offerWarnings = await sendOfferWarnings(db, actor, now);
+  const requests = await expireBookingRequests(db, actor, now);
 
   const sent = await sendDueInvoices(db, actor, now);
   const reminders = await sendPaymentReminders(db, actor, now);
@@ -125,7 +126,8 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
     checkoutsPaid: reconciled.paid,
     holdsReleased: holds.released,
     refunds,
-    offerWarnings: offerWarnings.sent,
+    requestsExpired: requests.expired,
+    requestDaysClosed: requests.daysClosed,
   };
 }
 

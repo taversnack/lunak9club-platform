@@ -14,6 +14,7 @@ import { expiringVaccinations } from '@/server/services/reminders';
 import { ownerDataRequests } from '@/server/services/privacy';
 import { formatUkDate, londonDate } from '@/domain/time';
 import { pounds } from '@/domain/pricing/engine';
+import { pendingApprovalCount } from '@/server/services/approvals';
 
 export const metadata: Metadata = { title: 'Owner dashboard' };
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminHome() {
   const actor = await requirePermission('admin.access');
   const db = getDb();
-  const [events, queue, today, billing, welfare, expiring, requests] = await Promise.all([
+  const [events, queue, today, billing, welfare, expiring, requests, approvals] = await Promise.all([
     listRecentAuditEvents(db, actor, 20),
     reviewQueue(db, actor),
     ownerDay(db, actor, londonDate(new Date())),
@@ -29,6 +30,7 @@ export default async function AdminHome() {
     welfareOverview(db, actor),
     expiringVaccinations(db, actor),
     ownerDataRequests(db, actor),
+    pendingApprovalCount(db, actor),
   ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
@@ -36,6 +38,11 @@ export default async function AdminHome() {
     <Stack>
       <h1>Owner dashboard</h1>
       <Grid>
+        <Card aria-labelledby="approvals">
+          <h2 id="approvals">Requests waiting</h2>
+          <p className={s.bigNumber}>{approvals}</p>
+          <Link href="/admin/approvals">Open requests</Link>
+        </Card>
         <Card aria-labelledby="records">
           <h2 id="records">Records to review</h2>
           <p className={s.bigNumber}>{queue.pending.length}</p>

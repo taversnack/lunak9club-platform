@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
 import {
   bookingDogs,
@@ -10,16 +10,10 @@ import {
   notificationLog,
   users,
 } from '@/infra/db/schema';
-import {
-  bookingReminderMessage,
-  offerLapsingMessage,
-  ownerBillingMessage,
-  vaccinationReminderMessage,
-} from '@/infra/email/templates';
+import { bookingReminderMessage, ownerBillingMessage, vaccinationReminderMessage } from '@/infra/email/templates';
 import { vaccinationReminderDue } from '@/domain/compliance/welfare';
 import type { Session } from '@/domain/booking/rules';
 import { addDays, formatUkDate, londonDate } from '@/domain/time';
-import { formatDateTimeLondon } from '@/ui/format';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
 import { appUrl, firstNameOf, ownerEmails, sendSafely } from '../notify';
@@ -149,49 +143,6 @@ export async function sendBookingReminders(db: Db, actor: Actor, now = new Date(
           ...describeSession(tomorrow, r.session as Session),
           outcome: r.taxi ? 'with taxi – we’ll confirm collection times this evening' : 'booked',
         })),
-        appUrl('/account/bookings'),
-      ),
-    );
-    sent++;
-  }
-  return { sent };
-}
-
-/** Warn the customer when a waitlist place offer has 2 hours or less left (D67). */
-export async function sendOfferWarnings(db: Db, actor: Actor, now = new Date()) {
-  assertAuthorized(actor, 'jobs.run');
-  const soon = new Date(now.getTime() + 2 * 3_600_000);
-  const rows = await db
-    .select({
-      id: bookingDogs.id,
-      serviceDate: bookingDogs.serviceDate,
-      session: bookingDogs.session,
-      offerExpiresAt: bookingDogs.offerExpiresAt,
-      dogName: dogs.name,
-      email: users.email,
-      name: users.name,
-    })
-    .from(bookingDogs)
-    .innerJoin(dogs, eq(dogs.id, bookingDogs.dogId))
-    .innerJoin(customers, eq(customers.id, bookingDogs.customerId))
-    .innerJoin(users, eq(users.id, customers.userId))
-    .where(
-      and(
-        eq(bookingDogs.status, 'offered'),
-        gt(bookingDogs.offerExpiresAt, now),
-        lte(bookingDogs.offerExpiresAt, soon),
-      ),
-    );
-  let sent = 0;
-  for (const r of rows) {
-    const key = `offer-warning:${r.id}:${r.offerExpiresAt!.toISOString()}`;
-    if (!(await claimNotification(db, key, 'offer-warning'))) continue;
-    await sendSafely(
-      offerLapsingMessage(
-        r.email,
-        firstNameOf(r.name),
-        { dogName: r.dogName, ...describeSession(r.serviceDate, r.session as Session), outcome: 'place held for you' },
-        formatDateTimeLondon(r.offerExpiresAt!),
         appUrl('/account/bookings'),
       ),
     );

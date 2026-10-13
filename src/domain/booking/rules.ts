@@ -15,8 +15,72 @@ export type Settings = {
   afternoonEnd: string;
   maxAdvanceDays: number;
   freeCancellationHours: number;
-  waitlistOfferHours: number;
 };
+
+/**
+ * Booking-day statuses (D35, D76–D84). The single source of truth: the schema, services and UI use
+ * these lists instead of their own.
+ * - requested: a customer's request waiting for the Owner (D76); holds a place, no expiry of its own
+ *   (requests close at the booking cut-off, D79).
+ * - pending_payment: approved (or placed by the Owner) and held until offer_expires_at while the
+ *   customer pays (D6, D78).
+ */
+export const BOOKING_STATUSES = [
+  'requested',
+  'confirmed',
+  'pending_payment',
+  'waitlisted',
+  'cancelled',
+  'attended',
+  'no_show',
+  'rejected',
+] as const;
+export type BookingStatus = (typeof BOOKING_STATUSES)[number];
+
+/** A dog can hold only one of these per day (D38): the unique index on booking_dogs uses this list. */
+export const LIVE_STATUSES = [
+  'requested',
+  'confirmed',
+  'pending_payment',
+  'waitlisted',
+  'attended',
+  'no_show',
+] as const satisfies readonly BookingStatus[];
+
+/** Statuses that can take a place (pending_payment only while its hold is live). */
+export const PLACE_STATUSES = [
+  'requested',
+  'confirmed',
+  'pending_payment',
+  'attended',
+  'no_show',
+] as const satisfies readonly BookingStatus[];
+
+/** Places counted for the customer's own multi-dog index on a date. */
+export const PRICED_PLACE_STATUSES = [
+  'requested',
+  'confirmed',
+  'pending_payment',
+  'attended',
+] as const satisfies readonly BookingStatus[];
+
+/** Booked (or attended) days: shown as "booked" to the Owner and counted for billing. */
+export const BOOKED_STATUSES = ['confirmed', 'attended', 'no_show'] as const satisfies readonly BookingStatus[];
+
+/** Upcoming rows a customer or the Owner can still cancel, decline or remove. */
+export const OPEN_STATUSES = [
+  'requested',
+  'confirmed',
+  'pending_payment',
+  'waitlisted',
+] as const satisfies readonly BookingStatus[];
+
+/** Finished without taking place. */
+export const ENDED_STATUSES = ['cancelled', 'rejected'] as const satisfies readonly BookingStatus[];
+
+export function isStatusIn<T extends BookingStatus>(status: string, list: readonly T[]): status is T {
+  return (list as readonly string[]).includes(status);
+}
 
 export const SESSION_LABELS: Record<Session, string> = { full: 'Full day', am: 'Morning', pm: 'Afternoon' };
 
@@ -56,20 +120,19 @@ export function checkBookableDate(input: {
 
 export type UsageRow = { session: Session; taxi: boolean; status: string; offerExpiresAt: Date | null };
 
-/** Places in use on a date. Live offers hold a place until they expire. */
+/** Does this row take a place right now? Requests always do (D76); payment holds until they lapse (D78). */
+export function holdsPlace(r: Pick<UsageRow, 'status' | 'offerExpiresAt'>, now: Date): boolean {
+  if (r.status === 'pending_payment') return r.offerExpiresAt !== null && r.offerExpiresAt > now;
+  return isStatusIn(r.status, PLACE_STATUSES);
+}
+
+/** Places in use on a date. Requests hold a place; payment holds count until they expire. */
 export function usage(rows: readonly UsageRow[], now: Date): { am: number; pm: number; taxi: number } {
   let am = 0;
   let pm = 0;
   let taxi = 0;
   for (const r of rows) {
-    const holds =
-      r.status === 'confirmed' ||
-      r.status === 'attended' ||
-      r.status === 'no_show' ||
-      ((r.status === 'offered' || r.status === 'pending_payment') &&
-        r.offerExpiresAt !== null &&
-        r.offerExpiresAt > now);
-    if (!holds) continue;
+    if (!holdsPlace(r, now)) continue;
     if (r.session !== 'pm') am++;
     if (r.session !== 'am') pm++;
     if (r.taxi) taxi++;

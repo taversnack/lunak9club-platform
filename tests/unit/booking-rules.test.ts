@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   availabilityLabel,
+  BOOKING_STATUSES,
+  holdsPlace,
+  LIVE_STATUSES,
+  OPEN_STATUSES,
+  PLACE_STATUSES,
   cancellationTerms,
   checkBookableDate,
   fits,
@@ -24,7 +29,6 @@ const settings: Settings = {
   afternoonEnd: '16:00',
   maxAdvanceDays: 90,
   freeCancellationHours: 48,
-  waitlistOfferHours: 12,
 };
 
 describe('dates and times', () => {
@@ -80,17 +84,38 @@ describe('capacity', () => {
     expect(u).toEqual({ am: 2, pm: 2, taxi: 2 });
   });
 
-  it('live offers hold a place; lapsed offers don’t', () => {
+  it('payment holds count until they lapse; requests always hold a place (D76, D78)', () => {
     const live = usage(
-      [{ session: 'full', taxi: false, status: 'offered', offerExpiresAt: new Date('2026-09-27T11:00:00Z') }],
+      [{ session: 'full', taxi: false, status: 'pending_payment', offerExpiresAt: new Date('2026-09-27T11:00:00Z') }],
       now,
     );
     const lapsed = usage(
-      [{ session: 'full', taxi: false, status: 'offered', offerExpiresAt: new Date('2026-09-27T09:00:00Z') }],
+      [{ session: 'full', taxi: false, status: 'pending_payment', offerExpiresAt: new Date('2026-09-27T09:00:00Z') }],
       now,
     );
     expect(live.am).toBe(1);
     expect(lapsed.am).toBe(0);
+    // A request has no expiry of its own: it holds a place until decided or the cut-off (D79).
+    expect(usage([{ session: 'am', taxi: true, status: 'requested', offerExpiresAt: null }], now)).toEqual({
+      am: 1,
+      pm: 0,
+      taxi: 1,
+    });
+    for (const status of ['waitlisted', 'cancelled', 'rejected'])
+      expect(usage([{ session: 'full', taxi: true, status, offerExpiresAt: null }], now)).toEqual({
+        am: 0,
+        pm: 0,
+        taxi: 0,
+      });
+  });
+
+  it('status lists come from one place and agree with each other', () => {
+    expect(BOOKING_STATUSES).not.toContain('offered');
+    expect(LIVE_STATUSES).toContain('requested');
+    expect(PLACE_STATUSES).toContain('requested');
+    expect(PLACE_STATUSES).not.toContain('waitlisted');
+    for (const s of [...LIVE_STATUSES, ...PLACE_STATUSES, ...OPEN_STATUSES]) expect(BOOKING_STATUSES).toContain(s);
+    expect(holdsPlace({ status: 'requested', offerExpiresAt: null }, now)).toBe(true);
   });
 
   it('checks the tightest session for full days, and taxi seats', () => {

@@ -1,5 +1,7 @@
 import type { EmailMessage } from './types';
 
+import { APPROVED_PAY_TO_SECURE, REQUEST_NOT_SECURED } from '@/domain/booking/wording';
+
 const BRAND = 'Luna’s K9 Club';
 
 function escapeHtml(s: string): string {
@@ -134,22 +136,17 @@ export function bookingCancelledMessage(to: string, firstName: string, line: Boo
   };
 }
 
-export function waitlistOfferMessage(
-  to: string,
-  firstName: string,
-  line: BookingLine,
-  hours: number,
-  url: string,
-): EmailMessage {
-  const l = lines([line]);
+/** Sent when a customer sends a booking request (D76). Uses the agreed wording, no notes. */
+export function bookingRequestedMessage(to: string, firstName: string, ls: BookingLine[], url: string): EmailMessage {
+  const l = lines(ls);
   return {
     to,
-    template: 'booking.waitlist-offer',
-    subject: 'Luna’s K9 Club: a place is available',
-    text: `Hi ${firstName},\n\nA place has come up:\n${l.text}\n\nWe'll hold it for ${hours} hours. Sign in to accept it:\n${url}`,
+    template: 'booking.requested',
+    subject: `${BRAND}: we’ve received your booking request`,
+    text: `Hi ${firstName},\n\nThank you – we’ve received your booking request:\n${l.text}\n\n${REQUEST_NOT_SECURED}\n\nWe’ll email you when we’ve looked at it. You can see or withdraw your request here:\n${url}`,
     html: layout(
-      'A place is available',
-      `<p>Hi ${escapeHtml(firstName)},</p><p>A place has come up:</p>${l.html}<p>We'll hold it for ${hours} hours.</p>${button(url, 'Accept the place')}`,
+      'We’ve received your booking request',
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Thank you – we’ve received your booking request:</p>${l.html}<p><strong>${escapeHtml(REQUEST_NOT_SECURED)}</strong></p><p>We’ll email you when we’ve looked at it.</p>${button(url, 'See your bookings')}`,
     ),
   };
 }
@@ -245,9 +242,24 @@ export function paymentReceivedMessage(
 export function paymentLinkMessage(
   to: string,
   firstName: string,
-  p: { amountText: string; forText: string; untilText: string },
+  p: { amountText: string; forText: string; untilText: string; approved?: boolean },
   url: string,
 ): EmailMessage {
+  // A booking request the Owner approved (D80): agreed "pay to secure" wording, link and London deadline.
+  if (p.approved) {
+    const t = 'Request approved – please pay to secure your booking';
+    return {
+      to,
+      template: 'booking.request-approved',
+      subject: `${BRAND}: request approved – please pay to secure your booking`,
+      text: `Hi ${firstName},\n\n${APPROVED_PAY_TO_SECURE}\n\nWe're holding ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} (UK time). If it isn't paid by then, the place is released.\n\nPay here:\n${url}`,
+      html: layout(
+        t,
+        `<p>Hi ${escapeHtml(firstName)},</p><p><strong>${escapeHtml(APPROVED_PAY_TO_SECURE)}</strong></p><p>We're holding ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by <strong>${escapeHtml(p.untilText)}</strong> (UK time). If it isn't paid by then, the place is released.</p>${button(url, 'Pay by card')}<p>Or copy this link: ${escapeHtml(url)}</p>`,
+        '',
+      ),
+    };
+  }
   const title = 'Please pay to confirm your booking';
   return {
     to,
@@ -332,27 +344,6 @@ export function bookingReminderMessage(to: string, firstName: string, ls: Bookin
     html: layout(
       'See you tomorrow',
       `<p>Hi ${escapeHtml(firstName)},</p><p>A reminder of tomorrow's day care:</p>${l.html}<p>Need to change something? Please call us.</p>${button(url, 'See your bookings')}`,
-      '',
-    ),
-  };
-}
-
-export function offerLapsingMessage(
-  to: string,
-  firstName: string,
-  line: BookingLine,
-  untilText: string,
-  url: string,
-): EmailMessage {
-  const l = lines([line]);
-  return {
-    to,
-    template: 'booking.offer-lapsing',
-    subject: `${BRAND}: your place offer ends soon`,
-    text: `Hi ${firstName},\n\nWe're still holding this place for you until ${untilText}:\n${l.text}\n\nAccept it here before then:\n${url}`,
-    html: layout(
-      'Your place offer ends soon',
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We're still holding this place for you until ${escapeHtml(untilText)}:</p>${l.html}${button(url, 'Accept the place')}`,
       '',
     ),
   };

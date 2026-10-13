@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut } from './helpers';
+import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, latestEmail, signIn, signOut } from './helpers';
+import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '../../src/domain/booking/wording';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -33,23 +34,68 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   await second.check();
   await page.getByRole('button', { name: 'Check price and availability' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Check your booking' })).toBeVisible();
+  // The request form says plainly that a request does not secure the booking (D76).
+  await expect(page.getByRole('heading', { name: 'Check your booking request' })).toBeVisible();
   await expect(page.getByText('£100.00', { exact: true })).toBeVisible();
-  await expect(page.getByText('Place available')).toHaveCount(2);
+  await expect(page.getByText('Place available – will be requested')).toHaveCount(2);
+  await expect(page.getByTestId('request-not-secured')).toHaveText(REQUEST_NOT_SECURED);
+  await expect(page.getByTestId('request-not-secured')).toContainText(REQUEST_NOT_SECURED_KEY);
   await axe(page);
-  await page.getByRole('button', { name: 'Continue to payment (£100.00)' }).click();
+  await page.getByRole('button', { name: 'Send booking request' }).click();
+  // …on screen once sent…
+  await expect(page.getByText('Booking request sent')).toBeVisible();
+  await expect(page.getByTestId('request-not-secured')).toContainText(REQUEST_NOT_SECURED_KEY);
+  await expect(page.getByText('Requested – waiting for approval').first()).toBeVisible();
+  await axe(page);
+  // …and in the confirmation email.
+  const confirmation = await latestEmail(DEMO_CUSTOMER.email, 'booking.requested');
+  expect(confirmation.text).toContain(REQUEST_NOT_SECURED);
+  await signOut(page);
+
+  // The Owner approves on the Requests page, with a note that only shows in the portal.
+  await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Requests', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Requests', level: 1 })).toBeVisible();
+  await axe(page);
+  const item = page
+    .getByTestId('approval-item')
+    .filter({ has: page.locator(`a[href="/admin/bookings?date=${bookedIso}"]`) })
+    .first();
+  await expect(item).toContainText('Casey');
+  await expect(item).toContainText('Places left');
+  await item.getByLabel(/Note for the customer/).fill('See you both soon');
+  await item.getByRole('button', { name: /^Approve/ }).click();
+  await expect(page.getByText('Request approved. The customer has been emailed.')).toBeVisible();
+  await signOut(page);
+
+  // The approval email says pay to secure, with the pay link and the deadline (D80).
+  const approved = await latestEmail(DEMO_CUSTOMER.email, 'booking.request-approved');
+  expect(approved.text).toContain(PAY_TO_SECURE_KEY);
+  expect(approved.text).toMatch(/by \d{1,2} \w{3} \d{4}, \d\d:\d\d \(UK time\)/);
+  expect(approved.text).not.toContain('See you both soon');
+  const payLink = approved.text.match(/https?:\/\/\S+\/api\/payments\/pay\/\S+/)![0];
+
+  await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto(new URL(payLink).pathname);
   // Simulated card page stands in for Stripe in tests (PAYMENTS_DRIVER=simulated).
   await expect(page.getByRole('heading', { name: 'Test card payment' })).toBeVisible();
   await axe(page);
   await page.getByRole('button', { name: 'Pay £100.00 with a test card' }).click();
   await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
+  await expect(page.getByText('See you both soon').first()).toBeVisible();
   await axe(page);
 
   const row = page.getByRole('row').filter({ hasText: 'Biscuit' }).first();
   bookedDateLabel = (await row.getByRole('cell').first().textContent())!;
+  // One of the two days just paid for (other tests may leave Biscuit with unpaid days too).
   await page
-    .getByRole('link', { name: /Cancel Biscuit/ })
+    .getByRole('row')
+    .filter({ hasText: 'Biscuit' })
+    .filter({ hasText: 'Booked' })
     .last()
+    .getByRole('link', { name: /Cancel Biscuit/ })
     .click();
   await expect(page.getByRole('heading', { name: 'Cancel this booking?' })).toBeVisible();
   await expect(page.getByText(/No charge/)).toBeVisible();
@@ -92,9 +138,10 @@ test('Owner sees the booking on the day, books a trial and checks a dog in and o
   await signIn(page, customer.email, customer.password);
   await expect(page).toHaveURL(/\/account$/);
   await page.goto('/account/bookings');
-  await expect(page.getByText(/Waiting for payment/)).toBeVisible();
+  await expect(page.getByText(/Waiting for payment/).first()).toBeVisible();
   await axe(page);
-  await page.getByRole('link', { name: /Pay £\d+\.\d\d by card/ }).click();
+  // Today's booking is listed first (requests.spec may leave a later day awaiting payment).
+  await page.getByRole('link', { name: /Pay £\d+\.\d\d by card/ }).first().click();
   await page.getByRole('button', { name: /with a test card/ }).click();
   await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
   await signOut(page);
