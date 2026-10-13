@@ -1,4 +1,3 @@
--- PLACEHOLDER MIGRATION NUMBER (0020): not assigned yet. Renumber/regenerate before this PR goes ready.
 -- dev3/fix-checkout-overlap: records which booking_dogs rows each booking checkout pays for.
 -- Existing open checkouts get no rows and keep the old whole-booking behaviour until they finish.
 CREATE TABLE "checkout_attempt_days" (
