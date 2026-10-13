@@ -806,6 +806,35 @@ export async function releaseCheckout(
   return { released };
 }
 
+/**
+ * After a credit note or manual payment lowers what's owed, close any open card checkout on the
+ * invoice that would now take more than is due (review L2), so the customer isn't charged and then
+ * refunded. Best effort: the credit or payment has already been saved, and a checkout that can't
+ * be closed now still expires on schedule (any payment taken is refunded automatically, D58).
+ */
+export async function releaseOverchargingCheckouts(db: Db, invoiceId: string, now = new Date()) {
+  const open = await db
+    .select({ id: checkoutAttempts.id, amountPence: checkoutAttempts.amountPence })
+    .from(checkoutAttempts)
+    .where(and(eq(checkoutAttempts.invoiceId, invoiceId), eq(checkoutAttempts.status, 'open')));
+  if (!open.length) return 0;
+  const due = (await balances(db, [invoiceId])).get(invoiceId)?.duePence ?? 0;
+  let closed = 0;
+  for (const a of open) {
+    if (a.amountPence <= due) continue;
+    try {
+      const r = await releaseCheckout(db, a.id, { reason: 'Amount owed changed', notify: false }, now);
+      if (!r.paid) closed++;
+    } catch (err) {
+      logger.warn(
+        { err, checkoutAttemptId: a.id },
+        'could not close an invoice checkout after the amount owed changed',
+      );
+    }
+  }
+  return closed;
+}
+
 /** Scheduler: free places whose payment time has run out (and pick up any late payments). */
 export async function releaseExpiredCheckouts(db: Db, now = new Date()) {
   const due = await db
