@@ -471,10 +471,19 @@ export async function releaseExpiredCheckouts(db: Db, now = new Date()) {
     .from(checkoutAttempts)
     .where(and(eq(checkoutAttempts.status, 'open'), lte(checkoutAttempts.expiresAt, now)));
   let released = 0;
-  for (const a of due)
-    released += (await releaseCheckout(db, a.id, { reason: 'Not paid in time', notify: a.purpose === 'booking' }, now))
-      .released;
-  return { checkouts: due.length, released };
+  let errors = 0;
+  for (const a of due) {
+    // One checkout the provider can't answer for mustn't stop the others being released.
+    try {
+      released += (
+        await releaseCheckout(db, a.id, { reason: 'Not paid in time', notify: a.purpose === 'booking' }, now)
+      ).released;
+    } catch (err) {
+      errors++;
+      logger.error({ attempt: a.id, err: err instanceof Error ? err.name : 'unknown' }, 'releasing checkout failed');
+    }
+  }
+  return { checkouts: due.length, released, errors };
 }
 
 /**
@@ -488,10 +497,19 @@ export async function reconcileOpenCheckouts(db: Db, now = new Date()) {
     .where(
       and(eq(checkoutAttempts.status, 'open'), lte(checkoutAttempts.createdAt, new Date(now.getTime() - 5 * 60_000))),
     )
+    .orderBy(asc(checkoutAttempts.createdAt))
     .limit(50);
   let paid = 0;
-  for (const a of open) if ((await completeCheckout(db, a.id, now)).paid) paid++;
-  return { checked: open.length, paid };
+  let errors = 0;
+  for (const a of open) {
+    try {
+      if ((await completeCheckout(db, a.id, now)).paid) paid++;
+    } catch (err) {
+      errors++;
+      logger.error({ attempt: a.id, err: err instanceof Error ? err.name : 'unknown' }, 'checking checkout failed');
+    }
+  }
+  return { checked: open.length, paid, errors };
 }
 
 /**

@@ -48,8 +48,16 @@ export class StripePaymentProvider implements PaymentProvider {
     };
   }
 
-  async getCheckout(id: string) {
-    return this.state(await this.stripe.checkout.sessions.retrieve(id));
+  async getCheckout(id: string): Promise<CheckoutState> {
+    try {
+      return this.state(await this.stripe.checkout.sessions.retrieve(id));
+    } catch (err) {
+      // A session Stripe has no record of (e.g. one made with test keys before going live) can never
+      // be paid: report it expired, as the simulated provider does, so its hold is released.
+      if (err instanceof Stripe.errors.StripeInvalidRequestError && err.code === 'resource_missing')
+        return { id, status: 'expired', paid: false, amountPence: 0, paymentId: null };
+      throw err;
+    }
   }
 
   async expireCheckout(id: string) {
