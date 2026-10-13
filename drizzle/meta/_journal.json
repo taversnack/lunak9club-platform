@@ -113,6 +113,13 @@
       "when": 1791124277558,
       "tag": "0015_vaccination_compliance",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791897511358,
+      "tag": "0016_booking_approvals",
+      "breakpoints": true
     }
   ]
 }

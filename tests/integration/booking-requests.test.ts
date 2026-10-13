@@ -85,13 +85,15 @@ async function onboardedDog(user: TestUser, name: string, approve = true) {
       administeredOn: addDays(today, -30),
     })),
   });
-  if (!approve) return id;
+  // Vaccination records are accepted even for a dog not approved yet: licence vaccinations must be
+  // valid on the day for any booking, trial requests included (D73, D85).
   const subs = await db()
     .select()
     .from(complianceSubmissions)
     .where(and(eq(complianceSubmissions.dogId, id), eq(complianceSubmissions.status, 'pending_review')));
   for (const s of subs)
     await reviewSubmission(db(), owner, s.id, { decision: 'approve', expiresOn: s.expiresOn, version: s.version });
+  if (!approve) return id;
   await recordAssessment(db(), owner, id, { kind: 'meet_and_greet', outcome: 'passed', assessedOn: today });
   await recordAssessment(db(), owner, id, { kind: 'trial_day', outcome: 'passed', assessedOn: today });
   const [d] = await db().select().from(dogs).where(eq(dogs.id, id));
