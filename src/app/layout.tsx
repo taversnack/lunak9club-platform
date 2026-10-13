@@ -6,6 +6,7 @@ import '@fontsource/raleway/600.css';
 import '@fontsource/raleway/700.css';
 import './globals.css';
 import s from '@/ui/ui.module.css';
+import { buttonClass } from '@/ui/components';
 
 export const metadata: Metadata = {
   title: { default: 'Luna’s K9 Club', template: '%s · Luna’s K9 Club' },
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Image src="/brand/lunak9-logo.png" alt="Luna’s K9 Club home" width={200} height={71} priority />
             </Link>
             <nav aria-label="Main" className={s.nav}>
-              <Link href="/dashboard">My dashboard</Link>
+              <Link href="/dashboard" className={`${buttonClass('cta', false, 'sm')} ${s.headerCta}`}>
+                My dashboard
+              </Link>
             </nav>
           </div>
         </header>

@@ -9,9 +9,17 @@
 }
 
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   background: var(--color-brand-navy);
   color: var(--color-brand-navy-text);
-  border-bottom: 3px solid var(--color-brand-sand);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 15%);
+}
+.header a.headerCta,
+.header a.headerCta:hover {
+  color: var(--color-cta-text);
+  text-decoration: none;
 }
 .header a {
   color: var(--color-brand-navy-text);
@@ -37,7 +45,7 @@
 }
 .brand img {
   display: block;
-  height: 52px;
+  height: 44px;
   width: auto;
 }
 .footer {
