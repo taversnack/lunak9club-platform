@@ -141,7 +141,10 @@ test('Owner sees the booking on the day, books a trial and checks a dog in and o
   await expect(page.getByText(/Waiting for payment/).first()).toBeVisible();
   await axe(page);
   // Today's booking is listed first (requests.spec may leave a later day awaiting payment).
-  await page.getByRole('link', { name: /Pay £\d+\.\d\d by card/ }).first().click();
+  await page
+    .getByRole('link', { name: /Pay £\d+\.\d\d by card/ })
+    .first()
+    .click();
   await page.getByRole('button', { name: /with a test card/ }).click();
   await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
   await signOut(page);
