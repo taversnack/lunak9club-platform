@@ -191,14 +191,18 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
   if (time >= '03:00')
     out.push(await once(db, 'retention', today, () => runRetention(db, getStorage(), actor, now), now));
   if (time >= '08:00')
-    out.push(await once(db, 'vaccination-reminders', today, () => sendVaccinationReminders(db, actor, now)));
-  if (time >= '17:00') out.push(await once(db, 'booking-reminders', today, () => sendBookingReminders(db, actor, now)));
-  const requests = await expireBookingRequests(db, actor, now);
+    out.push(await once(db, 'vaccination-reminders', today, () => sendVaccinationReminders(db, actor, now), now));
+  if (time >= '17:00')
+    out.push(await once(db, 'booking-reminders', today, () => sendBookingReminders(db, actor, now), now));
   if (Number(today.slice(8, 10)) > bs.confirmByDay && time >= '08:00')
-    out.push(await once(db, 'membership-unconfirmed', monthOf(today), () => notifyUnconfirmedDays(db, actor, now)));
-
-  const sent = await sendDueInvoices(db, actor, now);
-  const reminders = await sendPaymentReminders(db, actor, now);
+    out.push(
+      await once(db, 'membership-unconfirmed', monthOf(today), () => notifyUnconfirmedDays(db, actor, now), now),
+    );
+  // Every-tick steps: each runs even if an earlier one fails (M2).
+  const failed: string[] = [];
+  const requests = await step(db, 'expire-requests', now, failed, () => expireBookingRequests(db, actor, now));
+  const sent = await step(db, 'send-invoices', now, failed, () => sendDueInvoices(db, actor, now));
+  const reminders = await step(db, 'payment-reminders', now, failed, () => sendPaymentReminders(db, actor, now));
   // Card payments (D6, D58): catch paid-but-unconfirmed checkouts, free lapsed holds, retry refunds.
   const reconciled = await step(db, 'reconcile-checkouts', now, failed, () => reconcileOpenCheckouts(db, now));
   const holds = await step(db, 'release-checkouts', now, failed, () => releaseExpiredCheckouts(db, now));
@@ -212,8 +216,9 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
     checkoutsPaid: reconciled?.paid ?? null,
     holdsReleased: holds?.released ?? null,
     refunds,
-    requestsExpired: requests.expired,
-    requestDaysClosed: requests.daysClosed,
+    requestsExpired: requests?.expired ?? null,
+    requestDaysClosed: requests?.daysClosed ?? null,
+    failed,
   };
 }
 

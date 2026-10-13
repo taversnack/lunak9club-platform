@@ -1,6 +1,6 @@
 {
   "id": "6c95492f-c670-48de-a758-432fc37989fb",
-  "prevId": "7bdd45c8-fc0b-4946-b63e-22d35235c9ba",
+  "prevId": "8fbf9686-0916-4040-a0cb-80cf4f0cc214",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -321,6 +321,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "last_signed_in_at": {
+          "name": "last_signed_in_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -2727,21 +2733,6 @@
           "method": "btree",
           "with": {}
         },
-        "booking_dogs_booking_idx": {
-          "name": "booking_dogs_booking_idx",
-          "columns": [
-            {
-              "expression": "booking_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "booking_dogs_one_per_dog_day_uq": {
           "name": "booking_dogs_one_per_dog_day_uq",
           "columns": [
@@ -2759,7 +2750,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"booking_dogs\".\"status\" in ('confirmed', 'pending_payment', 'waitlisted', 'offered', 'attended', 'no_show')",
+          "where": "\"booking_dogs\".\"status\" in ('requested', 'confirmed', 'pending_payment', 'waitlisted', 'attended', 'no_show')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2769,6 +2760,21 @@
           "columns": [
             {
               "expression": "membership_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "booking_dogs_booking_idx": {
+          "name": "booking_dogs_booking_idx",
+          "columns": [
+            {
+              "expression": "booking_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2874,11 +2880,11 @@
         },
         "booking_dogs_status_chk": {
           "name": "booking_dogs_status_chk",
-          "value": "\"booking_dogs\".\"status\" in ('confirmed', 'pending_payment', 'waitlisted', 'offered', 'cancelled', 'attended', 'no_show', 'rejected')"
+          "value": "\"booking_dogs\".\"status\" in ('requested', 'confirmed', 'pending_payment', 'waitlisted', 'cancelled', 'attended', 'no_show', 'rejected')"
         },
         "booking_dogs_offer_chk": {
           "name": "booking_dogs_offer_chk",
-          "value": "\"booking_dogs\".\"status\" not in ('offered', 'pending_payment') or \"booking_dogs\".\"offer_expires_at\" is not null"
+          "value": "\"booking_dogs\".\"status\" <> 'pending_payment' or \"booking_dogs\".\"offer_expires_at\" is not null"
         },
         "booking_dogs_cancel_chk": {
           "name": "booking_dogs_cancel_chk",
@@ -2978,13 +2984,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 48
-        },
-        "waitlist_offer_hours": {
-          "name": "waitlist_offer_hours",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 12
         },
         "updated_at": {
           "name": "updated_at",
@@ -6413,6 +6412,177 @@
         "welfare_checks_autoshare_chk": {
           "name": "welfare_checks_autoshare_chk",
           "value": "not \"welfare_checks\".\"auto_shared\" or \"welfare_checks\".\"shared\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.approval_requests": {
+      "name": "approval_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_key": {
+          "name": "subject_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error_at": {
+          "name": "last_error_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "approval_requests_status_created_idx": {
+          "name": "approval_requests_status_created_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "approval_requests_one_pending_uq": {
+          "name": "approval_requests_one_pending_uq",
+          "columns": [
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"approval_requests\".\"status\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "approval_requests_customer_id_customers_id_fk": {
+          "name": "approval_requests_customer_id_customers_id_fk",
+          "tableFrom": "approval_requests",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "approval_requests_decided_by_users_id_fk": {
+          "name": "approval_requests_decided_by_users_id_fk",
+          "tableFrom": "approval_requests",
+          "tableTo": "users",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "approval_requests_status_chk": {
+          "name": "approval_requests_status_chk",
+          "value": "\"approval_requests\".\"status\" in ('pending', 'approved', 'rejected', 'withdrawn', 'expired')"
         }
       },
       "isRLSEnabled": false

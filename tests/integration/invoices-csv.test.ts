@@ -5,11 +5,11 @@ import { setEmailProvider } from '@/infra/email/providers';
 import { setPaymentProvider } from '@/infra/payments';
 import { SimulatedPaymentProvider } from '@/infra/payments/simulated';
 import { checkoutAttempts, customers, invoices, users } from '@/infra/db/schema';
-import { createMyBookings } from '@/server/services/bookings';
 import { completeCheckout } from '@/server/services/payments';
 import { invoicesCsv } from '@/server/services/billing';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, londonDate } from '@/domain/time';
+import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
 import { approvedDog, readyCustomer } from '../support/onboard';
@@ -47,7 +47,7 @@ afterAll(async () => {
 describe('invoices CSV export (D35)', () => {
   it('neutralises formula cells and uses the name snapshotted on the invoice', async () => {
     const date = weekdayAhead(57);
-    await createMyBookings(db(), eve, { dogIds: [dog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), eve, { dogIds: [dog], dates: [date], session: 'full', taxi: false }, owner);
     const [attempt] = await db()
       .select({ a: checkoutAttempts })
       .from(checkoutAttempts)

@@ -16,12 +16,13 @@ import {
   payments,
   webhookEvents,
 } from '@/infra/db/schema';
-import { cancelMyBooking } from '@/server/services/bookings';
-import { ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
+import { cancelMyBooking, createMyBookings } from '@/server/services/bookings';
+import { giveWaitlistPlace, ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
 import { issueTx, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
   handleWebhook,
+  OWNER_HOLD_MINUTES,
   releaseExpiredCheckouts,
   resumeCheckoutUrl,
   startInvoiceCheckout,
@@ -233,12 +234,10 @@ describe('two offers from one request (same bookingId)', () => {
       )[0]!;
     const [w1, w2] = [await row(d1), await row(d2)];
     expect(w1.bookingId).toBe(w2.bookingId);
-    await offerPlace(db(), owner, w1.id, { version: w1.version });
-    await offerPlace(db(), owner, w2.id, { version: w2.version });
-
-    // Both accepted within the hold: two open checkouts on one bookingId, one day each.
-    await acceptOffer(db(), quinn, w1.id);
-    await acceptOffer(db(), quinn, w2.id);
+    // The request found both days full and waitlisted them; the Owner gives each a place
+    // separately: two open checkouts on one bookingId, one day each.
+    await giveWaitlistPlace(db(), owner, w1.id, { version: w1.version });
+    await giveWaitlistPlace(db(), owner, w2.id, { version: w2.version });
     const [second, first] = await attemptsFor(quinn.userId);
     expect(first!.amountPence).toBe(5000);
     expect(second!.amountPence).toBe(5000);
@@ -261,8 +260,8 @@ describe('two offers from one request (same bookingId)', () => {
   });
 
   it('an expired checkout releases only its own day, not a newer hold on the same booking', async () => {
-    const d1 = weekdayAhead(53);
-    const d2 = weekdayAhead(54);
+    const d1 = weekdayAhead(36);
+    const d2 = weekdayAhead(38);
     for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), quinn, {
       dogIds: [quinnDog],
@@ -280,13 +279,11 @@ describe('two offers from one request (same bookingId)', () => {
           .where(and(eq(bookingDogs.dogId, quinnDog), eq(bookingDogs.serviceDate, date)))
       )[0]!;
     const [w1, w2] = [await row(d1), await row(d2)];
-    await offerPlace(db(), owner, w1.id, { version: w1.version });
-    await offerPlace(db(), owner, w2.id, { version: w2.version });
     const t0 = new Date();
-    await acceptOffer(db(), quinn, w1.id, t0);
-    await acceptOffer(db(), quinn, w2.id, new Date(t0.getTime() + 20 * 60_000));
-    // 32 minutes on: the first checkout has run out, the second still has ~19 minutes.
-    await releaseExpiredCheckouts(db(), new Date(t0.getTime() + 32 * 60_000));
+    await giveWaitlistPlace(db(), owner, w1.id, { version: w1.version }, t0);
+    await giveWaitlistPlace(db(), owner, w2.id, { version: w2.version }, new Date(t0.getTime() + 60 * 60_000));
+    // Just past the first hold (Owner holds last OWNER_HOLD_MINUTES): the second still has ~an hour.
+    await releaseExpiredCheckouts(db(), new Date(t0.getTime() + (OWNER_HOLD_MINUTES + 1) * 60_000));
     expect((await row(d1)).status).toBe('cancelled');
     expect((await row(d2)).status).toBe('pending_payment');
   });
@@ -331,7 +328,7 @@ describe('automatic refunds (D20, D58)', () => {
 
   it('a refund whose answer was lost stays pending, and the webhook settles it by our id without a second refund', async () => {
     const date = weekdayAhead(47);
-    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const a = await payLatest(pia.userId);
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     stripe.loseRefundAnswers = true;

@@ -24,6 +24,16 @@
 
 **Ordering note (13 Oct 2026):** 0019 is a provisional number, regenerated on `dev3/fix-review-lows` after merging `main` at 0015. It must land **after** Developer 2's 0016 and Developer 1's 0017 (0018 is provisionally Developer 3's last-sign-in migration). Whichever PR merges first takes the next free number on main, so if main has moved on, regenerate just before this PR goes ready: delete `0019_review_lows.sql`, `meta/0019_snapshot.json` and its `_journal.json` entry, run `pnpm db:generate --name review_lows`, renumber, then paste the comments and the duplicate-clean-up `DELETE` back in before the unique index.
 
+**Migration chain repair (13 Oct 2026, `dev3/fix-migration-chain`):** after the 0016/0018/0019/0020 merges the journal was invalid JSON, missed 0018 and was out of order, and every new snapshot pointed at 0015. The journal now lists 0015, 0016, 0018, 0019, 0020 (0017 is a deliberate gap: no SQL refers to it) with strictly increasing `when` values; 0020's `when` was moved from 1791898634541 to 1791898684864 because it was earlier than 0019's, and Drizzle's migrator silently skips any entry older than the last one applied. Snapshots are chained 0015 → 0016 → 0018 → 0019 → 0020 and 0020 holds the full schema. No SQL statements changed; only the provisional "PLACEHOLDER MIGRATION NUMBER" comment was removed from 0020. `tests/unit/migration-journal.test.ts` fails if `when` stops increasing, idx/tag order disagree, a SQL file is missing from the journal, or the prevId chain breaks.
+
+**Recreate dev databases migrated at an intermediate head.** Any dev DB migrated at `0ff11e4` or `06b76a9` (the broken journal heads between the merges and this fix) may have skipped 0016 or recorded migrations out of order. Drop and recreate it (`pnpm db:reset`, or drop the DB then `pnpm db:migrate && pnpm db:seed`). We're pre-launch, so there's no production data to carry over. A DB migrated at pre-merge main (`e342408`, up to 0015) upgrades cleanly.
+
+**Hand-written constraints the TS schema doesn't model (intentional).** These live only in SQL, so they aren't in the snapshots. `drizzle-kit generate` compares the TS schema with the snapshot (not with the database), so it never tries to drop them. Checked on 13 Oct 2026: `pnpm db:generate` reports no changes. Don't add them to the snapshots by hand, and don't "fix" them away with `drizzle-kit push`:
+- `price_books_no_overlap`: `EXCLUDE USING gist (daterange(...) WITH &&)` (0007, D44). Drizzle can't express exclusion constraints.
+- `booking_dogs_membership_id_fk` and `booking_dogs_membership_kind_chk` (0007): the FK is declared in SQL to avoid a circular schema import (bookings ↔ pricing), and the check pairs with it.
+- `checkout_attempts_booking_id_fk` and `payments_checkout_attempt_id_fk` (0011): "declared here to avoid circular schema imports".
+- `documents_purpose_chk` (0013 welfare locks): added along with the lock triggers when `documents.purpose` gained `incident`.
+
 **0016_booking_approvals (generated 13 Oct 2026 after 0015 / PR #4 merged to main):** `pnpm db:generate --name booking_approvals`, with the data step hand-added after the old check is dropped and **before** the new check constraints are recreated:
 
 ```sql
