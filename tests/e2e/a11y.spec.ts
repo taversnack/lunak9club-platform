@@ -44,6 +44,9 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
       '/account/terms',
       '/account/dogs/new',
       '/account/invoices',
+      '/account/membership',
+      '/account/faq',
+      '/account/book',
     ]) {
       await page.goto(path);
       await scan(page);
@@ -56,6 +59,9 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
     for (const path of [
       '/admin/reviews',
       '/admin/customers',
+      '/admin/customers/new',
+      '/admin/memberships',
+      '/admin/approvals',
       '/admin/settings/requirements',
       '/admin/settings/terms',
       '/admin/invoices',
@@ -65,6 +71,11 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
       await page.goto(path);
       await scan(page);
     }
+  });
+
+  test('finish-signup with a bad link', async ({ page }) => {
+    await page.goto('/finish-signup?token=not-a-real-token-value');
+    await scan(page);
   });
 
   test('skip link moves focus to main content', async ({ page }) => {
