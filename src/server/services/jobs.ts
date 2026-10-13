@@ -17,7 +17,8 @@ import {
 import { materialiseMemberships } from './memberships';
 import { reconcileOpenCheckouts, releaseExpiredCheckouts } from './payments';
 import { submitPendingRefunds } from './card-refunds';
-import { sendBookingReminders, sendOfferWarnings, sendVaccinationReminders } from './reminders';
+import { sendBookingReminders, sendVaccinationReminders } from './reminders';
+import { expireBookingRequests } from './booking-requests';
 import { runRetention } from './privacy';
 import { getStorage } from '@/infra/storage';
 import { ownerBillingMessage } from '@/infra/email/templates';
@@ -134,7 +135,7 @@ async function step<T extends object>(
  * - from the draft day (25th): email the Owner once that next month's drafts are ready
  * - 03:00 daily: retention schedule (D64)
  * - 08:00 daily: vaccination reminders (D66); 17:00 daily: tomorrow's booking reminders (D67)
- * - every tick: waitlist offers about to lapse (D67)
+ * - every tick: close booking requests whose cut-off (23:59 the day before) has passed (D79)
  * - every tick: send approved invoices whose send time has come (28th 09:00, D24) and
  *   payment reminders that are due (15:30 on day 4, D25)
  */
@@ -187,14 +188,12 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
   if (time >= '03:00')
     out.push(await once(db, 'retention', today, () => runRetention(db, getStorage(), actor, now), now));
   if (time >= '08:00')
-    out.push(await once(db, 'vaccination-reminders', today, () => sendVaccinationReminders(db, actor, now), now));
-  if (time >= '17:00')
-    out.push(await once(db, 'booking-reminders', today, () => sendBookingReminders(db, actor, now), now));
-  // Every-tick steps: each runs even if an earlier one fails (M2).
-  const failed: string[] = [];
-  const offerWarnings = await step(db, 'offer-warnings', now, failed, () => sendOfferWarnings(db, actor, now));
-  const sent = await step(db, 'send-invoices', now, failed, () => sendDueInvoices(db, actor, now));
-  const reminders = await step(db, 'payment-reminders', now, failed, () => sendPaymentReminders(db, actor, now));
+    out.push(await once(db, 'vaccination-reminders', today, () => sendVaccinationReminders(db, actor, now)));
+  if (time >= '17:00') out.push(await once(db, 'booking-reminders', today, () => sendBookingReminders(db, actor, now)));
+  const requests = await expireBookingRequests(db, actor, now);
+
+  const sent = await sendDueInvoices(db, actor, now);
+  const reminders = await sendPaymentReminders(db, actor, now);
   // Card payments (D6, D58): catch paid-but-unconfirmed checkouts, free lapsed holds, retry refunds.
   const reconciled = await step(db, 'reconcile-checkouts', now, failed, () => reconcileOpenCheckouts(db, now));
   const holds = await step(db, 'release-checkouts', now, failed, () => releaseExpiredCheckouts(db, now));
@@ -208,8 +207,8 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
     checkoutsPaid: reconciled?.paid ?? null,
     holdsReleased: holds?.released ?? null,
     refunds,
-    offerWarnings: offerWarnings?.sent ?? null,
-    failed,
+    requestsExpired: requests.expired,
+    requestDaysClosed: requests.daysClosed,
   };
 }
 

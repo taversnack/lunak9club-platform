@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { boolean, check, date, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { users } from './auth';
 import { customers, dogs } from './customers';
+import { BOOKING_STATUSES, LIVE_STATUSES, type BookingStatus } from '../../../domain/booking/rules';
 
 /** Single-row operating settings (id is always 1). Changes are audited. */
 export const bookingSettings = pgTable(
@@ -23,7 +24,6 @@ export const bookingSettings = pgTable(
     afternoonEnd: text().notNull().default('16:00'),
     maxAdvanceDays: integer().notNull().default(90),
     freeCancellationHours: integer().notNull().default(48),
-    waitlistOfferHours: integer().notNull().default(12),
     updatedAt: timestamp({ withTimezone: true })
       .notNull()
       .defaultNow()
@@ -94,18 +94,8 @@ export const bookings = pgTable(
 
 export const SESSIONS = ['full', 'am', 'pm'] as const;
 export type Session = (typeof SESSIONS)[number];
-export const BOOKING_STATUSES = [
-  'confirmed',
-  /** Place held while the customer pays (D6); the hold ends at offer_expires_at. */
-  'pending_payment',
-  'waitlisted',
-  'offered',
-  'cancelled',
-  'attended',
-  'no_show',
-  'rejected',
-] as const;
-export type BookingStatus = (typeof BOOKING_STATUSES)[number];
+export { BOOKING_STATUSES, type BookingStatus } from '../../../domain/booking/rules';
+const sqlList = (xs: readonly string[]) => sql.raw(xs.map((x) => `'${x}'`).join(', '));
 
 /** The unit of capacity: one dog, one date, one session. */
 export const bookingDogs = pgTable(
@@ -135,7 +125,7 @@ export const bookingDogs = pgTable(
     /** Owner-only note. Never shown to customers. */
     internalNote: text(),
     overrideReason: text(),
-    /** When a waitlist offer, or a place held for payment, lapses. */
+    /** When a place held for payment lapses (D78). Null for requests: they close at the cut-off (D79). */
     offerExpiresAt: timestamp({ withTimezone: true }),
     cancelledAt: timestamp({ withTimezone: true }),
     cancelledBy: text().references(() => users.id, { onDelete: 'set null' }),
@@ -156,18 +146,12 @@ export const bookingDogs = pgTable(
     // A dog can only hold one live booking (or waitlist place) per day (D38).
     uniqueIndex('booking_dogs_one_per_dog_day_uq')
       .on(t.dogId, t.serviceDate)
-      .where(sql`${t.status} in ('confirmed', 'pending_payment', 'waitlisted', 'offered', 'attended', 'no_show')`),
+      .where(sql`${t.status} in (${sqlList(LIVE_STATUSES)})`),
     check('booking_dogs_session_chk', sql`${t.session} in ('full', 'am', 'pm')`),
     check('booking_dogs_kind_chk', sql`${t.kind} in ('standard', 'membership', 'trial')`),
     index('booking_dogs_membership_idx').on(t.membershipId),
-    check(
-      'booking_dogs_status_chk',
-      sql`${t.status} in ('confirmed', 'pending_payment', 'waitlisted', 'offered', 'cancelled', 'attended', 'no_show', 'rejected')`,
-    ),
-    check(
-      'booking_dogs_offer_chk',
-      sql`${t.status} not in ('offered', 'pending_payment') or ${t.offerExpiresAt} is not null`,
-    ),
+    check('booking_dogs_status_chk', sql`${t.status} in (${sqlList(BOOKING_STATUSES)})`),
+    check('booking_dogs_offer_chk', sql`${t.status} <> 'pending_payment' or ${t.offerExpiresAt} is not null`),
     check('booking_dogs_cancel_chk', sql`${t.status} <> 'cancelled' or ${t.cancelledAt} is not null`),
     check('booking_dogs_checkout_chk', sql`${t.checkedOutAt} is null or ${t.checkedInAt} is not null`),
   ],

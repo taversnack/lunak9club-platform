@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/infra/db/client';
 import { getActor } from '@/server/session';
 import { AuthorizationError } from '@/server/policy/authorize';
-import { NotFoundError } from '@/server/errors';
+import { ConflictError, NotFoundError } from '@/server/errors';
 import { resumeCheckoutUrl } from '@/server/services/payments';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +20,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ attemptI
   } catch (e) {
     if (e instanceof AuthorizationError || e instanceof NotFoundError)
       return new Response('Not found', { status: 404 });
+    if (e instanceof ConflictError)
+      return NextResponse.redirect(new URL('/account/bookings?payment=unavailable', base), 303);
     throw e;
   }
 }

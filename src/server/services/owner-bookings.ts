@@ -1,4 +1,5 @@
 import 'server-only';
+import { BOOKED_STATUSES, isStatusIn, LIVE_STATUSES, OPEN_STATUSES } from '@/domain/booking/rules';
 import { raiseRefundRequests } from './billing';
 import { csvCell } from '../csv';
 import { submitPendingRefunds } from './card-refunds';
@@ -8,6 +9,8 @@ import {
   releaseBookingHold,
   sessionStartInstant,
   startBookingCheckout,
+  PayLinkUnavailableError,
+  bookingsMissingPayLink,
 } from './payments';
 import { and, asc, eq, gte, inArray, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -25,7 +28,7 @@ import {
   vets,
 } from '@/infra/db/schema';
 import { checkBookableDate, fits, isoWeekday, remainingFor, type Session } from '@/domain/booking/rules';
-import { blocksForEvaluation, type AttendanceBlocks } from '@/domain/compliance/attendance';
+import { allBlocks, blocksForEvaluation, type AttendanceBlocks } from '@/domain/compliance/attendance';
 import { addDays, isIsoDate, londonDate, type IsoDate } from '@/domain/time';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
@@ -35,7 +38,10 @@ import { evaluateDogs } from './compliance-facts';
 import { loadPricingContext, priceWith, writeSnapshot } from './pricing';
 import { closuresBetween, consume, daysOverview, describeSession, loadSettings, lockDays } from './booking-shared';
 import { appUrl, firstNameOf, sendSafely } from '../notify';
-import { bookingCancelledMessage, bookingSummaryMessage, waitlistOfferMessage } from '@/infra/email/templates';
+import { bookingCancelledMessage, bookingSummaryMessage } from '@/infra/email/templates';
+import { pendingRequestFor, requestedLeft } from './booking-requests';
+import { rejectApprovalRequest } from './approvals';
+import { priceSnapshots } from '@/infra/db/schema';
 
 /** Owner: one day — capacity, every dog booked, taxi list, waitlist and compliance warnings. */
 export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Date()) {
@@ -49,6 +55,7 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
         id: bookingDogs.id,
         session: bookingDogs.session,
         taxi: bookingDogs.taxi,
+        bookingId: bookingDogs.bookingId,
         status: bookingDogs.status,
         offerExpiresAt: bookingDogs.offerExpiresAt,
         checkedInAt: bookingDogs.checkedInAt,
@@ -77,6 +84,7 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
       .orderBy(asc(dogs.name)),
   ]);
   const evals = await evaluateDogs(db, [...new Set(rows.map((r) => r.dogId))], now);
+  const missingPay = new Set((await bookingsMissingPayLink(db, actor, { date }, now)).flatMap((m) => m.bookingDogIds));
   const withWarnings = rows.map((r) => {
     const e = evals.get(r.dogId);
     const blocks: AttendanceBlocks = e ? blocksForEvaluation(e, date) : { hard: [], overridable: [] };
@@ -85,12 +93,15 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
     return {
       ...r,
       warning,
+      /** D82: a dog failing the vaccination check for this date can't be given a place. */
+      giveBlock: vacc ? `Can’t give a place: ${vacc}` : null,
+      holdLive: r.status === 'pending_payment' && !!r.offerExpiresAt && r.offerExpiresAt > now,
+      /** Held for payment but the pay link couldn't be created – the Owner can resend it. */
+      payLinkMissing: missingPay.has(r.id),
       /** Check-in is refused – no override (D42, D73, D74). */
       checkInBlocked: blocks.hard[0] ?? null,
       /** Check-in needs an Owner reason (kennel cough, D73). */
       checkInNeedsReason: blocks.hard.length === 0 && blocks.overridable.length > 0,
-      offerLive:
-        (r.status === 'offered' || r.status === 'pending_payment') && !!r.offerExpiresAt && r.offerExpiresAt > now,
     };
   });
   const o = overview.get(date)!;
@@ -104,13 +115,14 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
       pm: remainingFor('pm', o.used, o.cap),
       taxi: o.cap.taxi - o.used.taxi,
     },
-    booked: withWarnings.filter(
-      (r) =>
-        ['confirmed', 'attended', 'no_show'].includes(r.status) ||
-        ((r.status === 'offered' || r.status === 'pending_payment') && r.offerLive),
-    ),
+    booked: withWarnings.filter((r) => isStatusIn(r.status, BOOKED_STATUSES) || r.holdLive),
+    /** Requests waiting for the Owner (D76); they hold their place. Oldest first. */
+    requests: withWarnings
+      .filter((r) => r.status === 'requested')
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
+    /** The manual waitlist (D81), in the order people joined. */
     waitlist: withWarnings
-      .filter((r) => r.status === 'waitlisted' || (r.status === 'offered' && !r.offerLive))
+      .filter((r) => r.status === 'waitlisted')
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
     cancelled: withWarnings.filter((r) => r.status === 'cancelled'),
     taxi: withWarnings.filter((r) => r.taxi && ['confirmed', 'attended'].includes(r.status)),
@@ -272,42 +284,95 @@ export const undoAttendance = (db: Db, actor: Actor, id: string, input: unknown,
     now,
   );
 
-/** Owner offers a waitlisted place; it's held for waitlistOfferHours (D41). */
-export async function offerPlace(db: Db, actor: Actor, rawId: string, input: unknown, now = new Date()) {
+/**
+ * Give place (D82): the Owner picks a waitlisted dog and the place becomes its own booking. Priced
+ * days are held for payment like an Owner booking (D59, D78) and the customer is emailed a pay link;
+ * membership and £0 days are confirmed straight away (D83). Nothing happens automatically (D81).
+ */
+export async function giveWaitlistPlace(db: Db, actor: Actor, rawId: string, input: unknown, now = new Date()) {
   assertAuthorized(actor, 'bookings.manage');
   const { version } = parseInput(Version, input);
   const settings = await loadSettings(db);
   const row = await loadBookingDog(db, rawId);
   const { bd } = row;
-  const expires = new Date(now.getTime() + settings.waitlistOfferHours * 3_600_000);
-  await db.transaction(async (tx) => {
+  if (bd.serviceDate < londonDate(now)) throw new ConflictError('This day has passed.');
+  const e = (await evaluateDogs(db, [bd.dogId], now)).get(bd.dogId);
+  const vacc = e ? (allBlocks(blocksForEvaluation(e, bd.serviceDate))[0] ?? null) : null;
+  // D82: refuse up front, before anything changes, with the reason the Owner sees on the day view.
+  if (vacc) throw new ConflictError(`Can’t give ${row.dogName} a place: ${vacc}`);
+  const [snap] = await db
+    .select({ totalPence: priceSnapshots.totalPence })
+    .from(priceSnapshots)
+    .where(eq(priceSnapshots.bookingDogId, bd.id));
+  const needsPayment = bd.kind !== 'membership' && (snap?.totalPence ?? 0) > 0;
+  const hold = ownerHoldUntil(now, sessionStartInstant(settings, bd.serviceDate, bd.session));
+  const bookingId = await db.transaction(async (tx) => {
     const days = await lockDays(tx, [bd.serviceDate], settings, now);
     const [fresh] = await tx.select().from(bookingDogs).where(eq(bookingDogs.id, bd.id)).for('update');
     if (!fresh || fresh.version !== version) throw new ConflictError('This booking changed. Please reload.');
-    const lapsedOffer = fresh.status === 'offered' && (!fresh.offerExpiresAt || fresh.offerExpiresAt <= now);
-    if (fresh.status !== 'waitlisted' && !lapsedOffer)
-      throw new ConflictError('Only waitlisted bookings can be offered a place.');
+    if (fresh.status !== 'waitlisted') throw new ConflictError('Only dogs on the waitlist can be given a place.');
     const day = days.get(bd.serviceDate)!;
     const f = fits(fresh.session, fresh.taxi, day.used, day.cap);
     if (!f.ok)
       throw new ConflictError(
         f.reason === 'taxi_full' ? 'The taxi is full on this day.' : 'There’s no free place for this session yet.',
       );
+    const [b] = await tx
+      .insert(bookings)
+      .values({
+        customerId: bd.customerId,
+        createdBy: actor.kind === 'user' ? actor.userId : 'system',
+        source: 'owner',
+      })
+      .returning({ id: bookings.id });
     await tx
       .update(bookingDogs)
-      .set({ status: 'offered', offerExpiresAt: expires, version: fresh.version + 1 })
+      .set(
+        needsPayment
+          ? { bookingId: b!.id, status: 'pending_payment', offerExpiresAt: hold, version: fresh.version + 1 }
+          : { bookingId: b!.id, status: 'confirmed', offerExpiresAt: null, version: fresh.version + 1 },
+      )
       .where(eq(bookingDogs.id, bd.id));
-    await recordAudit(tx, { actor, action: 'booking.place_offered', entityType: 'booking_dog', entityId: bd.id });
+    await recordAudit(tx, {
+      actor,
+      action: 'booking.place_given',
+      entityType: 'booking_dog',
+      entityId: bd.id,
+      metadata: { needsPayment },
+    });
+    return b!.id;
   });
-  await sendSafely(
-    waitlistOfferMessage(
-      row.email,
-      firstNameOf(row.name),
-      { dogName: row.dogName, ...describeSession(bd.serviceDate, bd.session), outcome: 'place offered' },
-      settings.waitlistOfferHours,
-      appUrl('/account/bookings'),
-    ),
-  );
+  let payLinkFailed = false;
+  if (needsPayment) {
+    try {
+      await startBookingCheckout(
+        db,
+        {
+          bookingId,
+          customerId: bd.customerId,
+          createdBy: actor.kind === 'user' ? actor.userId : null,
+          expiresAt: hold,
+          notifyByEmail: true,
+          tries: 3,
+          keepHoldOnFailure: true,
+        },
+        now,
+      );
+    } catch (err) {
+      if (!(err instanceof PayLinkUnavailableError)) throw err;
+      payLinkFailed = true;
+    }
+  } else {
+    await sendSafely(
+      bookingSummaryMessage(
+        row.email,
+        firstNameOf(row.name),
+        [{ dogName: row.dogName, ...describeSession(bd.serviceDate, bd.session), outcome: 'a place came up – booked' }],
+        appUrl('/account/bookings'),
+      ),
+    );
+  }
+  return { bookingId, needsPayment, payLinkFailed };
 }
 
 export const OwnerCancelInput = z.object({
@@ -322,8 +387,50 @@ export async function ownerCancel(db: Db, actor: Actor, rawId: string, input: un
   const d = parseInput(OwnerCancelInput, input);
   const row = await loadBookingDog(db, rawId);
   const { bd } = row;
-  if (!['confirmed', 'pending_payment', 'waitlisted', 'offered'].includes(bd.status))
-    throw new ConflictError('This booking can’t be cancelled.');
+  if (!isStatusIn(bd.status, OPEN_STATUSES)) throw new ConflictError('This booking can’t be cancelled.');
+  // A requested day: the Owner declines just this day (D80). No charge; the place is released.
+  if (bd.status === 'requested') {
+    const req = await pendingRequestFor(db, bd.bookingId);
+    if (req && (await requestedLeft(db, bd.bookingId)) === 1) {
+      // The last day waiting: decline the whole request (the customer gets the standard email once).
+      await rejectApprovalRequest(db, actor, req.id, { reason: d.reason }, now);
+      return;
+    }
+    await db.transaction(async (tx) => {
+      const updated = await tx
+        .update(bookingDogs)
+        .set({
+          status: 'rejected',
+          internalNote: [bd.internalNote, `Declined: ${d.reason}`].filter(Boolean).join('\n'),
+          version: bd.version + 1,
+        })
+        .where(and(eq(bookingDogs.id, bd.id), eq(bookingDogs.version, d.version), eq(bookingDogs.status, 'requested')))
+        .returning({ id: bookingDogs.id });
+      if (!updated.length) throw new ConflictError('This booking changed. Please reload.');
+      await recordAudit(tx, {
+        actor,
+        action: 'booking.request_day_declined',
+        entityType: 'booking_dog',
+        entityId: bd.id,
+      });
+    });
+    // Standard wording only; the Owner's reason stays internal (D80).
+    await sendSafely(
+      bookingCancelledMessage(
+        row.email,
+        firstNameOf(row.name),
+        {
+          dogName: row.dogName,
+          ...describeSession(bd.serviceDate, bd.session),
+          outcome: 'we’re sorry, we can’t accept this day – nothing has been charged',
+        },
+        appUrl('/account/bookings'),
+      ),
+    );
+    return;
+  }
+  // Someone on the waitlist never had a place, so there's nothing to charge.
+  const charge = d.charge && bd.status !== 'waitlisted';
   if (bd.status === 'pending_payment') {
     await releaseBookingHold(db, bd.bookingId, bd.id, `Cancelled by Luna’s K9 Club before payment: ${d.reason}`, now);
     await recordAudit(db, { actor, action: 'booking.hold_cancelled', entityType: 'booking_dog', entityId: bd.id });
@@ -336,14 +443,14 @@ export async function ownerCancel(db: Db, actor: Actor, rawId: string, input: un
         status: 'cancelled',
         cancelledAt: now,
         cancelledBy: actor.kind === 'user' ? actor.userId : null,
-        lateCancellation: d.charge,
+        lateCancellation: charge,
         internalNote: [bd.internalNote, `Cancelled: ${d.reason}`].filter(Boolean).join('\n'),
         version: bd.version + 1,
       })
       .where(and(eq(bookingDogs.id, bd.id), eq(bookingDogs.version, d.version)))
       .returning({ id: bookingDogs.id });
     if (!updated.length) throw new ConflictError('This booking changed. Please reload.');
-    if (!d.charge) {
+    if (!charge) {
       await raiseRefundRequests(tx, { bookingDogIds: [bd.id] });
       await refundBookingDayTx(tx, bd.id, `Cancelled by Luna’s K9 Club: ${row.dogName}`, now);
     }
@@ -352,7 +459,7 @@ export async function ownerCancel(db: Db, actor: Actor, rawId: string, input: un
       action: 'booking.cancelled',
       entityType: 'booking_dog',
       entityId: bd.id,
-      metadata: { late: d.charge, by: 'owner', from: bd.status },
+      metadata: { late: charge, by: 'owner', from: bd.status },
     });
   });
   await submitPendingRefunds(db);
@@ -360,7 +467,12 @@ export async function ownerCancel(db: Db, actor: Actor, rawId: string, input: un
     bookingCancelledMessage(
       row.email,
       firstNameOf(row.name),
-      { dogName: row.dogName, ...describeSession(bd.serviceDate, bd.session), outcome: 'cancelled by Luna’s K9 Club' },
+      {
+        dogName: row.dogName,
+        ...describeSession(bd.serviceDate, bd.session),
+        outcome:
+          bd.status === 'waitlisted' ? 'taken off the waitlist by Luna’s K9 Club' : 'cancelled by Luna’s K9 Club',
+      },
       appUrl('/account/bookings'),
     ),
   );
@@ -446,7 +558,7 @@ export async function ownerCreateBooking(db: Db, actor: Actor, input: unknown, n
         and(
           eq(bookingDogs.dogId, dogId),
           eq(bookingDogs.serviceDate, d.date),
-          inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'waitlisted', 'offered', 'attended', 'no_show']),
+          inArray(bookingDogs.status, [...LIVE_STATUSES]),
         ),
       );
     if (dup) throw new ConflictError(`${dog.name} is already booked on this day.`);
@@ -575,12 +687,7 @@ export async function addClosure(db: Db, actor: Actor, input: unknown) {
   const live = await db
     .select({ id: bookingDogs.id })
     .from(bookingDogs)
-    .where(
-      and(
-        eq(bookingDogs.serviceDate, d.date),
-        inArray(bookingDogs.status, ['confirmed', 'pending_payment', 'offered', 'waitlisted']),
-      ),
-    );
+    .where(and(eq(bookingDogs.serviceDate, d.date), inArray(bookingDogs.status, [...OPEN_STATUSES])));
   if (live.length)
     throw new ConflictError(`There are ${live.length} bookings on this day. Cancel them first, then close the day.`);
   await db.transaction(async (tx) => {
@@ -622,7 +729,6 @@ export const SettingsInput = z
     afternoonEnd: time,
     maxAdvanceDays: z.coerce.number().int().min(1).max(365),
     freeCancellationHours: z.coerce.number().int().min(0).max(336),
-    waitlistOfferHours: z.coerce.number().int().min(1).max(72),
     openWeekdays: z.array(z.coerce.number().int().min(1).max(7)).min(1, 'Choose at least one opening day'),
   })
   .refine((s) => s.fullDayStart < s.fullDayEnd && s.morningStart < s.morningEnd && s.afternoonStart < s.afternoonEnd, {

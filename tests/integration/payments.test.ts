@@ -16,8 +16,8 @@ import {
   payments,
   webhookEvents,
 } from '@/infra/db/schema';
-import { acceptOffer, cancelMyBooking, createMyBookings } from '@/server/services/bookings';
-import { offerPlace, ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
+import { cancelMyBooking } from '@/server/services/bookings';
+import { ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
 import { issueTx, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
@@ -31,6 +31,7 @@ import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, londonDate } from '@/domain/time';
+import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
 import { approvedDog, readyCustomer } from '../support/onboard';
@@ -107,7 +108,12 @@ afterAll(async () => {
 describe('pay at booking (D6)', () => {
   it('holds the place, confirms on payment and issues a paid invoice with a receipt', async () => {
     const date = weekdayAhead(40);
-    const r = await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    const r = await requestAndApprove(
+      db(),
+      pia,
+      { dogIds: [piaDog], dates: [date], session: 'full', taxi: false },
+      owner,
+    );
     expect(r.checkoutUrl).toMatch(/\/dev\/checkout\/sim_cs_/);
     const [held] = await db()
       .select()
@@ -137,14 +143,19 @@ describe('pay at booking (D6)', () => {
   it('a held place counts towards capacity', async () => {
     const date = weekdayAhead(41);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
-    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
-    const q = await createMyBookings(db(), quinn, {
-      dogIds: [quinnDog],
-      dates: [date],
-      session: 'full',
-      taxi: false,
-      ifFull: 'skip',
-    });
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
+    const q = await requestAndApprove(
+      db(),
+      quinn,
+      {
+        dogIds: [quinnDog],
+        dates: [date],
+        session: 'full',
+        taxi: false,
+        ifFull: 'skip',
+      },
+      owner,
+    );
     expect(q.outcomes[0]!.outcome).toBe('skipped');
   });
 
@@ -164,13 +175,13 @@ describe('pay at booking (D6)', () => {
   it('if the hold lapsed and the place went before payment arrived, it refunds automatically', async () => {
     const date = weekdayAhead(42);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
-    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const [a] = await attemptsFor(pia.userId);
     // Quinn takes the place once Pia's hold has lapsed (simulated by a confirmed row).
     await db().execute(
       sql`update booking_dogs set offer_expires_at = now() - interval '1 minute' where booking_id = ${a!.bookingId}`,
     );
-    await createMyBookings(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'full', taxi: false }, owner);
     await payLatest(quinn.userId);
     // Pia's payment arrives late.
     stripe.pay(a!.providerSessionId!);
@@ -186,7 +197,7 @@ describe('pay at booking (D6)', () => {
 
   it('cancelling an unpaid booking just releases it', async () => {
     const date = weekdayAhead(43);
-    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'am', taxi: false });
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'am', taxi: false }, owner);
     const [held] = await db()
       .select()
       .from(bookingDogs)
@@ -284,7 +295,7 @@ describe('two offers from one request (same bookingId)', () => {
 describe('automatic refunds (D20, D58)', () => {
   it('a paid day cancelled 48 h+ ahead goes back to the card, with a credit note', async () => {
     const date = weekdayAhead(44);
-    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const a = await payLatest(pia.userId);
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     const before = stripe.refunds.length;
@@ -301,7 +312,7 @@ describe('automatic refunds (D20, D58)', () => {
 
   it('a refund the provider rejects can be retried by the Owner', async () => {
     const date = weekdayAhead(45);
-    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const a = await payLatest(pia.userId);
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     stripe.failRefunds = true;
@@ -406,7 +417,7 @@ describe('paying an invoice by card (D59)', () => {
 describe('webhooks (non-negotiable 3)', () => {
   it('rejects bad signatures, completes checkouts, and ignores repeats', async () => {
     const date = weekdayAhead(47);
-    await createMyBookings(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'pm', taxi: false });
+    await requestAndApprove(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'pm', taxi: false }, owner);
     const [a] = await attemptsFor(quinn.userId);
     stripe.pay(a!.providerSessionId!);
     const body = JSON.stringify({
