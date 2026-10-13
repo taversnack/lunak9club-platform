@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Stack } from '@/ui/components';
-import { ActionForm, FieldError, FileField, SubmitButton, TextField } from '@/ui/form';
+import { ActionForm, FieldError, FileField, RadioGroup, SubmitButton, TextField } from '@/ui/form';
 import { uploadVaccinationAction } from '../../../actions';
 import { loadDogPage } from '../load';
 import { londonDate } from '@/domain/time';
@@ -57,6 +57,21 @@ export default async function VaccinationsPage({ params }: { params: Promise<{ d
               </div>
             ))}
           </fieldset>
+          <RadioGroup
+            name="firstCourse"
+            label="Is this your dog’s first course of vaccinations?"
+            hint="For example a puppy’s first injections, or a dog that has never been vaccinated before."
+            options={[
+              { value: 'no', label: 'No' },
+              { value: 'yes', label: 'Yes' },
+            ]}
+          />
+          <TextField
+            name="primaryCourseCompletedOn"
+            label="If yes, the date the first course finished"
+            hint="The date of the last injection in the course. Your dog can start day care 14 days after this date."
+            type="date"
+          />
           <div>
             <SubmitButton pendingText="Uploading…">Upload record</SubmitButton>
           </div>

@@ -38,7 +38,7 @@ export async function claimNotification(db: Q, key: string, kind: string): Promi
 }
 
 /**
- * Vaccination reminders (D11, D66): 30, 14 and 7 days before a mandatory vaccination expires
+ * Vaccination reminders (D11, D66, D75): by default 60, 30, 14 and 7 days before a mandatory vaccination expires
  * (per requirement settings), and once when it has expired – to the customer, and a daily summary
  * of expiries to the Owner. Emails name the dog only, never the vaccination (D33).
  */
