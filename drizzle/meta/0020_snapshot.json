@@ -1,6 +1,6 @@
 {
-  "id": "f4c670f6-04ed-441c-8cd3-c89575063cc0",
-  "prevId": "bbfc1ae2-6a53-48c2-b6c5-a649d519cc1c",
+  "id": "4266c5b0-5e32-403c-9bd5-b89cb6cf3e70",
+  "prevId": "7bdd45c8-fc0b-4946-b63e-22d35235c9ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1900,7 +1900,7 @@
           "type": "integer[]",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{30,14,7}'::integer[]"
+          "default": "'{60,30,14,7}'::integer[]"
         },
         "sort_order": {
           "name": "sort_order",
@@ -1981,6 +1981,12 @@
         },
         "administered_on": {
           "name": "administered_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "primary_course_completed_on": {
+          "name": "primary_course_completed_on",
           "type": "date",
           "primaryKey": false,
           "notNull": false
