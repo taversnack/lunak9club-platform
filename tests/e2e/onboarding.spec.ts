@@ -147,8 +147,13 @@ test('customer adds a dog, vet, onboarding form and vaccination record', async (
 
   await page.getByRole('link', { name: 'Upload a record' }).click();
   await expect(page).toHaveURL(/\/vaccinations$/);
+  // Dates are only asked for (and required) once a vaccine is ticked.
+  for (const v of ['Core vaccinations', 'Leptospirosis vaccination', 'Kennel cough vaccination'])
+    await expect(page.getByLabel(`${v}: date given`)).toHaveCount(0);
   await page.getByLabel('Vaccination record', { exact: true }).setInputFiles('tests/e2e/fixtures/not-a-pdf.pdf');
   await page.getByRole('checkbox', { name: 'Core vaccinations' }).check();
+  await expect(page.getByLabel('Core vaccinations: date given')).toHaveAttribute('required', '');
+  await expect(page.getByLabel('Leptospirosis vaccination: valid until')).toHaveCount(0);
   await page.getByLabel('Core vaccinations: date given').fill(plusDays(-60));
   await page.getByLabel('Core vaccinations: valid until').fill(plusDays(300));
   // First-course question (D74): a "yes" needs the date the course finished.
@@ -220,8 +225,12 @@ test('owner reviews records, records assessments and approves the dog', async ({
     await assess.getByRole('group', { name: 'Assessment' }).getByRole('radio', { name: kind }).check();
     await assess.getByRole('group', { name: 'Outcome' }).getByRole('radio', { name: 'Passed', exact: true }).check();
     await assess.getByRole('button', { name: 'Record assessment' }).click();
+    // "Assessment recorded." is still on screen from the first save, so on its own it doesn't prove the
+    // second one finished. Wait until this assessment is in the refreshed list before moving on.
+    await expect(assess.getByRole('listitem').filter({ hasText: kind })).toContainText('Passed');
     await expect(assess.getByText('Assessment recorded.')).toBeVisible();
   }
+  await expect(assess.getByRole('listitem')).toHaveCount(2);
   await page.reload();
   await expect(page.getByText('Ready for approval')).toBeVisible();
   await page.getByLabel('Change status to').selectOption('approved');
