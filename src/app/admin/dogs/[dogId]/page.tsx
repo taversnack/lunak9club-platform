@@ -12,6 +12,7 @@ import { NotFoundError } from '@/server/errors';
 import { getDb } from '@/infra/db/client';
 import { ITEM_LABELS, OVERALL_LABELS } from '@/domain/compliance/evaluate';
 import { formatUkDate, londonDate } from '@/domain/time';
+import { CONSENTS, isUnderOneYear } from '@/domain/compliance/register';
 import { formatDateTimeLondon } from '@/ui/format';
 import { recordAssessmentAction, reviewSubmissionAction, setDogStatusAction } from '../../actions';
 
@@ -20,6 +21,9 @@ export const dynamic = 'force-dynamic';
 
 const yn = (v: boolean | null | undefined) => (v == null ? '–' : v ? 'Yes' : 'No');
 const txt = (v: string | null | undefined) => v || '–';
+/** Register field not recorded yet (dogs onboarded before 0014, D72). Text, not colour alone. */
+const Missing = () => <StatusBadge tone="warning">Missing</StatusBadge>;
+const dateOrMissing = (v: string | null | undefined) => (v ? formatUkDate(v) : <Missing />);
 
 export default async function OwnerDogPage({ params }: { params: Promise<{ dogId: string }> }) {
   const actor = await requirePermission('dogs.read_sensitive');
@@ -37,6 +41,8 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
   const history = d.submissions.filter((x) => x.status !== 'pending_review');
   const today = londonDate(new Date());
   const welfare = await dogWelfare(getDb(), actor, dogId);
+  const hp = d.health;
+  const underOne = isUnderOneYear(dog.dateOfBirth, today);
   const lastCheck = welfare.checks[0];
 
   return (
@@ -109,7 +115,9 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
           <section key={p.id} aria-labelledby={`sub-${p.id}`} className={s.listItem} style={{ display: 'block' }}>
             <h3 id={`sub-${p.id}`}>{p.requirementLabel}</h3>
             <p>
-              Sent {formatDateTimeLondon(p.submittedAt)} · customer says valid until {formatUkDate(p.expiresOn)} ·{' '}
+              Sent {formatDateTimeLondon(p.submittedAt)} · customer says given{' '}
+              {p.administeredOn ? formatUkDate(p.administeredOn) : '(not given)'}, valid until{' '}
+              {formatUkDate(p.expiresOn)} ·{' '}
               <a href={`/api/documents/${p.documentId}`} target="_blank" rel="noopener">
                 Open {p.documentName}
               </a>
@@ -118,6 +126,15 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
               <input type="hidden" name="submissionId" value={p.id} />
               <input type="hidden" name="dogId" value={dog.id} />
               <input type="hidden" name="version" value={p.version} />
+              <TextField
+                name="administeredOn"
+                label="Date given"
+                type="date"
+                required={!p.administeredOn}
+                defaultValue={p.administeredOn}
+                max={today}
+                hint="Correct this if it doesn’t match the record"
+              />
               <TextField
                 name="expiresOn"
                 label="Valid until"
@@ -218,6 +235,21 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
             <dd>
               {d.vet ? `${d.vet.practiceName}${d.vet.vetName ? ` (${d.vet.vetName})` : ''}, ${d.vet.phone}` : '–'}
             </dd>
+            <dt>Vet for emergencies</dt>
+            <dd>
+              {!dog.agreedVetId ? (
+                <Missing />
+              ) : dog.agreedVetId === dog.vetId ? (
+                'Same as vet'
+              ) : d.agreedVet ? (
+                `${d.agreedVet.practiceName}, ${d.agreedVet.phone}`
+              ) : (
+                '–'
+              )}
+              {dog.agreedVetId && dog.vetAgreedAt ? (
+                <div className={s.hint}>Agreed with the customer on {formatDateTimeLondon(dog.vetAgreedAt)}</div>
+              ) : null}
+            </dd>
             <dt>Owner</dt>
             <dd>
               {d.customerName} · {d.customerPhone ?? 'no phone'} · {d.customerEmail}
@@ -233,6 +265,31 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
             <dd>{yn(d.permissions?.photosAndSocialMedia)}</dd>
             <dt>Emergency vet treatment</dt>
             <dd>{yn(d.permissions?.emergencyVetTreatment)}</dd>
+          </dl>
+          <h3>Consents</h3>
+          <dl className={s.dl}>
+            {d.consentAnswers.map((c) => {
+              const def = CONSENTS.find((x) => x.key === c.key)!;
+              return [
+                <dt key={`${c.key}-t`}>{def.label}</dt>,
+                <dd key={`${c.key}-d`}>
+                  {c.value == null ? (
+                    c.key === 'mixingUnderOneConsent' && !underOne ? (
+                      'Not needed (1 year or older)'
+                    ) : (
+                      <Missing />
+                    )
+                  ) : (
+                    yn(c.value)
+                  )}
+                  {c.value != null && c.at ? (
+                    <div className={s.hint}>
+                      Answered {c.byName ? `by ${c.byName} ` : ''}on {formatDateTimeLondon(c.at)}
+                    </div>
+                  ) : null}
+                </dd>,
+              ];
+            })}
           </dl>
           <h3>Contacts</h3>
           {d.contacts.length === 0 ? (
@@ -263,8 +320,27 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
             <dd>{txt(d.health?.dietaryRequirements)}</dd>
             <dt>Medical conditions</dt>
             <dd>{txt(d.health?.medicalConditions)}</dd>
-            <dt>Flea and worming</dt>
-            <dd>{txt(d.health?.fleaAndWorming)}</dd>
+            <dt>Flea and worming products</dt>
+            <dd>{txt(hp?.fleaAndWorming)}</dd>
+            <dt>Last worming treatment</dt>
+            <dd>{dateOrMissing(hp?.lastWormedOn)}</dd>
+            <dt>Last flea treatment</dt>
+            <dd>{dateOrMissing(hp?.lastFleaTreatmentOn)}</dd>
+            <dt>Exercise restrictions</dt>
+            <dd>
+              {hp?.exerciseRestricted == null ? <Missing /> : hp.exerciseRestricted ? 'Yes' : 'None'}
+              {hp?.exerciseRestrictions ? <div className={s.pre}>{hp.exerciseRestrictions}</div> : null}
+            </dd>
+            <dt>Insurance</dt>
+            <dd>
+              {hp?.insured == null ? (
+                <Missing />
+              ) : hp.insured ? (
+                `${hp.insurer ?? ''}${hp.insurancePolicyNumber ? ` · policy ${hp.insurancePolicyNumber}` : ''}`
+              ) : (
+                'Not insured'
+              )}
+            </dd>
             <dt>Temperament</dt>
             <dd>{txt(d.behaviour?.temperament)}</dd>
             <dt>Triggers</dt>
@@ -327,6 +403,7 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
               <thead>
                 <tr>
                   <th scope="col">Record</th>
+                  <th scope="col">Date given</th>
                   <th scope="col">Valid until</th>
                   <th scope="col">Outcome</th>
                   <th scope="col">File</th>
@@ -336,6 +413,7 @@ export default async function OwnerDogPage({ params }: { params: Promise<{ dogId
                 {history.map((h) => (
                   <tr key={h.id}>
                     <td>{h.requirementLabel}</td>
+                    <td>{dateOrMissing(h.administeredOn)}</td>
                     <td>{formatUkDate(h.expiresOn)}</td>
                     <td>
                       {h.status === 'approved'

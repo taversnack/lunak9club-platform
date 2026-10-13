@@ -65,6 +65,12 @@
   - Reminders (D66, D67): vaccinations 30/14/7 days and on expiry (+ Owner summary and dashboard list), day-before booking reminders, offer-lapsing warnings – each sent once.
   - Retention (D64) and UK GDPR (D65): daily retention job, inactive-customer anonymisation, customer data download, deletion requests with Owner approval.
 
+- 2026-10-04 — **Dog register fields** (licence Sch. 4 Part 4 para 25, guidance 9.8; D68–D72), branch `dev2/dog-register-fields`:
+  - Migration 0014 (additive, nullable): vaccination date given; last worming and flea treatment dates; exercise restrictions; insurance (insurer, optional policy number); seven licence consents each with when and who answered; agreed emergency vet + when agreed. Check constraints keep each set consistent.
+  - Customer: existing onboarding form gains treatment dates, exercise, insurance and a short grouped Consents section (under-1 mixing only asked for puppies); vaccination upload asks for the date given; vet page asks which vet to use in an emergency. No new pages. Dogs onboarded earlier get a gentle prompt, never a block.
+  - Owner: dog page shows the new fields with “Missing” text badges for older dogs, “Answered by [name] on [date]” for consents, the agreed vet, and date given in review/history (correctable at review). Emergency list CSV adds the agreed vet.
+  - Privacy: values never in audit metadata (sanitiser extended), logs (redaction paths extended) or emails; included in the customer data download; removed by anonymisation (agreed vet cleared, consent rows incl. “answered by” deleted).
+
 ## Verification (26 Sep 2026, cloud build workspace)
 Phase 7 (4 Oct): `pnpm verify` → OVERALL PASS. 93 unit, 116 integration/authz (incl. 12 welfare/privacy), E2E incident → customer acknowledgement → daily check → data download on mobile + desktop; a11y scans on all new pages.
 
@@ -85,9 +91,10 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 
 ## Current
 - Phase 7 done; awaiting Owner review. Next: Phase 8 (hardening and launch).
+- Dog register fields (D68–D72) built on `dev2/dog-register-fields` (draft PR). **Developer 1’s migration must be regenerated as 0015 after 0014 lands** (see `drizzle/NOTES.md`); Developer 1 uses decision IDs from D73.
 
 ## Decisions
-- See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed).
+- See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed), D71 (web-form consent as written consent).
 
 ## Risks / known issues
 - Nothing calls the scheduler in production yet (O12) – decide with hosting (O6).
@@ -101,6 +108,9 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Server logs show occasional "destination stream closed early" when a client navigation aborts an in-flight page stream; no test impact. Investigate in Phase 8.
 - Sessions list shows IP/user agent columns (Better Auth defaults); retention rule for sessions to be set in Phase 7.
 - Staff Manager/Staff roles not created (D13) — permission map ready.
+- Web-form consent as “written consent” not yet confirmed by the Owner and council (D71).
+- Register answers are overwritten (with when/who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72, brief recommendation 1).
+- The 2-week primary-course rule (O15) isn’t enforced, although the date given is now recorded.
 
 ## Next
 - Phase 8: hardening and launch – security review, backups and a tested restore, error monitoring, performance and accessibility pass, hosting decision (O6, O12, O13), go-live checklist.
