@@ -105,10 +105,22 @@ export class StripePaymentProvider implements PaymentProvider {
       // Only a definite rejection is a failure. Timeouts, connection, rate-limit and Stripe-side
       // errors leave the outcome unknown: report it as pending so the refund is tried again later
       // (same idempotency key, and findRefund stops a second refund).
+      // An authentication or permission error (bad, revoked or restricted key) is also definite:
+      // Stripe refused the request, so no refund exists. It won't clear by itself, so the Owner
+      // has to be told rather than the refund sitting in 'submitted' being resent for ever.
+      const account =
+        err instanceof Stripe.errors.StripeAuthenticationError || err instanceof Stripe.errors.StripePermissionError;
       const rejected =
-        err instanceof Stripe.errors.StripeCardError || err instanceof Stripe.errors.StripeInvalidRequestError;
+        account ||
+        err instanceof Stripe.errors.StripeCardError ||
+        err instanceof Stripe.errors.StripeInvalidRequestError;
       const reason = err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 200) : 'unknown';
-      return { id: '', status: rejected ? 'failed' : 'pending', failureReason: reason };
+      return {
+        id: '',
+        status: rejected ? 'failed' : 'pending',
+        failureReason: reason,
+        ...(account ? { needsOwner: true } : {}),
+      };
     }
   }
 

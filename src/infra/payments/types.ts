@@ -23,7 +23,16 @@ export type CheckoutState = {
  * `failed` means the provider definitely rejected the refund. `pending` with an empty id means the
  * outcome is unknown (timeout, connection or provider error): the refund may or may not exist.
  */
-export type RefundResult = { id: string; status: 'succeeded' | 'pending' | 'failed'; failureReason?: string };
+export type RefundResult = {
+  id: string;
+  status: 'succeeded' | 'pending' | 'failed';
+  failureReason?: string;
+  /**
+   * The provider refused us rather than the refund (wrong or revoked API key, missing permission).
+   * Nothing was created, and trying again won't help until the Owner fixes the account settings.
+   */
+  needsOwner?: boolean;
+};
 
 export type WebhookEvent = {
   id: string;
