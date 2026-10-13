@@ -1,6 +1,6 @@
 {
-  "id": "d76fcb5d-9ee9-4bed-a95a-42b7926eb79e",
-  "prevId": "fc32e954-aef1-48f9-8746-a6e48a746cac",
+  "id": "4266c5b0-5e32-403c-9bd5-b89cb6cf3e70",
+  "prevId": "7bdd45c8-fc0b-4946-b63e-22d35235c9ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2744,7 +2744,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"booking_dogs\".\"status\" in ('requested', 'confirmed', 'pending_payment', 'waitlisted', 'attended', 'no_show')",
+          "where": "\"booking_dogs\".\"status\" in ('confirmed', 'pending_payment', 'waitlisted', 'offered', 'attended', 'no_show')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2859,11 +2859,11 @@
         },
         "booking_dogs_status_chk": {
           "name": "booking_dogs_status_chk",
-          "value": "\"booking_dogs\".\"status\" in ('requested', 'confirmed', 'pending_payment', 'waitlisted', 'cancelled', 'attended', 'no_show', 'rejected')"
+          "value": "\"booking_dogs\".\"status\" in ('confirmed', 'pending_payment', 'waitlisted', 'offered', 'cancelled', 'attended', 'no_show', 'rejected')"
         },
         "booking_dogs_offer_chk": {
           "name": "booking_dogs_offer_chk",
-          "value": "\"booking_dogs\".\"status\" <> 'pending_payment' or \"booking_dogs\".\"offer_expires_at\" is not null"
+          "value": "\"booking_dogs\".\"status\" not in ('offered', 'pending_payment') or \"booking_dogs\".\"offer_expires_at\" is not null"
         },
         "booking_dogs_cancel_chk": {
           "name": "booking_dogs_cancel_chk",
@@ -2963,6 +2963,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 48
+        },
+        "waitlist_offer_hours": {
+          "name": "waitlist_offer_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 12
         },
         "updated_at": {
           "name": "updated_at",
@@ -3913,13 +3920,6 @@
           "notNull": true,
           "default": "'09:00'"
         },
-        "confirm_by_day": {
-          "name": "confirm_by_day",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -3953,10 +3953,6 @@
         "business_settings_times_chk": {
           "name": "business_settings_times_chk",
           "value": "\"business_settings\".\"reminder_time\" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' and \"business_settings\".\"send_time\" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'"
-        },
-        "business_settings_confirm_by_chk": {
-          "name": "business_settings_confirm_by_chk",
-          "value": "\"business_settings\".\"confirm_by_day\" between 1 and 28"
         },
         "business_settings_prefix_chk": {
           "name": "business_settings_prefix_chk",
@@ -4122,6 +4118,82 @@
           "value": "\"card_refunds\".\"status\" in ('requested', 'submitted', 'succeeded', 'failed')"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.checkout_attempt_days": {
+      "name": "checkout_attempt_days",
+      "schema": "",
+      "columns": {
+        "checkout_attempt_id": {
+          "name": "checkout_attempt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "booking_dog_id": {
+          "name": "booking_dog_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "checkout_attempt_days_booking_dog_idx": {
+          "name": "checkout_attempt_days_booking_dog_idx",
+          "columns": [
+            {
+              "expression": "booking_dog_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "checkout_attempt_days_checkout_attempt_id_checkout_attempts_id_fk": {
+          "name": "checkout_attempt_days_checkout_attempt_id_checkout_attempts_id_fk",
+          "tableFrom": "checkout_attempt_days",
+          "tableTo": "checkout_attempts",
+          "columnsFrom": [
+            "checkout_attempt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "checkout_attempt_days_booking_dog_id_booking_dogs_id_fk": {
+          "name": "checkout_attempt_days_booking_dog_id_booking_dogs_id_fk",
+          "tableFrom": "checkout_attempt_days",
+          "tableTo": "booking_dogs",
+          "columnsFrom": [
+            "booking_dog_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "checkout_attempt_days_checkout_attempt_id_booking_dog_id_pk": {
+          "name": "checkout_attempt_days_checkout_attempt_id_booking_dog_id_pk",
+          "columns": [
+            "checkout_attempt_id",
+            "booking_dog_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.checkout_attempts": {
@@ -6386,555 +6458,6 @@
         "welfare_checks_autoshare_chk": {
           "name": "welfare_checks_autoshare_chk",
           "value": "not \"welfare_checks\".\"auto_shared\" or \"welfare_checks\".\"shared\""
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.approval_requests": {
-      "name": "approval_requests",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_key": {
-          "name": "subject_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_at": {
-          "name": "last_error_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "approval_requests_status_created_idx": {
-          "name": "approval_requests_status_created_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "approval_requests_one_pending_uq": {
-          "name": "approval_requests_one_pending_uq",
-          "columns": [
-            {
-              "expression": "type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "subject_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"approval_requests\".\"status\" = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "approval_requests_customer_id_customers_id_fk": {
-          "name": "approval_requests_customer_id_customers_id_fk",
-          "tableFrom": "approval_requests",
-          "tableTo": "customers",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "approval_requests_decided_by_users_id_fk": {
-          "name": "approval_requests_decided_by_users_id_fk",
-          "tableFrom": "approval_requests",
-          "tableTo": "users",
-          "columnsFrom": [
-            "decided_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "approval_requests_status_chk": {
-          "name": "approval_requests_status_chk",
-          "value": "\"approval_requests\".\"status\" in ('pending', 'approved', 'rejected', 'withdrawn', 'expired')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.customer_invites": {
-      "name": "customer_invites",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "customer_invites_token_uq": {
-          "name": "customer_invites_token_uq",
-          "columns": [
-            {
-              "expression": "token_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "customer_invites_user_idx": {
-          "name": "customer_invites_user_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "customer_invites_user_id_users_id_fk": {
-          "name": "customer_invites_user_id_users_id_fk",
-          "tableFrom": "customer_invites",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "customer_invites_created_by_users_id_fk": {
-          "name": "customer_invites_created_by_users_id_fk",
-          "tableFrom": "customer_invites",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.membership_month_confirmations": {
-      "name": "membership_month_confirmations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "month": {
-          "name": "month",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "confirmed_by": {
-          "name": "confirmed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "by_owner": {
-          "name": "by_owner",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {
-        "membership_month_confirmations_uq": {
-          "name": "membership_month_confirmations_uq",
-          "columns": [
-            {
-              "expression": "customer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "month",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "membership_month_confirmations_customer_id_customers_id_fk": {
-          "name": "membership_month_confirmations_customer_id_customers_id_fk",
-          "tableFrom": "membership_month_confirmations",
-          "tableTo": "customers",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "membership_month_confirmations_confirmed_by_users_id_fk": {
-          "name": "membership_month_confirmations_confirmed_by_users_id_fk",
-          "tableFrom": "membership_month_confirmations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "confirmed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "membership_month_confirmations_month_chk": {
-          "name": "membership_month_confirmations_month_chk",
-          "value": "\"membership_month_confirmations\".\"month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.membership_offers": {
-      "name": "membership_offers",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dog_name": {
-          "name": "dog_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dog_id": {
-          "name": "dog_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "weekdays": {
-          "name": "weekdays",
-          "type": "integer[]",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session": {
-          "name": "session",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "taxi": {
-          "name": "taxi",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "starts_on": {
-          "name": "starts_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "membership_offers_customer_idx": {
-          "name": "membership_offers_customer_idx",
-          "columns": [
-            {
-              "expression": "customer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "membership_offers_customer_id_customers_id_fk": {
-          "name": "membership_offers_customer_id_customers_id_fk",
-          "tableFrom": "membership_offers",
-          "tableTo": "customers",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "membership_offers_dog_id_dogs_id_fk": {
-          "name": "membership_offers_dog_id_dogs_id_fk",
-          "tableFrom": "membership_offers",
-          "tableTo": "dogs",
-          "columnsFrom": [
-            "dog_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "membership_offers_created_by_users_id_fk": {
-          "name": "membership_offers_created_by_users_id_fk",
-          "tableFrom": "membership_offers",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "membership_offers_dog_name_chk": {
-          "name": "membership_offers_dog_name_chk",
-          "value": "length(\"membership_offers\".\"dog_name\") between 1 and 60"
-        },
-        "membership_offers_session_chk": {
-          "name": "membership_offers_session_chk",
-          "value": "\"membership_offers\".\"session\" in ('full', 'am', 'pm')"
-        },
-        "membership_offers_weekdays_chk": {
-          "name": "membership_offers_weekdays_chk",
-          "value": "cardinality(\"membership_offers\".\"weekdays\") between 1 and 7 and \"membership_offers\".\"weekdays\" <@ array[1,2,3,4,5,6,7]"
         }
       },
       "isRLSEnabled": false

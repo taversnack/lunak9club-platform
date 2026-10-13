@@ -1,5 +1,12 @@
 /** Allowed upload types (D29). The type is decided from the file's bytes, never its name or browser-declared type. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+/** An incident report can carry up to this many photos or PDFs, each up to MAX_UPLOAD_BYTES (D62). */
+export const MAX_INCIDENT_PHOTOS = 5;
+/**
+ * Server Action body limit in MB (`next.config.ts`). It must fit the largest form, an incident report
+ * with every photo at full size, plus 2 MB for the other fields and multipart overhead (review L4).
+ */
+export const SERVER_ACTION_BODY_LIMIT_MB = Math.ceil((MAX_INCIDENT_PHOTOS * MAX_UPLOAD_BYTES) / (1024 * 1024)) + 2;
 
 export type AllowedType = {
   mime: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp' | 'image/heic';

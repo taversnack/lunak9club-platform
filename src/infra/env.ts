@@ -39,14 +39,36 @@ let cached: Env | undefined;
 /** Validated environment. Parsed lazily so `next build` can import modules without runtime secrets. */
 export function env(): Env {
   if (cached) return cached;
+  // A production server (`next start`) must say which environment it is: defaulting to
+  // 'development' would switch off every production check below. Tests and e2e set APP_ENV=test.
+  if (process.env.NODE_ENV === 'production' && !process.env.APP_ENV) {
+    throw new Error('APP_ENV must be set when running a production build (production, or test for e2e).');
+  }
   const parsed = EnvSchema.safeParse(process.env);
   if (!parsed.success) {
     const fields = parsed.error.issues.map((i) => i.path.join('.')).join(', ');
     throw new Error(`Invalid environment configuration: ${fields}`);
   }
-  if (parsed.data.APP_ENV === 'production' && parsed.data.EMAIL_TRANSPORT !== 'smtp') {
-    throw new Error('Production requires a real email transport.');
+  if (parsed.data.APP_ENV === 'production') {
+    const problems = productionProblems(parsed.data);
+    if (problems.length) throw new Error(`Unsafe production configuration: ${problems.join('; ')}`);
   }
   cached = parsed.data;
   return cached;
+}
+
+/** Settings whose development defaults are unsafe or broken in production (names only, never values). */
+function productionProblems(e: Env): string[] {
+  const out: string[] = [];
+  if (e.EMAIL_TRANSPORT !== 'smtp') out.push('Production requires a real email transport (EMAIL_TRANSPORT=smtp)');
+  if (e.EMAIL_SANDBOX !== '0') out.push('EMAIL_SANDBOX must be 0');
+  if (!e.APP_URL.startsWith('https://')) out.push('APP_URL must be an https:// address');
+  if (e.PAYMENTS_DRIVER !== 'stripe') out.push('PAYMENTS_DRIVER must be stripe');
+  else if (!e.STRIPE_SECRET_KEY || !e.STRIPE_WEBHOOK_SECRET)
+    out.push('STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are required');
+  if (e.STORAGE_DRIVER !== 's3') out.push('STORAGE_DRIVER must be s3');
+  else if (!e.S3_ENDPOINT || !e.S3_BUCKET || !e.S3_ACCESS_KEY_ID || !e.S3_SECRET_ACCESS_KEY)
+    out.push('S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required');
+  if (!e.CRON_SECRET) out.push('CRON_SECRET is required (the scheduler is off without it)');
+  return out;
 }

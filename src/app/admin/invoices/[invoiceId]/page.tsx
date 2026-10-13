@@ -7,6 +7,7 @@ import { InvoiceState } from '@/ui/invoice-state';
 import { formatDateTimeLondon } from '@/ui/format';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
+import { orNotFound } from '@/server/not-found';
 import { ownerInvoice } from '@/server/services/billing';
 import { formatMonth } from '@/domain/billing/rules';
 import { pounds } from '@/domain/pricing/engine';
@@ -39,7 +40,7 @@ export default async function OwnerInvoicePage({
 }) {
   const [{ invoiceId }, sp] = await Promise.all([params, searchParams]);
   const actor = await requirePermission('invoices.manage');
-  const d = await ownerInvoice(getDb(), actor, invoiceId);
+  const d = await orNotFound(ownerInvoice(getDb(), actor, invoiceId));
   const inv = d.inv;
   const issued = Boolean(inv.number);
   const creditable = d.lines.filter((l) => !l.creditedBy && l.amountPence > 0);

@@ -37,6 +37,7 @@ import { applyRefundUpdate, queueCardRefunds, submitPendingRefunds } from './car
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 const SYSTEM: Actor = { kind: 'system', job: 'payments' };
+const NO_ID = '00000000-0000-0000-0000-000000000000';
 
 /** Places a customer books are held for 31 minutes while they pay (D6; Stripe's minimum is 30). */
 export const CUSTOMER_HOLD_MINUTES = 31;
@@ -65,7 +66,17 @@ async function customerContact(q: Db | Tx, customerId: string) {
   return row;
 }
 
-async function pendingDays(q: Db | Tx, bookingId: string) {
+/** The booking days an attempt pays for; null for attempts opened before days were recorded. */
+async function attemptDayIds(q: Db | Tx, attemptId: string) {
+  const rows = await q
+    .select({ id: checkoutAttemptDays.bookingDogId })
+    .from(checkoutAttemptDays)
+    .where(eq(checkoutAttemptDays.checkoutAttemptId, attemptId));
+  return rows.length ? rows.map((r) => r.id) : null;
+}
+
+/** Held days on a booking, limited to `ids` when given (one checkout's days). */
+async function pendingDays(q: Db | Tx, bookingId: string, ids: string[] | null) {
   return q
     .select({
       id: bookingDogs.id,
@@ -79,7 +90,13 @@ async function pendingDays(q: Db | Tx, bookingId: string) {
     .from(bookingDogs)
     .innerJoin(dogs, eq(dogs.id, bookingDogs.dogId))
     .innerJoin(priceSnapshots, eq(priceSnapshots.bookingDogId, bookingDogs.id))
-    .where(and(eq(bookingDogs.bookingId, bookingId), eq(bookingDogs.status, 'pending_payment')))
+    .where(
+      and(
+        eq(bookingDogs.bookingId, bookingId),
+        eq(bookingDogs.status, 'pending_payment'),
+        ids ? inArray(bookingDogs.id, ids.length ? ids : [NO_ID]) : undefined,
+      ),
+    )
     .orderBy(asc(bookingDogs.serviceDate), asc(dogs.name));
 }
 
@@ -510,7 +527,7 @@ async function releaseOrphanHolds(db: Db, now: Date) {
   return released;
 }
 
-async function releaseHolds(q: Db | Tx, bookingId: string, now: Date, note: string) {
+async function releaseHolds(q: Db | Tx, bookingId: string, now: Date, note: string, ids: string[] | null) {
   const released = await q
     .update(bookingDogs)
     .set({
@@ -521,7 +538,13 @@ async function releaseHolds(q: Db | Tx, bookingId: string, now: Date, note: stri
       internalNote: note,
       version: sql`${bookingDogs.version} + 1`,
     })
-    .where(and(eq(bookingDogs.bookingId, bookingId), eq(bookingDogs.status, 'pending_payment')))
+    .where(
+      and(
+        eq(bookingDogs.bookingId, bookingId),
+        eq(bookingDogs.status, 'pending_payment'),
+        ids ? inArray(bookingDogs.id, ids.length ? ids : [NO_ID]) : undefined,
+      ),
+    )
     .returning({ id: bookingDogs.id });
   return released.length;
 }
@@ -615,7 +638,7 @@ async function completeBookingPayment(
   amountPence: number,
   now: Date,
 ) {
-  const days = await pendingDays(tx, attempt.bookingId!);
+  const days = await pendingDays(tx, attempt.bookingId!, await attemptDayIds(tx, attempt.id));
   const settings = await loadSettings(tx);
   const locked = await lockDays(
     tx,
@@ -764,7 +787,9 @@ export async function releaseCheckout(
       .update(checkoutAttempts)
       .set({ status: 'expired', completedAt: now })
       .where(eq(checkoutAttempts.id, attemptId));
-    const n = locked.bookingId ? await releaseHolds(tx, locked.bookingId, now, opts.reason) : 0;
+    const n = locked.bookingId
+      ? await releaseHolds(tx, locked.bookingId, now, opts.reason, await attemptDayIds(tx, locked.id))
+      : 0;
     await recordAudit(tx, {
       actor: SYSTEM,
       action: 'payment.checkout_released',
@@ -779,6 +804,35 @@ export async function releaseCheckout(
     await sendSafely(holdReleasedMessage(who.email, firstNameOf(who.name), 'your booking', appUrl('/account/book')));
   }
   return { released };
+}
+
+/**
+ * After a credit note or manual payment lowers what's owed, close any open card checkout on the
+ * invoice that would now take more than is due (review L2), so the customer isn't charged and then
+ * refunded. Best effort: the credit or payment has already been saved, and a checkout that can't
+ * be closed now still expires on schedule (any payment taken is refunded automatically, D58).
+ */
+export async function releaseOverchargingCheckouts(db: Db, invoiceId: string, now = new Date()) {
+  const open = await db
+    .select({ id: checkoutAttempts.id, amountPence: checkoutAttempts.amountPence })
+    .from(checkoutAttempts)
+    .where(and(eq(checkoutAttempts.invoiceId, invoiceId), eq(checkoutAttempts.status, 'open')));
+  if (!open.length) return 0;
+  const due = (await balances(db, [invoiceId])).get(invoiceId)?.duePence ?? 0;
+  let closed = 0;
+  for (const a of open) {
+    if (a.amountPence <= due) continue;
+    try {
+      const r = await releaseCheckout(db, a.id, { reason: 'Amount owed changed', notify: false }, now);
+      if (!r.paid) closed++;
+    } catch (err) {
+      logger.warn(
+        { err, checkoutAttemptId: a.id },
+        'could not close an invoice checkout after the amount owed changed',
+      );
+    }
+  }
+  return closed;
 }
 
 /** Scheduler: free places whose payment time has run out (and pick up any late payments). */
@@ -806,22 +860,48 @@ export async function reconcileOpenCheckouts(db: Db, now = new Date()) {
     .where(
       and(eq(checkoutAttempts.status, 'open'), lte(checkoutAttempts.createdAt, new Date(now.getTime() - 5 * 60_000))),
     )
+    .orderBy(asc(checkoutAttempts.createdAt))
     .limit(50);
   let paid = 0;
-  for (const a of open) if ((await completeCheckout(db, a.id, now)).paid) paid++;
-  return { checked: open.length, paid };
+  let errors = 0;
+  for (const a of open) {
+    try {
+      if ((await completeCheckout(db, a.id, now)).paid) paid++;
+    } catch (err) {
+      errors++;
+      logger.error({ attempt: a.id, err: err instanceof Error ? err.name : 'unknown' }, 'checking checkout failed');
+    }
+  }
+  return { checked: open.length, paid, errors };
 }
 
-/** The customer's open booking checkout for this booking (if they cancel or abandon, it's released). */
-export async function releaseBookingHold(db: Db, bookingId: string, reason: string, now = new Date()) {
+/**
+ * Cancel one held (unpaid) day: release the open checkout(s) that include it, which frees the
+ * days paid for together with it, then free the day itself if no checkout covered it (e.g. the
+ * provider was down). Other checkouts on the same booking are left alone.
+ */
+export async function releaseBookingHold(
+  db: Db,
+  bookingId: string,
+  bookingDogId: string,
+  reason: string,
+  now = new Date(),
+) {
   const open = await db
-    .select({ id: checkoutAttempts.id })
+    .selectDistinct({ id: checkoutAttempts.id })
     .from(checkoutAttempts)
-    .where(and(eq(checkoutAttempts.bookingId, bookingId), eq(checkoutAttempts.status, 'open')));
+    .leftJoin(checkoutAttemptDays, eq(checkoutAttemptDays.checkoutAttemptId, checkoutAttempts.id))
+    .where(
+      and(
+        eq(checkoutAttempts.bookingId, bookingId),
+        eq(checkoutAttempts.status, 'open'),
+        // Attempts from before days were recorded have no rows: treat them as covering the booking.
+        or(eq(checkoutAttemptDays.bookingDogId, bookingDogId), isNull(checkoutAttemptDays.bookingDogId)),
+      ),
+    );
   let released = 0;
   for (const a of open) released += (await releaseCheckout(db, a.id, { reason, notify: false }, now)).released;
-  // Holds with no open checkout (e.g. the provider was down) are freed directly.
-  released += await releaseHolds(db, bookingId, now, reason);
+  released += await releaseHolds(db, bookingId, now, reason, [bookingDogId]);
   return released;
 }
 
@@ -1008,7 +1088,7 @@ export async function handleWebhook(db: Db, rawBody: string, signature: string |
           );
       }
     } else if (event.type.startsWith('refund.') && event.refundStatus) {
-      await applyRefundUpdate(db, event.objectId, event.refundStatus);
+      await applyRefundUpdate(db, event.objectId, event.refundStatus, event.refundReference);
     }
     await db
       .update(webhookEvents)

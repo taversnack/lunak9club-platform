@@ -45,13 +45,17 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
         <Link href="/account/faq#faq-extra">How extra days work</Link>
       </p>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      <Alert tone="info" title="How booking works">
-        <p>{REQUEST_NOT_SECURED}</p>
-      </Alert>
-      {bookable.length === 0 && trialable.length === 0 ? (
-        <Alert tone="info" title="Nothing to book yet">
-          Your dog needs to be approved before you can book. <Link href="/account">See what’s left to do</Link>.
-        </Alert>
+      {bookable.length === 0 ? (
+        dogs.length === 0 ? (
+          <Alert tone="info" title="Add your dog to start booking">
+            You haven’t added a dog yet. <Link href="/account/dogs/new">Add a dog</Link> and we’ll take you through the
+            rest.
+          </Alert>
+        ) : (
+          <Alert tone="info" title="Nothing to book yet">
+            Your dog needs to be approved before you can book. <Link href="/account">See what’s left to do</Link>.
+          </Alert>
+        )
       ) : (
         <form method="get" action="/account/book/review">
           <Stack>

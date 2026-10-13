@@ -1,6 +1,7 @@
 import 'server-only';
 import { BOOKED_STATUSES, isStatusIn, LIVE_STATUSES, OPEN_STATUSES } from '@/domain/booking/rules';
 import { raiseRefundRequests } from './billing';
+import { csvCell } from '../csv';
 import { submitPendingRefunds } from './card-refunds';
 import {
   ownerHoldUntil,
@@ -431,7 +432,7 @@ export async function ownerCancel(db: Db, actor: Actor, rawId: string, input: un
   // Someone on the waitlist never had a place, so there's nothing to charge.
   const charge = d.charge && bd.status !== 'waitlisted';
   if (bd.status === 'pending_payment') {
-    await releaseBookingHold(db, bd.bookingId, `Cancelled by Luna’s K9 Club before payment: ${d.reason}`, now);
+    await releaseBookingHold(db, bd.bookingId, bd.id, `Cancelled by Luna’s K9 Club before payment: ${d.reason}`, now);
     await recordAudit(db, { actor, action: 'booking.hold_cancelled', entityType: 'booking_dog', entityId: bd.id });
     return;
   }
@@ -620,6 +621,7 @@ export async function ownerCreateBooking(db: Db, actor: Actor, input: unknown, n
       db,
       {
         bookingId,
+        bookingDogIds: [id],
         customerId: dog.customerId,
         createdBy: actor.kind === 'user' ? actor.userId : null,
         expiresAt: hold,
@@ -765,12 +767,7 @@ export async function ownerBookableDogs(db: Db, actor: Actor) {
 
 // ---- CSV exports (D35) -------------------------------------------------------
 
-/** Escape a CSV cell and neutralise spreadsheet formula injection. */
-export function csvCell(v: unknown): string {
-  let s = v == null ? '' : String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+export { csvCell };
 const csv = (rows: unknown[][]) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
 export async function attendanceCsv(db: Db, actor: Actor, date: IsoDate) {

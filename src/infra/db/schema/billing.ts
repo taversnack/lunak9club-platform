@@ -1,5 +1,17 @@
 import { sql } from 'drizzle-orm';
-import { check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  date,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { users } from './auth';
 import { customers } from './customers';
 import { bookingDogs } from './booking';
@@ -336,6 +348,27 @@ export const checkoutAttempts = pgTable(
       'checkout_attempts_target_chk',
       sql`(${t.purpose} = 'booking' and ${t.bookingId} is not null) or (${t.purpose} = 'invoice' and ${t.invoiceId} is not null)`,
     ),
+  ],
+);
+
+/**
+ * The exact booking days a booking checkout pays for. Several checkouts can share a bookingId
+ * (offers from one original request accepted separately), so every payment path is scoped to
+ * these rows, never to "everything pending on the booking".
+ */
+export const checkoutAttemptDays = pgTable(
+  'checkout_attempt_days',
+  {
+    checkoutAttemptId: uuid()
+      .notNull()
+      .references(() => checkoutAttempts.id, { onDelete: 'cascade' }),
+    bookingDogId: uuid()
+      .notNull()
+      .references(() => bookingDogs.id, { onDelete: 'restrict' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.checkoutAttemptId, t.bookingDogId] }),
+    index('checkout_attempt_days_booking_dog_idx').on(t.bookingDogId),
   ],
 );
 

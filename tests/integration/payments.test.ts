@@ -26,7 +26,7 @@ import {
   resumeCheckoutUrl,
   startInvoiceCheckout,
 } from '@/server/services/payments';
-import { retryCardRefund } from '@/server/services/card-refunds';
+import { ownerCardRefunds, retryCardRefund, submitPendingRefunds } from '@/server/services/card-refunds';
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
@@ -38,6 +38,14 @@ import { approvedDog, readyCustomer } from '../support/onboard';
 
 /** Simulated Stripe that also accepts "signed" test webhooks (signature must be "valid"). */
 class TestProvider extends SimulatedPaymentProvider {
+  /** Make refunds go through but lose the answer, like a timeout after Stripe created them. */
+  loseRefundAnswers = false;
+  override async refund(paymentId: string, amountPence: number, key: string, reference: string) {
+    const res = await super.refund(paymentId, amountPence, key, reference);
+    return this.loseRefundAnswers
+      ? { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' }
+      : res;
+  }
   override parseWebhook(raw: string, signature: string | null): WebhookEvent {
     if (signature !== 'valid') throw new Error('No signatures found matching the expected signature');
     return JSON.parse(raw) as WebhookEvent;
@@ -202,6 +210,88 @@ describe('pay at booking (D6)', () => {
   });
 });
 
+describe('two offers from one request (same bookingId)', () => {
+  it('each checkout pays for, confirms and releases only its own day', async () => {
+    const d1 = weekdayAhead(50);
+    const d2 = weekdayAhead(51);
+    for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
+    const w = await createMyBookings(db(), quinn, {
+      dogIds: [quinnDog],
+      dates: [d1, d2],
+      session: 'full',
+      taxi: false,
+      ifFull: 'waitlist',
+    });
+    expect(w.outcomes.map((o) => o.outcome)).toEqual(['waitlisted', 'waitlisted']);
+    for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 20, taxiCapacity: 20 });
+    const row = async (date: string) =>
+      (
+        await db()
+          .select()
+          .from(bookingDogs)
+          .where(and(eq(bookingDogs.dogId, quinnDog), eq(bookingDogs.serviceDate, date)))
+      )[0]!;
+    const [w1, w2] = [await row(d1), await row(d2)];
+    expect(w1.bookingId).toBe(w2.bookingId);
+    await offerPlace(db(), owner, w1.id, { version: w1.version });
+    await offerPlace(db(), owner, w2.id, { version: w2.version });
+
+    // Both accepted within the hold: two open checkouts on one bookingId, one day each.
+    await acceptOffer(db(), quinn, w1.id);
+    await acceptOffer(db(), quinn, w2.id);
+    const [second, first] = await attemptsFor(quinn.userId);
+    expect(first!.amountPence).toBe(5000);
+    expect(second!.amountPence).toBe(5000);
+
+    // Paying the first confirms only day 1 and bills only day 1.
+    stripe.pay(first!.providerSessionId!);
+    await completeCheckout(db(), first!.id);
+    expect((await row(d1)).status).toBe('confirmed');
+    expect((await row(d2)).status).toBe('pending_payment');
+    const [paid] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, first!.id));
+    const lines = await db().select().from(invoiceLines).where(eq(invoiceLines.invoiceId, paid!.resultInvoiceId!));
+    expect(lines.map((l) => l.serviceDate)).toEqual([d1]);
+
+    // Cancelling the unpaid day 2 releases only its own checkout; the paid day is untouched.
+    await cancelMyBooking(db(), quinn, w2.id);
+    expect((await row(d2)).status).toBe('cancelled');
+    expect((await row(d1)).status).toBe('confirmed');
+    const [rel] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, second!.id));
+    expect(rel!.status).toBe('expired');
+  });
+
+  it('an expired checkout releases only its own day, not a newer hold on the same booking', async () => {
+    const d1 = weekdayAhead(53);
+    const d2 = weekdayAhead(54);
+    for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
+    await createMyBookings(db(), quinn, {
+      dogIds: [quinnDog],
+      dates: [d1, d2],
+      session: 'full',
+      taxi: false,
+      ifFull: 'waitlist',
+    });
+    for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 20, taxiCapacity: 20 });
+    const row = async (date: string) =>
+      (
+        await db()
+          .select()
+          .from(bookingDogs)
+          .where(and(eq(bookingDogs.dogId, quinnDog), eq(bookingDogs.serviceDate, date)))
+      )[0]!;
+    const [w1, w2] = [await row(d1), await row(d2)];
+    await offerPlace(db(), owner, w1.id, { version: w1.version });
+    await offerPlace(db(), owner, w2.id, { version: w2.version });
+    const t0 = new Date();
+    await acceptOffer(db(), quinn, w1.id, t0);
+    await acceptOffer(db(), quinn, w2.id, new Date(t0.getTime() + 20 * 60_000));
+    // 32 minutes on: the first checkout has run out, the second still has ~19 minutes.
+    await releaseExpiredCheckouts(db(), new Date(t0.getTime() + 32 * 60_000));
+    expect((await row(d1)).status).toBe('cancelled');
+    expect((await row(d2)).status).toBe('pending_payment');
+  });
+});
+
 describe('automatic refunds (D20, D58)', () => {
   it('a paid day cancelled 48 h+ ahead goes back to the card, with a credit note', async () => {
     const date = weekdayAhead(44);
@@ -237,6 +327,38 @@ describe('automatic refunds (D20, D58)', () => {
     const [cn] = await db().select().from(creditNotes).where(eq(creditNotes.id, ok!.creditNoteId!));
     expect(cn!.refundState).toBe('refunded');
     await expect(retryCardRefund(db(), owner, failed!.id)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('a refund whose answer was lost stays pending, and the webhook settles it by our id without a second refund', async () => {
+    const date = weekdayAhead(47);
+    await createMyBookings(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false });
+    const a = await payLatest(pia.userId);
+    const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+    stripe.loseRefundAnswers = true;
+    await cancelMyBooking(db(), pia, bd!.id);
+    stripe.loseRefundAnswers = false;
+    const sent = stripe.refunds.at(-1)!;
+    const [pay] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    const [r] = await db().select().from(cardRefunds).where(eq(cardRefunds.paymentId, pay!.id));
+    expect(r).toMatchObject({ status: 'submitted', providerRefundId: null });
+    expect((await ownerCardRefunds(db(), owner)).failed.map((x) => x.r.id)).not.toContain(r!.id);
+
+    const body = JSON.stringify({
+      id: `evt_refund_${r!.id}`,
+      type: 'refund.updated',
+      objectId: sent.id,
+      refundStatus: 'succeeded',
+      refundReference: r!.id,
+    });
+    await handleWebhook(db(), body, 'valid');
+    const [settled] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
+    expect(settled).toMatchObject({ status: 'succeeded', providerRefundId: sent.id });
+    const [cn] = await db().select().from(creditNotes).where(eq(creditNotes.id, settled!.creditNoteId!));
+    expect(cn!.refundState).toBe('refunded');
+    // The safety net has nothing left to resend.
+    const count = stripe.refunds.length;
+    await submitPendingRefunds(db());
+    expect(stripe.refunds.length).toBe(count);
   });
 });
 

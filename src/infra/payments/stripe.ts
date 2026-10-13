@@ -48,8 +48,16 @@ export class StripePaymentProvider implements PaymentProvider {
     };
   }
 
-  async getCheckout(id: string) {
-    return this.state(await this.stripe.checkout.sessions.retrieve(id));
+  async getCheckout(id: string): Promise<CheckoutState> {
+    try {
+      return this.state(await this.stripe.checkout.sessions.retrieve(id));
+    } catch (err) {
+      // A session Stripe has no record of (e.g. one made with test keys before going live) can never
+      // be paid: report it expired, as the simulated provider does, so its hold is released.
+      if (err instanceof Stripe.errors.StripeInvalidRequestError && err.code === 'resource_missing')
+        return { id, status: 'expired', paid: false, amountPence: 0, paymentId: null };
+      throw err;
+    }
   }
 
   async expireCheckout(id: string) {
@@ -63,12 +71,26 @@ export class StripePaymentProvider implements PaymentProvider {
     }
   }
 
-  async refund(paymentId: string, amountPence: number, idempotencyKey: string): Promise<RefundResult> {
+  async refund(
+    paymentId: string,
+    amountPence: number,
+    idempotencyKey: string,
+    reference: string,
+  ): Promise<RefundResult> {
     try {
-      const r = await this.stripe.refunds.create(
-        { payment_intent: paymentId, amount: amountPence, reason: 'requested_by_customer' },
-        { idempotencyKey },
-      );
+      // An earlier attempt may have created the refund even though we never got the answer (e.g. a
+      // timeout), and Stripe forgets idempotency keys after about 24 hours, so look for it first.
+      const r =
+        (await this.findRefund(paymentId, reference)) ??
+        (await this.stripe.refunds.create(
+          {
+            payment_intent: paymentId,
+            amount: amountPence,
+            reason: 'requested_by_customer',
+            metadata: { cardRefundId: reference },
+          },
+          { idempotencyKey },
+        ));
       return {
         id: r.id,
         status:
@@ -80,15 +102,27 @@ export class StripePaymentProvider implements PaymentProvider {
         failureReason: r.failure_reason ?? undefined,
       };
     } catch (err) {
-      return { id: '', status: 'failed', failureReason: err instanceof Error ? err.message.slice(0, 200) : 'unknown' };
+      // Only a definite rejection is a failure. Timeouts, connection, rate-limit and Stripe-side
+      // errors leave the outcome unknown: report it as pending so the refund is tried again later
+      // (same idempotency key, and findRefund stops a second refund).
+      const rejected =
+        err instanceof Stripe.errors.StripeCardError || err instanceof Stripe.errors.StripeInvalidRequestError;
+      const reason = err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 200) : 'unknown';
+      return { id: '', status: rejected ? 'failed' : 'pending', failureReason: reason };
     }
+  }
+
+  private async findRefund(paymentId: string, reference: string): Promise<Stripe.Refund | null> {
+    for await (const r of this.stripe.refunds.list({ payment_intent: paymentId, limit: 100 }))
+      if (r.metadata?.cardRefundId === reference) return r;
+    return null;
   }
 
   parseWebhook(rawBody: string, signature: string | null): WebhookEvent {
     if (!this.webhookSecret) throw new Error('STRIPE_WEBHOOK_SECRET is not set');
     if (!signature) throw new Error('Missing Stripe-Signature header');
     const e = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
-    const obj = e.data.object as { id: string; status?: string };
+    const obj = e.data.object as { id: string; status?: string; metadata?: Record<string, string> | null };
     const refundStatus =
       e.type.startsWith('refund.') && obj.status
         ? obj.status === 'succeeded'
@@ -97,6 +131,7 @@ export class StripePaymentProvider implements PaymentProvider {
             ? 'failed'
             : 'pending'
         : undefined;
-    return { id: e.id, type: e.type, objectId: obj.id, refundStatus };
+    const refundReference = e.type.startsWith('refund.') ? obj.metadata?.cardRefundId : undefined;
+    return { id: e.id, type: e.type, objectId: obj.id, refundStatus, refundReference };
   }
 }
