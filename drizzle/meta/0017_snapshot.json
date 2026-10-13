@@ -1900,7 +1900,7 @@
           "type": "integer[]",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{30,14,7}'::integer[]"
+          "default": "'{60,30,14,7}'::integer[]"
         },
         "sort_order": {
           "name": "sort_order",
@@ -1981,6 +1981,12 @@
         },
         "administered_on": {
           "name": "administered_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "primary_course_completed_on": {
+          "name": "primary_course_completed_on",
           "type": "date",
           "primaryKey": false,
           "notNull": false
@@ -3828,14 +3834,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'Luna’s K9 Club'"
+          "default": "'Luna\u2019s K9 Club'"
         },
         "legal_name": {
           "name": "legal_name",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'Luna’s K9 Club Ltd'"
+          "default": "'Luna\u2019s K9 Club Ltd'"
         },
         "company_number": {
           "name": "company_number",
@@ -3914,19 +3920,19 @@
           "notNull": true,
           "default": "'09:00'"
         },
-        "confirm_by_day": {
-          "name": "confirm_by_day",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "confirm_by_day": {
+          "name": "confirm_by_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
         }
       },
       "indexes": {},
@@ -3955,13 +3961,13 @@
           "name": "business_settings_times_chk",
           "value": "\"business_settings\".\"reminder_time\" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' and \"business_settings\".\"send_time\" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'"
         },
-        "business_settings_confirm_by_chk": {
-          "name": "business_settings_confirm_by_chk",
-          "value": "\"business_settings\".\"confirm_by_day\" between 1 and 28"
-        },
         "business_settings_prefix_chk": {
           "name": "business_settings_prefix_chk",
           "value": "\"business_settings\".\"invoice_prefix\" ~ '^[A-Z0-9][A-Z0-9-]{0,15}$'"
+        },
+        "business_settings_confirm_by_chk": {
+          "name": "business_settings_confirm_by_chk",
+          "value": "\"business_settings\".\"confirm_by_day\" between 1 and 28"
         }
       },
       "isRLSEnabled": false
@@ -6550,227 +6556,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.customer_invites": {
-      "name": "customer_invites",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "customer_invites_token_uq": {
-          "name": "customer_invites_token_uq",
-          "columns": [
-            {
-              "expression": "token_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "customer_invites_user_idx": {
-          "name": "customer_invites_user_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "customer_invites_user_id_users_id_fk": {
-          "name": "customer_invites_user_id_users_id_fk",
-          "tableFrom": "customer_invites",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "customer_invites_created_by_users_id_fk": {
-          "name": "customer_invites_created_by_users_id_fk",
-          "tableFrom": "customer_invites",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.membership_month_confirmations": {
-      "name": "membership_month_confirmations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "month": {
-          "name": "month",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "confirmed_by": {
-          "name": "confirmed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "by_owner": {
-          "name": "by_owner",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {
-        "membership_month_confirmations_uq": {
-          "name": "membership_month_confirmations_uq",
-          "columns": [
-            {
-              "expression": "customer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "month",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "membership_month_confirmations_customer_id_customers_id_fk": {
-          "name": "membership_month_confirmations_customer_id_customers_id_fk",
-          "tableFrom": "membership_month_confirmations",
-          "tableTo": "customers",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "membership_month_confirmations_confirmed_by_users_id_fk": {
-          "name": "membership_month_confirmations_confirmed_by_users_id_fk",
-          "tableFrom": "membership_month_confirmations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "confirmed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "membership_month_confirmations_month_chk": {
-          "name": "membership_month_confirmations_month_chk",
-          "value": "\"membership_month_confirmations\".\"month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.membership_offers": {
       "name": "membership_offers",
       "schema": "",
@@ -6926,6 +6711,227 @@
           "value": "cardinality(\"membership_offers\".\"weekdays\") between 1 and 7 and \"membership_offers\".\"weekdays\" <@ array[1,2,3,4,5,6,7]"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.membership_month_confirmations": {
+      "name": "membership_month_confirmations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "month": {
+          "name": "month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "confirmed_by": {
+          "name": "confirmed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "by_owner": {
+          "name": "by_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "membership_month_confirmations_uq": {
+          "name": "membership_month_confirmations_uq",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "month",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "membership_month_confirmations_customer_id_customers_id_fk": {
+          "name": "membership_month_confirmations_customer_id_customers_id_fk",
+          "tableFrom": "membership_month_confirmations",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "membership_month_confirmations_confirmed_by_users_id_fk": {
+          "name": "membership_month_confirmations_confirmed_by_users_id_fk",
+          "tableFrom": "membership_month_confirmations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "confirmed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "membership_month_confirmations_month_chk": {
+          "name": "membership_month_confirmations_month_chk",
+          "value": "\"membership_month_confirmations\".\"month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_invites": {
+      "name": "customer_invites",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_invites_token_uq": {
+          "name": "customer_invites_token_uq",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_invites_user_idx": {
+          "name": "customer_invites_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_invites_user_id_users_id_fk": {
+          "name": "customer_invites_user_id_users_id_fk",
+          "tableFrom": "customer_invites",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "customer_invites_created_by_users_id_fk": {
+          "name": "customer_invites_created_by_users_id_fk",
+          "tableFrom": "customer_invites",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },
