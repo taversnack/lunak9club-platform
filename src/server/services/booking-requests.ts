@@ -22,7 +22,7 @@ import {
 } from './approvals';
 import { daysOverview, describeSession, loadSettings, lockDays } from './booking-shared';
 import { evaluateDogs } from './compliance-facts';
-import { ownerHoldUntil, sessionStartInstant, startBookingCheckout } from './payments';
+import { ownerHoldUntil, sessionStartInstant, startBookingCheckout, PayLinkUnavailableError } from './payments';
 
 /**
  * booking.request (D76–D80, D83, D85): a customer's ad hoc days, member extra days and trial days
@@ -174,14 +174,22 @@ registerApprovalType<BookingRequestPayload>({
       const held = rows.filter((r) => r.status === 'pending_payment' && r.offerExpiresAt);
       if (held.length) {
         const expiresAt = held.map((r) => r.offerExpiresAt!).reduce((a, b) => (a < b ? a : b));
-        await startBookingCheckout(db, {
-          bookingId: req.payload.bookingId,
-          customerId: req.customerId,
-          createdBy: null,
-          expiresAt,
-          notifyByEmail: true,
-          approvedRequest: true,
-        });
+        try {
+          // Retried; if the provider is still down the places stay held, the customer can open
+          // "Pay now" later and the Owner sees "Resend pay link" (failure recorded and audited).
+          await startBookingCheckout(db, {
+            bookingId: req.payload.bookingId,
+            customerId: req.customerId,
+            createdBy: null,
+            expiresAt,
+            notifyByEmail: true,
+            approvedRequest: true,
+            tries: 3,
+            keepHoldOnFailure: true,
+          });
+        } catch (err) {
+          if (!(err instanceof PayLinkUnavailableError)) throw err;
+        }
       }
       const confirmed = rows.filter((r) => r.status === 'confirmed');
       if (confirmed.length) {

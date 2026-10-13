@@ -8,6 +8,8 @@ import {
   releaseBookingHold,
   sessionStartInstant,
   startBookingCheckout,
+  PayLinkUnavailableError,
+  bookingsMissingPayLink,
 } from './payments';
 import { and, asc, eq, gte, inArray, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -52,6 +54,7 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
         id: bookingDogs.id,
         session: bookingDogs.session,
         taxi: bookingDogs.taxi,
+        bookingId: bookingDogs.bookingId,
         status: bookingDogs.status,
         offerExpiresAt: bookingDogs.offerExpiresAt,
         checkedInAt: bookingDogs.checkedInAt,
@@ -80,6 +83,7 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
       .orderBy(asc(dogs.name)),
   ]);
   const evals = await evaluateDogs(db, [...new Set(rows.map((r) => r.dogId))], now);
+  const missingPay = new Set((await bookingsMissingPayLink(db, actor, { date }, now)).flatMap((m) => m.bookingDogIds));
   const withWarnings = rows.map((r) => {
     const e = evals.get(r.dogId);
     const blocks: AttendanceBlocks = e ? blocksForEvaluation(e, date) : { hard: [], overridable: [] };
@@ -91,6 +95,8 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
       /** D82: a dog failing the vaccination check for this date can't be given a place. */
       giveBlock: vacc ? `Can’t give a place: ${vacc}` : null,
       holdLive: r.status === 'pending_payment' && !!r.offerExpiresAt && r.offerExpiresAt > now,
+      /** Held for payment but the pay link couldn't be created – the Owner can resend it. */
+      payLinkMissing: missingPay.has(r.id),
       /** Check-in is refused – no override (D42, D73, D74). */
       checkInBlocked: blocks.hard[0] ?? null,
       /** Check-in needs an Owner reason (kennel cough, D73). */
@@ -335,18 +341,26 @@ export async function giveWaitlistPlace(db: Db, actor: Actor, rawId: string, inp
     });
     return b!.id;
   });
+  let payLinkFailed = false;
   if (needsPayment) {
-    await startBookingCheckout(
-      db,
-      {
-        bookingId,
-        customerId: bd.customerId,
-        createdBy: actor.kind === 'user' ? actor.userId : null,
-        expiresAt: hold,
-        notifyByEmail: true,
-      },
-      now,
-    );
+    try {
+      await startBookingCheckout(
+        db,
+        {
+          bookingId,
+          customerId: bd.customerId,
+          createdBy: actor.kind === 'user' ? actor.userId : null,
+          expiresAt: hold,
+          notifyByEmail: true,
+          tries: 3,
+          keepHoldOnFailure: true,
+        },
+        now,
+      );
+    } catch (err) {
+      if (!(err instanceof PayLinkUnavailableError)) throw err;
+      payLinkFailed = true;
+    }
   } else {
     await sendSafely(
       bookingSummaryMessage(
@@ -357,7 +371,7 @@ export async function giveWaitlistPlace(db: Db, actor: Actor, rawId: string, inp
       ),
     );
   }
-  return { bookingId, needsPayment };
+  return { bookingId, needsPayment, payLinkFailed };
 }
 
 export const OwnerCancelInput = z.object({
