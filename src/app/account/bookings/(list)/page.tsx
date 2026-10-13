@@ -11,7 +11,7 @@ import { pounds } from '@/domain/pricing/engine';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
 import { formatDateTimeLondon } from '@/ui/format';
-import { acceptOfferAction } from '../actions';
+import { acceptOfferAction } from '../../actions';
 
 export const metadata: Metadata = { title: 'Your bookings' };
 export const dynamic = 'force-dynamic';

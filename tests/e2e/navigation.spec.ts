@@ -5,7 +5,7 @@ import { DEMO_CUSTOMER, signIn } from './helpers';
 test('@a11y customer menu drawer: aria-expanded, Esc closes and returns focus, no axe violations', async ({ page }) => {
   await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
   await expect(page).toHaveURL(/\/account/);
-  const menu = page.getByRole('button', { name: 'Menu' });
+  const menu = page.getByRole('button', { name: 'Menu', exact: true });
   await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await menu.click();
   await expect(menu).toHaveAttribute('aria-expanded', 'true');
