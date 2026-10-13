@@ -18,6 +18,10 @@ export class StripePaymentProvider implements PaymentProvider {
       {
         mode: 'payment',
         currency: 'gbp',
+        // Card only. Delayed methods (Bacs Direct Debit, bank transfers…) can leave a payment
+        // 'processing' for days – past the 24-hour hold on the booked places – and we don't handle
+        // checkout.session.async_payment_succeeded/failed, so the outcome would never reach us.
+        payment_method_types: ['card'],
         line_items: [
           {
             quantity: 1,

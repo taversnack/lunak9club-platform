@@ -2,15 +2,12 @@ import 'server-only';
 import { and, asc, eq, inArray, isNull, lt, ne, or, sql, sum } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
 import { cardRefunds, creditNotes, customers, invoices, payments, users } from '@/infra/db/schema';
-import { cardRefundMessage } from '@/infra/email/templates';
 import { pounds } from '@/domain/pricing/engine';
-import { appUrl, firstNameOf, sendSafely } from '../notify';
-import { claimNotification } from './reminders';
 import { getPaymentProvider } from '@/infra/payments';
 import { logger } from '@/infra/logger';
-import { ownerBillingMessage } from '@/infra/email/templates';
+import { cardRefundMessage, ownerBillingMessage } from '@/infra/email/templates';
 import { londonDate } from '@/domain/time';
-import { appUrl, ownerEmails, sendSafely } from '../notify';
+import { appUrl, firstNameOf, ownerEmails, sendSafely } from '../notify';
 import { claimNotification } from './reminders';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
@@ -116,42 +113,32 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
   let succeeded = 0;
   let failed = 0;
   let claimedCount = 0;
-  for (const { r, providerPaymentId } of rows) {
-    // Claim it so two runs don't submit at the same moment (the idempotency key covers retries).
-    // The claim re-checks everything that made the row eligible, in one conditional update, and
-    // moves updated_at on: a stale 'submitted' row stays 'submitted', so checking the status alone
-    // let every concurrent tick claim it (and audit it) again.
-    const [claimed] = await db
-      .update(cardRefunds)
-      .set({ status: 'submitted', attempts: sql`${cardRefunds.attempts} + 1`, updatedAt: new Date() })
-      .where(
-        and(
-          eq(cardRefunds.id, r.id),
-          eq(cardRefunds.status, r.status),
-          r.status === 'submitted'
-            ? and(isNull(cardRefunds.providerRefundId), lt(cardRefunds.updatedAt, staleBefore))
-            : undefined,
-        ),
-      )
-      .returning({ id: cardRefunds.id });
-    if (!claimed || !providerPaymentId) continue;
-    claimedCount++;
-    const res = await provider.refund(providerPaymentId, r.amountPence, `refund-${r.id}`, r.id);
   let accountProblem = false;
   for (const { r, providerPaymentId } of rows) {
     // Claim it so two runs don't submit at the same moment. A new or failed refund starts a new
     // attempt (a failed provider refund is finished, so retrying needs a new one with a new key); one
     // interrupted mid-submit resends the same attempt with the same key, so the provider dedupes it.
+    // The claim re-checks everything that made the row eligible, in one conditional update, and
+    // moves updated_at on: a stale 'submitted' row stays 'submitted', so checking the status alone
+    // let every concurrent tick claim it (and audit it) again.
     const resend = r.status === 'submitted';
     const [claimed] = await db
       .update(cardRefunds)
       .set({
         status: 'submitted',
+        updatedAt: new Date(),
         ...(resend ? {} : { attempts: sql`${cardRefunds.attempts} + 1`, providerRefundId: null }),
       })
-      .where(and(eq(cardRefunds.id, r.id), eq(cardRefunds.status, r.status)))
+      .where(
+        and(
+          eq(cardRefunds.id, r.id),
+          eq(cardRefunds.status, r.status),
+          resend ? and(isNull(cardRefunds.providerRefundId), lt(cardRefunds.updatedAt, staleBefore)) : undefined,
+        ),
+      )
       .returning({ id: cardRefunds.id, attempts: cardRefunds.attempts });
     if (!claimed || !providerPaymentId) continue;
+    claimedCount++;
     const attempt = Math.max(claimed.attempts, 1);
     const key = attempt > 1 ? `refund-${r.id}-${attempt}` : `refund-${r.id}`;
     const res = await provider.refund(providerPaymentId, r.amountPence, key, r.id, attempt);
@@ -185,6 +172,7 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
       logger.warn({ refund: r.id, needsOwner: Boolean(res.needsOwner) }, 'card refund failed');
     }
   }
+  if (failed) await tellOwnerRefundsFailed(db, failed, accountProblem);
   return { succeeded, failed, claimed: claimedCount };
 }
 
@@ -215,8 +203,6 @@ async function emailRefundSent(db: Db, refundId: string) {
   } catch (err) {
     logger.error({ refund: refundId, err: err instanceof Error ? err.name : 'unknown' }, 'refund email failed');
   }
-  if (failed) await tellOwnerRefundsFailed(db, failed, accountProblem);
-  return { succeeded, failed };
 }
 
 /**
