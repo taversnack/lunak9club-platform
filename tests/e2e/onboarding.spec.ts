@@ -147,8 +147,13 @@ test('customer adds a dog, vet, onboarding form and vaccination record', async (
 
   await page.getByRole('link', { name: 'Upload a record' }).click();
   await expect(page).toHaveURL(/\/vaccinations$/);
+  // Dates are only asked for (and required) once a vaccine is ticked.
+  for (const v of ['Core vaccinations', 'Leptospirosis vaccination', 'Kennel cough vaccination'])
+    await expect(page.getByLabel(`${v}: date given`)).toHaveCount(0);
   await page.getByLabel('Vaccination record', { exact: true }).setInputFiles('tests/e2e/fixtures/not-a-pdf.pdf');
   await page.getByRole('checkbox', { name: 'Core vaccinations' }).check();
+  await expect(page.getByLabel('Core vaccinations: date given')).toHaveAttribute('required', '');
+  await expect(page.getByLabel('Leptospirosis vaccination: valid until')).toHaveCount(0);
   await page.getByLabel('Core vaccinations: date given').fill(plusDays(-60));
   await page.getByLabel('Core vaccinations: valid until').fill(plusDays(300));
   // First-course question (D74): a "yes" needs the date the course finished.
