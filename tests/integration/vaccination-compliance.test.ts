@@ -55,6 +55,14 @@ function weekdayAhead(n: number): string {
   used.add(d);
   return d;
 }
+/**
+ * A weekday only this file uses: beyond the customers' 90-day window (so no other test file books
+ * it – they share the database and run in parallel) but before the test vaccinations run out
+ * (day 200). Only the Owner can book these, so closing them or setting capacity can't collide.
+ */
+function ownerOnlyWeekday(): string {
+  return weekdayAhead(100 + used.size);
+}
 function nextMonday(): string {
   let d = addDays(today, 1);
   while (isoWeekday(d) !== 1) d = addDays(d, 1);
@@ -204,7 +212,7 @@ describe('Owner booking: core and leptospirosis can’t be overridden (D42, D73)
 
   it('kennel cough can still be overridden with a reason, and that is audited without detail', async () => {
     await setState(dogKc, KC, 'expired');
-    const date = weekdayAhead(81);
+    const date = weekdayAhead(22);
     await expect(ownerCreateBooking(db(), owner, { dogId: dogKc, date, session: 'full' })).rejects.toMatchObject({
       fields: { overrideReason: expect.stringMatching(/Kennel cough vaccination has expired/) },
     });
@@ -222,7 +230,7 @@ describe('Owner booking: core and leptospirosis can’t be overridden (D42, D73)
   });
 
   it('a reason still overrides closures, capacity and approval; trial days need none for approval', async () => {
-    const closed = weekdayAhead(82);
+    const closed = ownerOnlyWeekday();
     await addClosure(db(), owner, { date: closed, reason: 'Staff training' });
     await expect(ownerCreateBooking(db(), owner, { dogId: dogA, date: closed, session: 'full' })).rejects.toMatchObject(
       {
@@ -232,7 +240,7 @@ describe('Owner booking: core and leptospirosis can’t be overridden (D42, D73)
     await ownerCreateBooking(db(), owner, { dogId: dogA, date: closed, session: 'full', overrideReason: 'Agreed' });
     await removeClosure(db(), owner, closed);
 
-    const full = weekdayAhead(83);
+    const full = ownerOnlyWeekday();
     await setDayCapacity(db(), owner, { date: full, sessionCapacity: 0, taxiCapacity: 20 });
     await expect(ownerCreateBooking(db(), owner, { dogId: dogA, date: full, session: 'full' })).rejects.toMatchObject({
       fields: { overrideReason: expect.stringMatching(/Session is full/) },
@@ -249,11 +257,11 @@ describe('Owner booking: core and leptospirosis can’t be overridden (D42, D73)
     });
     await ownerCreateBooking(db(), owner, {
       dogId: pup,
-      date: weekdayAhead(84),
+      date: weekdayAhead(25),
       session: 'full',
       overrideReason: 'Phone booking',
     });
-    await ownerCreateBooking(db(), owner, { dogId: pup, date: weekdayAhead(85), session: 'full', trial: 'on' });
+    await ownerCreateBooking(db(), owner, { dogId: pup, date: weekdayAhead(26), session: 'full', trial: 'on' });
   });
 });
 
@@ -317,7 +325,7 @@ describe('customer booking (D40, D73, D74)', () => {
   });
 
   it('first course: the Owner can’t override the 14-day wait either', async () => {
-    const date = weekdayAhead(86);
+    const date = weekdayAhead(27);
     await setPrimary(dogA, addDays(date, -13));
     await expect(
       ownerCreateBooking(db(), owner, { dogId: dogA, date, session: 'full', overrideReason: 'Please', trial: 'on' }),
@@ -331,7 +339,19 @@ describe('customer booking (D40, D73, D74)', () => {
 describe('Give place (D82, D73)', () => {
   it('a waitlist place can’t be given while a licence vaccination is out of date', async () => {
     const date = weekdayAhead(60);
-    await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
+    // Full whatever other test files have booked here meanwhile: capacity = places already used.
+    const inUse = async () => {
+      const u = (await ownerDay(db(), owner, date)).used;
+      return Math.max(u.am, u.pm);
+    };
+    for (let i = 0; ; i++) {
+      try {
+        await setDayCapacity(db(), owner, { date, sessionCapacity: await inUse(), taxiCapacity: 20 });
+        break;
+      } catch (err) {
+        if (!(err instanceof ValidationError) || i >= 4) throw err; // someone booked in between – read again
+      }
+    }
     const r = await createMyBookings(db(), cass, {
       dogIds: [dogA],
       dates: [date],
@@ -340,7 +360,7 @@ describe('Give place (D82, D73)', () => {
       ifFull: 'waitlist',
     });
     expect(r.outcomes[0]!.outcome).toBe('waitlisted');
-    await setDayCapacity(db(), owner, { date, sessionCapacity: 20, taxiCapacity: 20 });
+    await setDayCapacity(db(), owner, { date, sessionCapacity: (await inUse()) + 20, taxiCapacity: 20 });
     const [w] = await db()
       .select()
       .from(bookingDogs)
