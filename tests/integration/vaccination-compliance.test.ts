@@ -304,7 +304,9 @@ describe('customer booking (D40, D73, D74)', () => {
     await expect(book([date])).rejects.toMatchObject({
       fields: {
         dates: expect.stringMatching(
-          new RegExp(`on ${formatUkDate(date)}: A first course of vaccinations must be finished at least 14 days.*${formatUkDate(addDays(date, 1))}`),
+          new RegExp(
+            `on ${formatUkDate(date)}: A first course of vaccinations must be finished at least 14 days.*${formatUkDate(addDays(date, 1))}`,
+          ),
         ),
       },
     });
