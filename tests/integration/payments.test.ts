@@ -40,6 +40,20 @@ import { approvedDog, readyCustomer } from '../support/onboard';
 class TestProvider extends SimulatedPaymentProvider {
   /** Make refunds go through but lose the answer, like a timeout after Stripe created them. */
   loseRefundAnswers = false;
+  /** Make refunds fail the way an invalid Stripe key does. */
+  badKey = false;
+  override async refund(paymentId: string, amountPence: number, key: string, reference: string) {
+    if (this.badKey)
+      return {
+        id: '',
+        status: 'failed' as const,
+        failureReason: 'StripeAuthenticationError: Invalid API Key provided',
+        needsOwner: true,
+      };
+    const res = await super.refund(paymentId, amountPence, key, reference);
+    return this.loseRefundAnswers
+      ? { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' }
+      : res;
   /** Refunds are accepted but not settled yet (Stripe's 'pending'); a webhook settles them later. */
   refundsPending = false;
   override async refund(paymentId: string, amountPence: number, key: string, reference: string, attempt?: number) {
@@ -331,40 +345,32 @@ describe('automatic refunds (D20, D58)', () => {
     await expect(retryCardRefund(db(), owner, failed!.id)).rejects.toBeInstanceOf(ConflictError);
   });
 
-  it('a refund that fails after going through (refund.failed) is sent again as a new refund when retried', async () => {
+  it('an invalid Stripe key fails the refund for the Owner to see, and emails the Owner once', async () => {
     const date = weekdayAhead(46);
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const a = await payLatest(pia.userId);
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
-    stripe.refundsPending = true;
+    await db().execute(sql`delete from notification_log where kind = 'card-refunds-failed'`);
+    mail.sent.length = 0;
+    stripe.badKey = true;
     await cancelMyBooking(db(), pia, bd!.id);
-    stripe.refundsPending = false;
-    const first = stripe.refunds.at(-1)!;
     const [pay] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
     const [r] = await db().select().from(cardRefunds).where(eq(cardRefunds.paymentId, pay!.id));
-    expect(r).toMatchObject({ status: 'submitted', providerRefundId: first.id, attempts: 1 });
-
-    // It then fails: Stripe marks the refund failed and tells us by webhook.
-    stripe.failRefundLater(first.id);
-    const failedEvent = { type: 'refund.failed', objectId: first.id, refundStatus: 'failed', refundReference: r!.id };
-    await handleWebhook(db(), JSON.stringify({ id: `evt_rf_${r!.id}`, ...failedEvent, refundAttempt: 1 }), 'valid');
-    const [failed] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
-    expect(failed!.status).toBe('failed');
-
-    const before = stripe.refunds.length;
+    // Not stuck in 'submitted': it's failed, with the reason, in the Owner's list to try again.
+    expect(r).toMatchObject({ status: 'failed', failureReason: expect.stringMatching(/Invalid API Key/) });
+    expect((await ownerCardRefunds(db(), owner)).failed.map((x) => x.r.id)).toContain(r!.id);
+    const toOwner = mail.sent.filter((m) => m.to === owner.email && /need your attention/.test(m.subject));
+    expect(toOwner).toHaveLength(1);
+    expect(toOwner[0]!.text).toMatch(/Stripe refused our API key/);
+    expect(toOwner[0]!.text).toContain('/admin/refunds');
+    // Trying again with the key still wrong fails again, but doesn't email again the same day.
     await retryCardRefund(db(), owner, r!.id);
-    expect(stripe.refunds.length).toBe(before + 1);
-    const second = stripe.refunds.at(-1)!;
-    expect(second).toMatchObject({ reference: r!.id, attempt: 2, amountPence: first.amountPence });
-    expect(second.id).not.toBe(first.id);
-    expect(second.key).not.toBe(first.key);
-    const [retried] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
-    expect(retried).toMatchObject({ status: 'succeeded', providerRefundId: second.id, attempts: 2 });
-
-    // A late repeat of the first refund's failure doesn't touch the new one.
-    await handleWebhook(db(), JSON.stringify({ id: `evt_rf2_${r!.id}`, ...failedEvent, refundAttempt: 1 }), 'valid');
-    const [still] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
-    expect(still).toMatchObject({ status: 'succeeded', providerRefundId: second.id });
+    expect(mail.sent.filter((m) => m.to === owner.email && /need your attention/.test(m.subject))).toHaveLength(1);
+    // Once the key is fixed, Try again sends it.
+    stripe.badKey = false;
+    await retryCardRefund(db(), owner, r!.id);
+    const [ok] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
+    expect(ok!.status).toBe('succeeded');
   });
 
   it('a refund whose answer was lost stays pending, and the webhook settles it by our id without a second refund', async () => {

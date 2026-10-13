@@ -4,6 +4,10 @@ import type { Db } from '@/infra/db/client';
 import { cardRefunds, creditNotes, payments } from '@/infra/db/schema';
 import { getPaymentProvider } from '@/infra/payments';
 import { logger } from '@/infra/logger';
+import { ownerBillingMessage } from '@/infra/email/templates';
+import { londonDate } from '@/domain/time';
+import { appUrl, ownerEmails, sendSafely } from '../notify';
+import { claimNotification } from './reminders';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
 import { ConflictError, NotFoundError } from '../errors';
@@ -106,6 +110,7 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
   const provider = getPaymentProvider();
   let succeeded = 0;
   let failed = 0;
+  let accountProblem = false;
   for (const { r, providerPaymentId } of rows) {
     // Claim it so two runs don't submit at the same moment. A new or failed refund starts a new
     // attempt (a failed provider refund is finished, so retrying needs a new one with a new key); one
@@ -145,10 +150,36 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
     }
     if (status === 'failed') {
       failed++;
-      logger.warn({ refund: r.id }, 'card refund failed');
+      if (res.needsOwner) accountProblem = true;
+      logger.warn({ refund: r.id, needsOwner: Boolean(res.needsOwner) }, 'card refund failed');
     }
   }
+  if (failed) await tellOwnerRefundsFailed(db, failed, accountProblem);
   return { succeeded, failed };
+}
+
+/**
+ * Email the Owner that card refunds need attention (at most once a day): they're listed under
+ * Refunds with a 'Try again' button. Best effort: the refund state is already saved.
+ */
+async function tellOwnerRefundsFailed(db: Db, count: number, accountProblem: boolean) {
+  try {
+    if (!(await claimNotification(db, `card-refunds-failed:${londonDate(new Date())}`, 'card-refunds-failed'))) return;
+    const why = accountProblem
+      ? 'Stripe refused our API key (it may be wrong, revoked or missing the refunds permission), so no money has been sent. Please check the Stripe key in the server settings, then use Try again on each refund.'
+      : 'The card provider rejected them, so no money has been sent. Please check each one and use Try again, or refund the customer another way.';
+    for (const to of await ownerEmails(db))
+      await sendSafely(
+        ownerBillingMessage(
+          to,
+          'Card refunds need your attention',
+          `${count === 1 ? 'A card refund' : `${count} card refunds`} could not be sent. ${why}`,
+          appUrl('/admin/refunds'),
+        ),
+      );
+  } catch (err) {
+    logger.error({ err: err instanceof Error ? err.name : 'unknown' }, 'refund failure alert failed');
+  }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

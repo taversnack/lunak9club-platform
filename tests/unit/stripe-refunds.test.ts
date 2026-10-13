@@ -39,6 +39,22 @@ describe('Stripe refunds (M1)', () => {
       expect(await provider(throwing(err)).refund('pi_1', 500, 'k', 'abc')).toMatchObject({ id: '', status: 'failed' });
   });
 
+  it('a bad or restricted API key is a definite failure the Owner must fix, not a pending refund', async () => {
+    for (const err of [
+      new Stripe.errors.StripeAuthenticationError(raw),
+      new Stripe.errors.StripePermissionError(raw),
+    ]) {
+      const create = vi.fn(async () => {
+        throw err;
+      });
+      expect(await provider({ create }).refund('pi_1', 500, 'k', 'abc')).toMatchObject({
+        id: '',
+        status: 'failed',
+        needsOwner: true,
+      });
+    }
+  });
+
   it('finds a refund an earlier attempt created instead of refunding again', async () => {
     const create = vi.fn();
     const list = vi.fn(async function* () {
