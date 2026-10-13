@@ -498,7 +498,7 @@ export async function cancelMyBooking(db: Db, actor: Actor, rawId: string, now =
   if (bd.serviceDate <= today) throw new ConflictError('Bookings for today can’t be cancelled online. Please call us.');
   if (bd.status === 'pending_payment') {
     // Not paid yet: cancelling releases every place held for that payment.
-    await releaseBookingHold(db, bd.bookingId, 'Cancelled by the customer before paying', now);
+    await releaseBookingHold(db, bd.bookingId, bd.id, 'Cancelled by the customer before paying', now);
     await recordAudit(db, { actor: me, action: 'booking.hold_cancelled', entityType: 'booking_dog', entityId: bd.id });
     return { late: false, refundedPence: 0 };
   }
