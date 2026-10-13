@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, eq, isNull, desc } from 'drizzle-orm';
+import { and, asc, eq, isNull, desc, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import {
@@ -16,9 +16,18 @@ import { assertAuthorized, type Actor } from '../policy/authorize';
 import type { Permission } from '../policy/permissions';
 import { recordAudit } from '../audit';
 import { NotFoundError } from '../errors';
-import { checkbox, idOrNotFound, isoDate, optionalText, parseInput, requiredText, ukPhone } from '../validation';
+import { idOrNotFound, isoDate, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
 import { evaluateDogs } from './compliance-facts';
+import { onboardingInput, VetInput } from './dog-register-input';
+import {
+  consentUpdates,
+  CONSENT_KEYS,
+  registerGaps,
+  type ConsentKey,
+  type StoredConsent,
+} from '@/domain/compliance/register';
+import { londonDate } from '@/domain/time';
 
 /**
  * Load one of the caller's own dogs. The lookup joins on the caller's user id, so another
@@ -97,62 +106,91 @@ export async function updateMyDogDetails(db: Db, actor: Actor, dogId: string, in
   });
 }
 
-export const VetInput = z.object({
-  practiceName: requiredText('the practice name', 120),
-  vetName: optionalText(120),
-  phone: ukPhone,
-  address: optionalText(300),
-});
+export { VetInput };
 
-export async function saveMyDogVet(db: Db, actor: Actor, dogId: string, input: unknown) {
-  const data = parseInput(VetInput, input);
+/**
+ * Save the dog's usual vet and the vet agreed for emergencies (licence guidance 9.8, D70).
+ * The agreed vet is either the usual vet (same row) or a separate practice row for this dog.
+ * `vetAgreedAt` changes only when the agreed practice changes (choice, name or phone).
+ */
+export async function saveMyDogVet(db: Db, actor: Actor, dogId: string, input: unknown, now = new Date()) {
+  const { vet: data, agreed } = parseInput(VetInput, input);
   const dog = await loadMyDog(db, actor, dogId);
   await db.transaction(async (tx) => {
-    if (dog.vetId) {
+    // The practice agreed before this save (if any), read before anything is changed.
+    const [before] = dog.agreedVetId
+      ? await tx
+          .select()
+          .from(vets)
+          .where(and(eq(vets.id, dog.agreedVetId), eq(vets.customerId, dog.customerId)))
+      : [];
+    const separate = before && before.id !== dog.vetId ? before : null;
+
+    let vetId = dog.vetId;
+    if (vetId) {
       await tx
         .update(vets)
         .set(data)
-        .where(and(eq(vets.id, dog.vetId), eq(vets.customerId, dog.customerId)));
+        .where(and(eq(vets.id, vetId), eq(vets.customerId, dog.customerId)));
     } else {
       const [v] = await tx
         .insert(vets)
         .values({ ...data, customerId: dog.customerId })
         .returning({ id: vets.id });
-      await tx.update(dogs).set({ vetId: v!.id }).where(eq(dogs.id, dog.id));
+      vetId = v!.id;
+    }
+
+    let agreedVetId: string;
+    let details: { practiceName: string; phone: string };
+    if (agreed.kind === 'same') {
+      agreedVetId = vetId;
+      details = data;
+    } else {
+      details = { practiceName: agreed.practiceName, phone: agreed.phone };
+      const values = { ...details, address: agreed.address };
+      if (separate) {
+        await tx.update(vets).set(values).where(eq(vets.id, separate.id));
+        agreedVetId = separate.id;
+      } else {
+        const [v] = await tx
+          .insert(vets)
+          .values({ ...values, customerId: dog.customerId })
+          .returning({ id: vets.id });
+        agreedVetId = v!.id;
+      }
+    }
+    const sameChoice = before ? (agreed.kind === 'same') === (before.id === dog.vetId) : false;
+    const changed =
+      !before ||
+      !sameChoice ||
+      before.practiceName !== details.practiceName ||
+      before.phone !== details.phone ||
+      !dog.vetAgreedAt;
+    await tx
+      .update(dogs)
+      .set({ vetId, agreedVetId, ...(changed ? { vetAgreedAt: now } : {}) })
+      .where(eq(dogs.id, dog.id));
+    // A separate emergency practice no longer used by any dog is removed rather than left behind.
+    if (separate && agreedVetId !== separate.id) {
+      const [inUse] = await tx
+        .select({ id: dogs.id })
+        .from(dogs)
+        .where(or(eq(dogs.vetId, separate.id), eq(dogs.agreedVetId, separate.id)))
+        .limit(1);
+      if (!inUse) await tx.delete(vets).where(eq(vets.id, separate.id));
     }
     await recordAudit(tx, { actor, action: 'dog.vet_saved', entityType: 'dog', entityId: dog.id });
   });
 }
 
-const yesNo = (msg: string) => z.enum(['yes', 'no'], { message: msg }).transform((v) => v === 'yes');
-
-export const OnboardingInput = z
-  .object({
-    allergies: optionalText(),
-    medication: optionalText(),
-    dietaryRequirements: optionalText(),
-    medicalConditions: optionalText(),
-    fleaAndWorming: requiredText('when flea and worming treatment was last given', 500),
-    temperament: requiredText('a short description of your dog’s temperament', 2000),
-    triggers: optionalText(),
-    biteHistory: yesNo('Tell us if your dog has ever bitten or shown aggression'),
-    biteDetails: optionalText(),
-    handlingInstructions: optionalText(),
-    emergencyInstructions: optionalText(),
-    transport: yesNo('Tell us if we may use the dog taxi'),
-    photosAndSocialMedia: yesNo('Tell us if we may share photos'),
-    emergencyVetTreatment: yesNo('Tell us if we may arrange emergency vet treatment'),
-    confirmAccurate: checkbox.refine((v) => v, 'Please confirm the information is accurate'),
-  })
-  .refine((d) => !d.biteHistory || Boolean(d.biteDetails), {
-    message: 'Please tell us what happened',
-    path: ['biteDetails'],
-  });
-
-/** Save the onboarding form (health, behaviour, permissions). Sensitive: never logged or audited in detail. */
-export async function submitMyOnboardingForm(db: Db, actor: Actor, dogId: string, input: unknown) {
-  const d = parseInput(OnboardingInput, input);
-  const dog = await loadMyDog(db, actor, dogId);
+/**
+ * Save the onboarding form (health, behaviour, permissions and licence register fields, D68–D69).
+ * Sensitive: never logged, and audited without any of the answers.
+ */
+export async function submitMyOnboardingForm(db: Db, actor: Actor, dogId: string, input: unknown, now = new Date()) {
+  const me = asUser(actor);
+  const dog = await loadMyDog(db, me, dogId);
+  const d = parseInput(onboardingInput({ today: londonDate(now), dateOfBirth: dog.dateOfBirth }), input);
   await db.transaction(async (tx) => {
     const health = {
       allergies: d.allergies,
@@ -160,6 +198,13 @@ export async function submitMyOnboardingForm(db: Db, actor: Actor, dogId: string
       dietaryRequirements: d.dietaryRequirements,
       medicalConditions: d.medicalConditions,
       fleaAndWorming: d.fleaAndWorming,
+      lastWormedOn: d.lastWormedOn,
+      lastFleaTreatmentOn: d.lastFleaTreatmentOn,
+      exerciseRestricted: d.exerciseRestricted,
+      exerciseRestrictions: d.exerciseRestricted ? d.exerciseRestrictions : null,
+      insured: d.insured,
+      insurer: d.insured ? d.insurer : null,
+      insurancePolicyNumber: d.insured ? d.insurancePolicyNumber : null,
     };
     const behaviour = {
       temperament: d.temperament,
@@ -169,10 +214,17 @@ export async function submitMyOnboardingForm(db: Db, actor: Actor, dogId: string
       handlingInstructions: d.handlingInstructions,
       emergencyInstructions: d.emergencyInstructions,
     };
+    const [existing] = await tx.select().from(dogPermissions).where(eq(dogPermissions.dogId, dog.id)).for('update');
+    const stored: Partial<Record<ConsentKey, StoredConsent>> = {};
+    if (existing)
+      for (const k of CONSENT_KEYS) stored[k] = { value: existing[k], at: existing[`${k}At`], by: existing[`${k}By`] };
+    const answers: Partial<Record<ConsentKey, boolean>> = {};
+    for (const k of CONSENT_KEYS) if (d[k] !== undefined) answers[k] = d[k];
     const perms = {
       transport: d.transport,
       photosAndSocialMedia: d.photosAndSocialMedia,
       emergencyVetTreatment: d.emergencyVetTreatment,
+      ...consentUpdates(answers, stored, me.userId, now),
     };
     await tx
       .insert(dogHealthProfiles)
@@ -186,7 +238,7 @@ export async function submitMyOnboardingForm(db: Db, actor: Actor, dogId: string
       .insert(dogPermissions)
       .values({ dogId: dog.id, ...perms })
       .onConflictDoUpdate({ target: dogPermissions.dogId, set: perms });
-    await tx.update(dogs).set({ onboardingSubmittedAt: new Date() }).where(eq(dogs.id, dog.id));
+    await tx.update(dogs).set({ onboardingSubmittedAt: now }).where(eq(dogs.id, dog.id));
     await recordAudit(tx, { actor, action: 'dog.onboarding_submitted', entityType: 'dog', entityId: dog.id });
   });
 }
@@ -205,6 +257,7 @@ export async function getMyDog(db: Db, actor: Actor, dogId: string) {
         requirementKey: complianceSubmissions.requirementKey,
         status: complianceSubmissions.status,
         expiresOn: complianceSubmissions.expiresOn,
+        administeredOn: complianceSubmissions.administeredOn,
         reviewReason: complianceSubmissions.reviewReason,
         submittedAt: complianceSubmissions.submittedAt,
         documentId: documents.id,
@@ -216,8 +269,23 @@ export async function getMyDog(db: Db, actor: Actor, dogId: string) {
       .orderBy(desc(complianceSubmissions.submittedAt)),
     evaluateDogs(db, [dog.id]),
   ]);
+  const agreedVet =
+    dog.agreedVetId && dog.agreedVetId !== dog.vetId
+      ? ((await db.select().from(vets).where(eq(vets.id, dog.agreedVetId)))[0] ?? null)
+      : null;
+  const gaps = registerGaps(
+    {
+      dateOfBirth: dog.dateOfBirth,
+      health: health[0] ?? null,
+      consents: perms[0] ?? null,
+      hasAgreedVet: Boolean(dog.agreedVetId),
+    },
+    londonDate(new Date()),
+  );
   return {
     dog,
+    agreedVet,
+    registerGaps: gaps,
     health: health[0] ?? null,
     behaviour: behaviour[0] ?? null,
     permissions: perms[0] ?? null,

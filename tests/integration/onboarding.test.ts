@@ -87,7 +87,11 @@ describe('customer onboarding journey', () => {
   });
 
   it('completes vet, contact, form and terms', async () => {
-    await saveMyDogVet(db(), alice, aliceDogId, { practiceName: 'Town Vets', phone: '01483 000000' });
+    await saveMyDogVet(db(), alice, aliceDogId, {
+      practiceName: 'Town Vets',
+      phone: '01483 000000',
+      agreedVet: 'same',
+    });
     await addMyContact(db(), alice, { name: 'Andy Able', phone: '07700900999', isEmergencyContact: 'on' });
     await submitMyOnboardingForm(db(), alice, aliceDogId, validOnboarding);
     const status = await myTermsStatus(db(), alice);
@@ -110,14 +114,16 @@ describe('customer onboarding journey', () => {
       dogId: aliceDogId,
       fileName: 'evil.pdf',
       bytes: new TextEncoder().encode('<script>alert(1)</script>xxxxxxxx'),
-      entries: [{ requirementKey: 'vaccination_core', expiresOn: nextYear }],
+      entries: [{ requirementKey: 'vaccination_core', expiresOn: nextYear, administeredOn: today }],
     });
     await expect(bad).rejects.toMatchObject({ fields: { file: expect.stringMatching(/PDF or a photo/) } });
     const expired = uploadVaccinationRecord(db(), storage, alice, {
       dogId: aliceDogId,
       fileName: 'card.pdf',
       bytes: PDF,
-      entries: [{ requirementKey: 'vaccination_core', expiresOn: addDays(today, -1) }],
+      entries: [
+        { requirementKey: 'vaccination_core', expiresOn: addDays(today, -1), administeredOn: addDays(today, -366) },
+      ],
     });
     await expect(expired).rejects.toMatchObject({
       fields: { 'expiresOn.vaccination_core': expect.stringMatching(/expired/) },
@@ -126,7 +132,7 @@ describe('customer onboarding journey', () => {
       dogId: aliceDogId,
       fileName: 'card.pdf',
       bytes: PDF,
-      entries: [{ requirementKey: 'terms', expiresOn: nextYear }],
+      entries: [{ requirementKey: 'terms', expiresOn: nextYear, administeredOn: today }],
     });
     await expect(notVacc).rejects.toBeInstanceOf(ValidationError);
     expect((await db().select().from(documents).where(eq(documents.dogId, aliceDogId))).length).toBe(0); // nothing stored on failure
@@ -138,9 +144,9 @@ describe('customer onboarding journey', () => {
       fileName: 'vaccination card.pdf',
       bytes: PDF,
       entries: [
-        { requirementKey: 'vaccination_core', expiresOn: nextYear },
-        { requirementKey: 'vaccination_leptospirosis', expiresOn: nextYear },
-        { requirementKey: 'vaccination_kennel_cough', expiresOn: nextYear },
+        { requirementKey: 'vaccination_core', expiresOn: nextYear, administeredOn: today },
+        { requirementKey: 'vaccination_leptospirosis', expiresOn: nextYear, administeredOn: today },
+        { requirementKey: 'vaccination_kennel_cough', expiresOn: nextYear, administeredOn: today },
       ],
     });
     const subs = await db().select().from(complianceSubmissions).where(eq(complianceSubmissions.dogId, aliceDogId));
@@ -155,7 +161,7 @@ describe('customer onboarding journey', () => {
       dogId: aliceDogId,
       fileName: 'kennel cough.png',
       bytes: PNG,
-      entries: [{ requirementKey: 'vaccination_kennel_cough', expiresOn: nextYear }],
+      entries: [{ requirementKey: 'vaccination_kennel_cough', expiresOn: nextYear, administeredOn: today }],
     });
     const subs = await db().select().from(complianceSubmissions).where(eq(complianceSubmissions.dogId, aliceDogId));
     expect(
@@ -214,7 +220,7 @@ describe('Owner review', () => {
       dogId: aliceDogId,
       fileName: 'kc.pdf',
       bytes: PDF,
-      entries: [{ requirementKey: 'vaccination_kennel_cough', expiresOn: nextYear }],
+      entries: [{ requirementKey: 'vaccination_kennel_cough', expiresOn: nextYear, administeredOn: today }],
     });
     const [kc] = await db()
       .select()
@@ -287,14 +293,14 @@ describe('access control and privacy', () => {
     await expect(getMyDog(db(), bob, aliceDogId)).rejects.toBeInstanceOf(NotFoundError);
     await expect(submitMyOnboardingForm(db(), bob, aliceDogId, validOnboarding)).rejects.toBeInstanceOf(NotFoundError);
     await expect(
-      saveMyDogVet(db(), bob, aliceDogId, { practiceName: 'X', phone: '01483000000' }),
+      saveMyDogVet(db(), bob, aliceDogId, { practiceName: 'X', phone: '01483000000', agreedVet: 'same' }),
     ).rejects.toBeInstanceOf(NotFoundError);
     await expect(
       uploadVaccinationRecord(db(), storage, bob, {
         dogId: aliceDogId,
         fileName: 'x.pdf',
         bytes: PDF,
-        entries: [{ requirementKey: 'vaccination_core', expiresOn: nextYear }],
+        entries: [{ requirementKey: 'vaccination_core', expiresOn: nextYear, administeredOn: today }],
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
     expect(await listMyDogs(db(), bob)).toHaveLength(0);
