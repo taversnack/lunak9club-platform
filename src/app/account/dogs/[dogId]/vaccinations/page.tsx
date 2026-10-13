@@ -3,6 +3,7 @@ import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Stack } from '@/ui/components';
 import { ActionForm, FieldError, FileField, RadioGroup, SubmitButton, TextField } from '@/ui/form';
+import { VaccineChoice } from '@/ui/vaccine-choice';
 import { uploadVaccinationAction } from '../../../actions';
 import { loadDogPage } from '../load';
 import { londonDate } from '@/domain/time';
@@ -36,25 +37,12 @@ export default async function VaccinationsPage({ params }: { params: Promise<{ d
           <fieldset className={s.fieldset}>
             <legend className={s.label}>Which vaccinations does this record show?</legend>
             <span className={s.hint}>
-              Tick each one and enter the date it was given and the date it’s valid until (the “next due” date on the
-              card).
+              Tick each one it covers, then enter the date it was given and the date it’s valid until (the “next due”
+              date on the card).
             </span>
             <FieldError name="entries" />
             {vaccines.map((v) => (
-              <div key={v.key} className={s.card} style={{ padding: 'var(--space-3)' }}>
-                <label className={s.choice}>
-                  <input type="checkbox" name="covers" value={v.key} />
-                  <span>{v.label}</span>
-                </label>
-                <TextField
-                  name={`administeredOn.${v.key}`}
-                  label={`${v.label}: date given`}
-                  type="date"
-                  required
-                  max={today}
-                />
-                <TextField name={`expiresOn.${v.key}`} label={`${v.label}: valid until`} type="date" required />
-              </div>
+              <VaccineChoice key={v.key} vaccineKey={v.key} label={v.label} today={today} />
             ))}
           </fieldset>
           <RadioGroup

@@ -3,7 +3,7 @@
  * hard blocks for core (DHP) and leptospirosis at every booking path and at check-in, kennel cough
  * still overridable, the 14-day wait after a first course, and the 60/30/14/7 reminders.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -46,6 +46,11 @@ const db = () => getDb();
 const mail = new MemoryEmailProvider();
 const storage = new FsStorageProvider(mkdtempSync(join(tmpdir(), 'lunak9-vacc-')));
 const system = { kind: 'system', job: 'test' } as const;
+// Pin the clock so every test in this file sees the same "today", even across midnight, and so the
+// file can be run as if on another date (VACC_TEST_NOW=2026-11-06T12:00:00Z) to prove it doesn't
+// depend on the real one. Only Date is faked; timers stay real so the database driver is unaffected.
+const PINNED_NOW = new Date(process.env.VACC_TEST_NOW || Date.now());
+vi.useFakeTimers({ toFake: ['Date'], now: PINNED_NOW });
 const today = londonDate(new Date());
 const HOLIDAYS = new Set(['2026-12-25', '2026-12-28', '2027-01-01']);
 const used = new Set<string>();
@@ -150,6 +155,16 @@ beforeAll(async () => {
   dogA = await approvedDog(db(), owner, cass, 'Acorn');
   dogKc = await approvedDog(db(), owner, cass, 'Kestrel');
   dogPrimary = await approvedDog(db(), owner, cass, 'Pebble');
+  // Other test files share this database and leave bookings, closures and capacity changes behind.
+  // Treat any day they touched as taken, so the days picked here start empty whatever today is.
+  const touched = await db().execute<{ d: string }>(
+    sql`select service_date::text as d from booking_dogs where service_date > ${today}
+          and status in ('confirmed', 'pending_payment', 'waitlisted', 'requested')
+        union select service_date::text from closures where service_date > ${today}
+        union select service_date::text from service_days where service_date > ${today}
+          and (session_capacity is not null or taxi_capacity is not null)`,
+  );
+  for (const r of touched.rows) used.add(r.d);
 });
 afterAll(async () => {
   // Free every place this file took so later files see empty days.
@@ -162,6 +177,7 @@ afterAll(async () => {
   await releaseMemberDays(db());
   setEmailProvider(undefined);
   await closeDb();
+  vi.useRealTimers();
 });
 
 describe('Owner booking: core and leptospirosis can’t be overridden (D42, D73)', () => {
