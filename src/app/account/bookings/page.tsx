@@ -163,14 +163,20 @@ export default async function BookingsPage({
                     <td>
                       {b.kind === 'membership' && b.status === 'confirmed' && !b.late && !moving.has(b.id) ? (
                         <>
-                          <Link href={`/account/bookings/${b.id}/move`}>
+                          <Link
+                            href={`/account/bookings/${b.id}/move`}
+                            style={{ display: 'inline-block', minHeight: 24, minWidth: 24, marginInlineEnd: 12 }}
+                          >
                             Move{' '}
                             <span className="visually-hidden">{`${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
                           </Link>{' '}
                         </>
                       ) : null}
                       {b.cancellable ? (
-                        <Link href={`/account/bookings/${b.id}/cancel`}>
+                        <Link
+                          href={`/account/bookings/${b.id}/cancel`}
+                          style={{ display: 'inline-block', minHeight: 24, minWidth: 24 }}
+                        >
                           Cancel{' '}
                           <span className="visually-hidden">{`${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
                         </Link>
