@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { accessSync, constants, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { CreateBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { FsStorageProvider } from '@/infra/storage/fs';
 import { S3StorageProvider } from '@/infra/storage/s3';
@@ -33,16 +33,32 @@ describe('filesystem storage', () => {
   });
 });
 
-// S3 adapter against a local S3-compatible server (moto). Skipped if moto_server isn't installed;
-// CI and local dev use MinIO instead.
+// S3 adapter against a local S3-compatible server (moto). Needs `moto_server` on PATH (or
+// MOTO_SERVER_BIN pointing at it); nothing installs it, so the suite is skipped when it's missing.
 const MOTO = process.env.MOTO_SERVER_BIN ?? 'moto_server';
-let proc: ChildProcess | undefined;
-let available = false;
 
-beforeAll(async () => {
-  try {
+function isExecutable(bin: string): boolean {
+  const candidates = bin.includes('/') ? [bin] : (process.env.PATH ?? '').split(delimiter).map((d) => join(d, bin));
+  return candidates.some((file) => {
+    try {
+      accessSync(file, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+describe.skipIf(!isExecutable(MOTO))('S3 storage', () => {
+  let proc: ChildProcess | undefined;
+  let available = false;
+
+  beforeAll(async () => {
+    let failed = false;
     proc = spawn(MOTO, ['-p', '5055'], { stdio: 'ignore' });
-    for (let i = 0; i < 40; i++) {
+    // Spawn failures arrive as an async 'error' event; without a listener they become uncaught.
+    proc.on('error', () => (failed = true));
+    for (let i = 0; i < 40 && !failed; i++) {
       try {
         await fetch('http://127.0.0.1:5055/');
         available = true;
@@ -51,13 +67,9 @@ beforeAll(async () => {
         await new Promise((r) => setTimeout(r, 150));
       }
     }
-  } catch {
-    available = false;
-  }
-});
-afterAll(() => proc?.kill());
+  });
+  afterAll(() => proc?.kill());
 
-describe('S3 storage', () => {
   it('round-trips a file and issues a short-lived signed URL', async (ctx) => {
     if (!available) ctx.skip();
     const cfg = {

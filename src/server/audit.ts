@@ -5,9 +5,9 @@ import type { Actor } from './policy/authorize';
 
 export type AuditMetadata = Record<string, string | number | boolean | null>;
 
-// Keys that must never appear in audit metadata (personal or sensitive data).
+// Keys that must never appear in audit metadata (personal or sensitive data, incl. register fields D68–D69).
 const FORBIDDEN_KEY =
-  /(email|name|phone|address|password|token|secret|card|iban|medical|medication|allerg|behaviour|bite|note|dob|birth)/i;
+  /(email|name|phone|address|password|token|secret|card|iban|medical|medication|allerg|behaviour|bite|note|dob|birth|insur|policy|exercise|worm|flea|consent)/i;
 
 export function sanitiseMetadata(metadata: AuditMetadata = {}): AuditMetadata {
   const out: AuditMetadata = {};
