@@ -82,8 +82,9 @@ async function maybeCloseCreditNote(q: Q, creditNoteId: string | null) {
 }
 
 /**
- * Send queued refunds to the payment provider. Safe to call repeatedly: each refund's id is its
- * idempotency key, so the provider never pays out twice. Called after the queuing transaction
+ * Send queued refunds to the payment provider. Safe to call repeatedly: each attempt has its own
+ * idempotency key (our id, plus the attempt number from the second attempt on), so the provider
+ * never pays out twice for one attempt, while a retry after a failure really sends the money again. Called after the queuing transaction
  * commits, and by the scheduler as a safety net.
  */
 export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}) {
@@ -111,14 +112,22 @@ export async function submitPendingRefunds(db: Db, opts: { ids?: string[] } = {}
   let failed = 0;
   let accountProblem = false;
   for (const { r, providerPaymentId } of rows) {
-    // Claim it so two runs don't submit at the same moment (the idempotency key covers retries).
+    // Claim it so two runs don't submit at the same moment. A new or failed refund starts a new
+    // attempt (a failed provider refund is finished, so retrying needs a new one with a new key); one
+    // interrupted mid-submit resends the same attempt with the same key, so the provider dedupes it.
+    const resend = r.status === 'submitted';
     const [claimed] = await db
       .update(cardRefunds)
-      .set({ status: 'submitted', attempts: sql`${cardRefunds.attempts} + 1` })
+      .set({
+        status: 'submitted',
+        ...(resend ? {} : { attempts: sql`${cardRefunds.attempts} + 1`, providerRefundId: null }),
+      })
       .where(and(eq(cardRefunds.id, r.id), eq(cardRefunds.status, r.status)))
-      .returning({ id: cardRefunds.id });
+      .returning({ id: cardRefunds.id, attempts: cardRefunds.attempts });
     if (!claimed || !providerPaymentId) continue;
-    const res = await provider.refund(providerPaymentId, r.amountPence, `refund-${r.id}`, r.id);
+    const attempt = Math.max(claimed.attempts, 1);
+    const key = attempt > 1 ? `refund-${r.id}-${attempt}` : `refund-${r.id}`;
+    const res = await provider.refund(providerPaymentId, r.amountPence, key, r.id, attempt);
     // 'pending' with no id means we don't know whether it went through: it stays 'submitted' with no
     // provider id, so the safety net above sends it again (the provider dedupes) or the webhook,
     // matched on our id, settles it.
@@ -184,14 +193,22 @@ export async function applyRefundUpdate(
   providerRefundId: string,
   status: 'succeeded' | 'pending' | 'failed',
   reference?: string,
+  attempt?: number,
 ) {
   // First news of a refund whose create call we never heard back from: record its id, which also
-  // stops the safety net from sending it again.
+  // stops the safety net from sending it again. Only for the current attempt: late news about an
+  // earlier, failed attempt must not attach that old refund again.
   if (reference && UUID.test(reference))
     await db
       .update(cardRefunds)
       .set({ providerRefundId })
-      .where(and(eq(cardRefunds.id, reference), isNull(cardRefunds.providerRefundId)));
+      .where(
+        and(
+          eq(cardRefunds.id, reference),
+          isNull(cardRefunds.providerRefundId),
+          attempt ? eq(cardRefunds.attempts, attempt) : undefined,
+        ),
+      );
   if (status === 'pending') return;
   const [r] = await db
     .update(cardRefunds)

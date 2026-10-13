@@ -54,6 +54,13 @@ class TestProvider extends SimulatedPaymentProvider {
     return this.loseRefundAnswers
       ? { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' }
       : res;
+  /** Refunds are accepted but not settled yet (Stripe's 'pending'); a webhook settles them later. */
+  refundsPending = false;
+  override async refund(paymentId: string, amountPence: number, key: string, reference: string, attempt?: number) {
+    const res = await super.refund(paymentId, amountPence, key, reference, attempt);
+    if (this.loseRefundAnswers)
+      return { id: '', status: 'pending' as const, failureReason: 'StripeConnectionError: timed out' };
+    return this.refundsPending && res.status === 'succeeded' ? { ...res, status: 'pending' as const } : res;
   }
   override parseWebhook(raw: string, signature: string | null): WebhookEvent {
     if (signature !== 'valid') throw new Error('No signatures found matching the expected signature');
