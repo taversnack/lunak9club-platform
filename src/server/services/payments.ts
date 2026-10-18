@@ -227,8 +227,7 @@ export async function startBookingCheckout(
       if (sameDays(covers) && a.amountPence === amount) {
         if (a.status === 'open' && a.url) return { reuse: a, stale };
         // Another request is creating the link for these days right now.
-        if (a.status === 'creating' && a.createdAt > new Date(now.getTime() - 2 * 60_000))
-          return { busy: a.id, stale };
+        if (a.status === 'creating' && a.createdAt > new Date(now.getTime() - 2 * 60_000)) return { busy: a.id, stale };
       }
       // Overlapping, different amount, legacy or abandoned: close it without touching the holds.
       await tx
