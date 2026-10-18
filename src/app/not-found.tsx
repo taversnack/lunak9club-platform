@@ -8,8 +8,10 @@ export default function NotFound() {
       <Card>
         <Stack>
           <h1>Page not found</h1>
+          <p>We couldn’t find that page. It may have moved, or the link may be out of date.</p>
           <p>
-            <Link href="/">Go to the home page</Link>
+            <Link href="/dashboard">Go to your dashboard</Link> · <Link href="/account/book">Book day care</Link> ·{' '}
+            <Link href="/">Home</Link>
           </p>
         </Stack>
       </Card>
