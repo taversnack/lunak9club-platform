@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { closeDb, createDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
-import { bookingDogs, bookingSettings, complianceSubmissions, dogs, serviceDays } from '@/infra/db/schema';
+import { bookingDogs, bookingSettings, closures, complianceSubmissions, dogs, serviceDays } from '@/infra/db/schema';
 import { addMyContact, updateMyProfile } from '@/server/services/customers';
 import { createMyDog, submitMyOnboardingForm, saveMyDogVet } from '@/server/services/dogs';
 import { acceptTerms, myTermsStatus } from '@/server/services/policies';
-import { bookingCalendar, cancelMyBooking, myBookings } from '@/server/services/bookings';
+import { bookingCalendar, cancelMyBooking, createMyBookings, myBookings } from '@/server/services/bookings';
 import {
   addClosure,
   attendanceCsv,
@@ -19,6 +19,7 @@ import {
   ownerCancel,
   ownerCreateBooking,
   ownerDay,
+  removeClosure,
   setDayCapacity,
 } from '@/server/services/owner-bookings';
 import { recordAssessment, setDogStatus } from '@/server/services/owner-review';
@@ -168,6 +169,25 @@ describe('customer booking', () => {
       owner,
     );
     expect(again.outcomes[0]).toMatchObject({ outcome: 'skipped', reason: 'Already booked' });
+  });
+
+  it('closing a day and booking it at the same moment never leaves a booking on a closed day', async () => {
+    for (let i = 0; i < 4; i++) {
+      const date = weekdayAhead(21 + i);
+      const [booked, closed] = await Promise.allSettled([
+        createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'am', taxi: false }),
+        addClosure(db(), owner, { date, reason: 'Race test' }),
+      ]);
+      const [c] = await db().select().from(closures).where(eq(closures.serviceDate, date));
+      const live = await db()
+        .select()
+        .from(bookingDogs)
+        .where(and(eq(bookingDogs.serviceDate, date), inArray(bookingDogs.status, ['requested', 'confirmed'])));
+      // Either the booking won (and the closure was refused), or the closure won (and the booking was refused).
+      expect(!!c && live.length > 0).toBe(false);
+      expect(booked.status === 'fulfilled' || closed.status === 'fulfilled').toBe(true);
+      if (c) await removeClosure(db(), owner, date);
+    }
   });
 
   it('refuses today, weekends, closures and dates beyond a vaccination expiry', async () => {
