@@ -45,6 +45,7 @@ import {
   bookingsMissingPayLink,
   checkoutRetry,
   myHoldsWithoutPayLink,
+  PayLinkBusyError,
   PayLinkUnavailableError,
   payForMyBooking,
   releaseExpiredCheckouts,
@@ -524,6 +525,32 @@ describe('pay links when the card service is down', () => {
     await resendPayLink(db(), owner, r.bookingId);
     expect((await attemptsFor(r.bookingId)).filter((a) => a.status === 'open')).toHaveLength(1);
     expect(mail.sent.some((m) => m.to === bob.email && m.template === 'booking.request-approved')).toBe(true);
+    await payOpenCheckouts(db());
+  });
+
+  it('a Pay now that loses the race is told the link is being prepared, not that it failed', async () => {
+    const r = await approvedWith(3, bob, await onboardedDog(bob, 'Racer'));
+    const real = simulated().createCheckout.bind(simulated());
+    const slow = vi.spyOn(simulated(), 'createCheckout').mockImplementation(async (a) => {
+      await new Promise((res) => setTimeout(res, 300));
+      return real(a);
+    });
+    const both = await Promise.allSettled([
+      payForMyBooking(db(), bob, r.bookingId),
+      (async () => {
+        await new Promise((res) => setTimeout(res, 100));
+        return payForMyBooking(db(), bob, r.bookingId);
+      })(),
+    ]);
+    slow.mockRestore();
+    const lost = both.find((b) => b.status === 'rejected') as PromiseRejectedResult | undefined;
+    // Either the second click reused the finished link, or it is told, accurately, to try again.
+    if (lost) {
+      expect(lost.reason).toBeInstanceOf(PayLinkBusyError);
+      expect(lost.reason).not.toBeInstanceOf(PayLinkUnavailableError);
+    }
+    expect(both.some((b) => b.status === 'fulfilled')).toBe(true);
+    expect((await attemptsFor(r.bookingId)).filter((a) => a.status === 'open')).toHaveLength(1);
     await payOpenCheckouts(db());
   });
 
