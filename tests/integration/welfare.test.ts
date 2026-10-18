@@ -37,8 +37,9 @@ import { sendBookingReminders, sendVaccinationReminders } from '@/server/service
 import { decideErasure, exportMyData, myDataRequests, requestErasure, runRetention } from '@/server/services/privacy';
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
-import { isoWeekday } from '@/domain/booking/rules';
+
 import { addDays, londonDate, londonInstant } from '@/domain/time';
+import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, PNG, type TestUser } from '../support/factories';
@@ -50,13 +51,7 @@ const mail = new MemoryEmailProvider();
 const storage = new FsStorageProvider(mkdtempSync(join(tmpdir(), 'lunak9-welfare-')));
 const system = { kind: 'system', job: 'test' } as const;
 const today = londonDate(new Date());
-const used = new Set<string>();
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n);
-  while (isoWeekday(d) > 5 || ['2026-12-25', '2026-12-28', '2027-01-01'].includes(d) || used.has(d)) d = addDays(d, 1);
-  used.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker();
 
 /** Database errors arrive wrapped by Drizzle; the trigger's message is on the cause. */
 async function failsWith(p: PromiseLike<unknown>, re: RegExp) {

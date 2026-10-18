@@ -37,6 +37,7 @@ import { sendVaccinationReminders } from '@/server/services/reminders';
 import { ConflictError, ValidationError } from '@/server/errors';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, formatUkDate, londonDate, londonInstant } from '@/domain/time';
+import { BANK_HOLIDAYS, firstOpenWeekday } from '../support/dates';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
@@ -49,14 +50,13 @@ const system = { kind: 'system', job: 'test' } as const;
 // Pin the clock so every test in this file sees the same "today", even across midnight, and so the
 // file can be run as if on another date (VACC_TEST_NOW=2026-11-06T12:00:00Z) to prove it doesn't
 // depend on the real one. Only Date is faked; timers stay real so the database driver is unaffected.
-const PINNED_NOW = new Date(process.env.VACC_TEST_NOW || Date.now());
+const PINNED_NOW = new Date(process.env.VACC_TEST_NOW || process.env.TEST_NOW || Date.now());
 vi.useFakeTimers({ toFake: ['Date'], now: PINNED_NOW });
 const today = londonDate(new Date());
-const HOLIDAYS = new Set(['2026-12-25', '2026-12-28', '2027-01-01']);
 const used = new Set<string>();
 function weekdayAhead(n: number): string {
   let d = addDays(today, n);
-  while (isoWeekday(d) > 5 || HOLIDAYS.has(d) || used.has(d)) d = addDays(d, 1);
+  while (isoWeekday(d) > 5 || BANK_HOLIDAYS.has(d) || used.has(d)) d = addDays(d, 1);
   used.add(d);
   return d;
 }
@@ -354,7 +354,7 @@ describe('customer booking (D40, D73, D74)', () => {
 
 describe('Give place (D82, D73)', () => {
   it('a waitlist place can’t be given while a licence vaccination is out of date', async () => {
-    const date = weekdayAhead(60);
+    const date = firstOpenWeekday(60);
     // Full whatever other test files have booked here meanwhile: capacity = places already used.
     const inUse = async () => {
       const u = (await ownerDay(db(), owner, date)).used;
