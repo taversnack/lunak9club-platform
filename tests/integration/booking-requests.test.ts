@@ -552,7 +552,7 @@ describe('pay links when the card service is down', () => {
     // It's for the same day (#8 records each checkout's days).
     await db()
       .insert(checkoutAttemptDays)
-      .values({ checkoutAttemptId: creating!.id, bookingDogId: (await rowOf(bobDog, date)).id });
+      .values({ checkoutAttemptId: creating!.id, bookingDogId: (await rowsOf(r.bookingId))[0]!.id });
     await expect(payForMyBooking(db(), bob, r.bookingId)).rejects.toBeInstanceOf(PayLinkPreparingError);
     Object.assign(checkoutWait, saved);
     await db().update(checkoutAttempts).set({ status: 'failed' }).where(eq(checkoutAttempts.id, creating!.id));
@@ -635,7 +635,7 @@ describe('manual waitlist (D81, D82)', () => {
   });
 
   it('Give place blocks a dog failing the vaccination check up front, with the reason (D82)', async () => {
-    const date = weekdayAhead(35); // clear of invoices-csv's day
+    const date = weekdayAhead(1); // a near free slot: far ones roll past the 90-day booking window
     const pip = await onboardedDog(bob, 'Pip');
     await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), bob, { dogIds: [pip], dates: [date], session: 'full', taxi: false });
@@ -706,7 +706,7 @@ describe('manual waitlist (D81, D82)', () => {
 
 describe('approvals authorisation', () => {
   it('only the Owner decides; customers only see their own requests', async () => {
-    const d = weekdayAhead(34);
+    const d = weekdayAhead(2); // near free slot (34+50 days ran past the 90-day window)
     const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'am', taxi: false });
     await expect(approveApprovalRequest(db(), bob, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(rejectApprovalRequest(db(), alice, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
