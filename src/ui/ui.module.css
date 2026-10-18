@@ -400,3 +400,31 @@
   font-size: 1.6rem;
   font-weight: 700;
 }
+
+/* Placeholder shown while a page loads (loading.tsx), so a slow connection never looks frozen. */
+.skeleton {
+  display: block;
+  height: 1rem;
+  margin-block: 0.75rem;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #e8e1d4 25%, #f3efe6 50%, #e8e1d4 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.skeletonTitle {
+  height: 1.75rem;
+  width: 45%;
+}
+.skeletonShort {
+  width: 70%;
+}
+@keyframes skeleton-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
