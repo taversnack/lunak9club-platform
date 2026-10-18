@@ -10,6 +10,7 @@ import {
   memberships,
   approvalRequests,
   bookingDogs,
+  checkoutAttemptDays,
   checkoutAttempts,
   complianceSubmissions,
   customers,
@@ -548,6 +549,10 @@ describe('pay links when the card service is down', () => {
         expiresAt: live!.expiresAt,
       })
       .returning();
+    // It's for the same day (#8 records each checkout's days).
+    await db()
+      .insert(checkoutAttemptDays)
+      .values({ checkoutAttemptId: creating!.id, bookingDogId: (await rowOf(bobDog, date)).id });
     await expect(payForMyBooking(db(), bob, r.bookingId)).rejects.toBeInstanceOf(PayLinkPreparingError);
     Object.assign(checkoutWait, saved);
     await db().update(checkoutAttempts).set({ status: 'failed' }).where(eq(checkoutAttempts.id, creating!.id));
@@ -630,7 +635,7 @@ describe('manual waitlist (D81, D82)', () => {
   });
 
   it('Give place blocks a dog failing the vaccination check up front, with the reason (D82)', async () => {
-    const date = weekdayAhead(7);
+    const date = weekdayAhead(35); // clear of invoices-csv's day
     const pip = await onboardedDog(bob, 'Pip');
     await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), bob, { dogIds: [pip], dates: [date], session: 'full', taxi: false });
