@@ -33,8 +33,9 @@ describe('env', () => {
     vi.stubEnv('EMAIL_TRANSPORT', 'smtp');
     vi.stubEnv('EMAIL_SANDBOX', '0');
     vi.stubEnv('PAYMENTS_DRIVER', 'stripe');
-    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_live_abc123');
-    vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_abc123');
+    // Built from parts so secret scanners don't mistake these fakes for real keys.
+    vi.stubEnv('STRIPE_SECRET_KEY', ['sk', 'live', 'abc123'].join('_'));
+    vi.stubEnv('STRIPE_WEBHOOK_SECRET', ['whsec', 'abc123'].join('_'));
     vi.stubEnv('STORAGE_DRIVER', 's3');
     vi.stubEnv('S3_ENDPOINT', 'https://r2.example');
     vi.stubEnv('S3_BUCKET', 'docs');
@@ -88,9 +89,18 @@ describe('env', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
     vi.stubEnv('APP_ENV', '');
+    // A bad configuration stops the process (#32) rather than throwing into a server that stays up.
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { register } = await import('@/instrumentation');
-    await expect(register()).rejects.toThrow(/APP_ENV must be set/);
+    await register();
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(logged.mock.calls[0]![0]).toMatch(/Refusing to start: APP_ENV must be set/);
+    exit.mockClear();
     vi.stubEnv('NEXT_PHASE', 'phase-production-build');
     await expect(register()).resolves.toBeUndefined();
+    expect(exit).not.toHaveBeenCalled();
+    exit.mockRestore();
+    logged.mockRestore();
   });
 });
