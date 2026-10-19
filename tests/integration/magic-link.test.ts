@@ -107,6 +107,19 @@ describe('magic-link sign-in', () => {
     expect(loc.pathname).toBe('/dashboard');
   });
 
+  it.each([
+    ['malformed escape', '%E0%A4%A'],
+    ['double-encoded malformed escape', '%25E0%25A4%25A'],
+    ['lone percent', '%'],
+  ])('a %s in the callbackURL falls back to /dashboard instead of failing (was HTTP 500)', async (_l, raw) => {
+    const r = await authRequest(`/magic-link/verify?token=not-a-real-token&callbackURL=${raw}`, { method: 'GET' });
+    expect(r.res.status).toBe(302);
+    const loc = new URL(r.res.headers.get('location')!, 'http://localhost:3000');
+    expect(loc.pathname).toBe('/sign-in');
+    expect(loc.searchParams.get('callbackUrl')).toBe('/dashboard');
+    expect(loc.searchParams.get('error')).toBe('INVALID_TOKEN');
+  });
+
   it('gives unknown, owner and unconfirmed addresses the same response and sends them nothing', async () => {
     const unverified = `unverified.${randomUUID().slice(0, 8)}@example.test`;
     await db()
