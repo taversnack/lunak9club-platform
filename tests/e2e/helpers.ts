@@ -12,51 +12,43 @@ export function uniqueEmail(prefix: string, project: string) {
   return `${prefix}.${project}.${Date.now()}@example.test`;
 }
 
-/** Latest link in the most recent email sent to `to` for a template (polls briefly). */
-export async function latestLink(to: string, template: string): Promise<string> {
-  for (let i = 0; i < 30; i++) {
-    if (existsSync(MAIL_DIR)) {
-      const msgs = readdirSync(MAIL_DIR)
-        .sort()
-        .reverse()
-        .map(
-          (f) => JSON.parse(readFileSync(join(MAIL_DIR, f), 'utf8')) as { to: string; template: string; text: string },
-        );
-      const m = msgs.find((x) => x.to === to && x.template === template);
-      const link = m?.text.match(/https?:\/\/\S+/)?.[0];
-      if (link) return link;
+type MailFile = { to: string; template: string; text: string; html: string; subject: string };
+
+/**
+ * Messages in the test mail folder, newest first. Only finished files (`*.json`; the transport writes
+ * `*.json.tmp` then renames) are read, and one that can't be parsed is skipped rather than failing.
+ */
+function mailNewestFirst(): MailFile[] {
+  if (!existsSync(MAIL_DIR)) return [];
+  const out: MailFile[] = [];
+  for (const f of readdirSync(MAIL_DIR)
+    .filter((x) => x.endsWith('.json'))
+    .sort()
+    .reverse()) {
+    try {
+      out.push(JSON.parse(readFileSync(join(MAIL_DIR, f), 'utf8')) as MailFile);
+    } catch {
+      // removed or unreadable meanwhile: ignore
     }
+  }
+  return out;
+}
+
+/** The most recent email sent to `to` for a template (polls briefly). */
+export async function latestEmail(to: string, template: string): Promise<MailFile> {
+  for (let i = 0; i < 30; i++) {
+    const m = mailNewestFirst().find((x) => x.to === to && x.template === template);
+    if (m) return m;
     await new Promise((r) => setTimeout(r, 200));
   }
   throw new Error(`No ${template} email for ${to}`);
 }
 
-/** The most recent email sent to `to` for a template (polls briefly). */
-export async function latestEmail(
-  to: string,
-  template: string,
-): Promise<{ text: string; html: string; subject: string }> {
-  for (let i = 0; i < 30; i++) {
-    if (existsSync(MAIL_DIR)) {
-      const m = readdirSync(MAIL_DIR)
-        .sort()
-        .reverse()
-        .map(
-          (f) =>
-            JSON.parse(readFileSync(join(MAIL_DIR, f), 'utf8')) as {
-              to: string;
-              template: string;
-              text: string;
-              html: string;
-              subject: string;
-            },
-        )
-        .find((x) => x.to === to && x.template === template);
-      if (m) return m;
-    }
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  throw new Error(`No ${template} email for ${to}`);
+/** The link in the newest email sent to `to` for a template (polls briefly). */
+export async function latestLink(to: string, template: string): Promise<string> {
+  const link = (await latestEmail(to, template)).text.match(/https?:\/\/\S+/)?.[0];
+  if (!link) throw new Error(`No link in the latest ${template} email for ${to}`);
+  return link;
 }
 
 export async function signIn(page: Page, email: string, password: string) {
