@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testDatabaseUrl } from './test-db-url';
@@ -6,11 +6,19 @@ import { addDays, londonDate } from '@/domain/time';
 import { isoWeekday } from '@/domain/booking/rules';
 
 /**
- * Days the club is closed for bank holidays, read from the same migration that seeds them, so the
+ * Days the club is closed for bank holidays, read from the migrations that seed them (0005, 0022, …), so the
  * tests can never disagree with the app (and no list is repeated in each test file).
  */
 export const BANK_HOLIDAYS: ReadonlySet<string> = new Set(
-  readFileSync('drizzle/0005_seed_booking_settings_and_bank_holidays.sql', 'utf8').match(/\d{4}-\d{2}-\d{2}/g) ?? [],
+  readdirSync('drizzle')
+    .filter((f) => f.endsWith('.sql'))
+    .flatMap((f) =>
+      (
+        readFileSync(`drizzle/${f}`, 'utf8')
+          .replace(/--.*$/gm, '')
+          .match(/INSERT INTO closures[\s\S]*?(?:;|$)/gi) ?? []
+      ).flatMap((stmt) => stmt.match(/\d{4}-\d{2}-\d{2}/g) ?? []),
+    ),
 );
 
 /** The customers' booking window (booking_settings.max_advance_days default). */
