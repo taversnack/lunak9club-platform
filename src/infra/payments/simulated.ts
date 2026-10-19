@@ -91,3 +91,13 @@ export class SimulatedPaymentProvider implements PaymentProvider {
     throw new Error('The simulated provider has no webhooks; checkouts are confirmed on return.');
   }
 }
+
+/**
+ * The simulated provider, or null if another driver is configured. Checks the driver's name rather than
+ * `instanceof`: in `next dev` a route handler and a page are bundled separately, each with its own copy
+ * of this class, so `instanceof` is false for a provider the other bundle created (and the test
+ * checkout page returned 404 whenever a route handler was the first to use the provider).
+ */
+export function asSimulatedProvider(p: PaymentProvider): SimulatedPaymentProvider | null {
+  return p.name === 'simulated' ? (p as SimulatedPaymentProvider) : null;
+}
