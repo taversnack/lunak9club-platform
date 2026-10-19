@@ -3,7 +3,7 @@ import { getDb } from '@/infra/db/client';
 import { getActor } from '@/server/session';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { ConflictError, NotFoundError } from '@/server/errors';
-import { payForMyBooking } from '@/server/services/payments';
+import { PayLinkBusyError, payForMyBooking } from '@/server/services/payments';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +20,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ bookingI
   } catch (e) {
     if (e instanceof AuthorizationError || e instanceof NotFoundError)
       return new Response('Not found', { status: 404 });
+    if (e instanceof PayLinkBusyError)
+      return NextResponse.redirect(new URL('/account/bookings?payment=preparing', base), 303);
     if (e instanceof ConflictError)
       return NextResponse.redirect(new URL('/account/bookings?payment=unavailable', base), 303);
     throw e;

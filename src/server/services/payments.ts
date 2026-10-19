@@ -116,6 +116,14 @@ const describeDays = (days: { dogName: string }[]) => {
 /** Pause between tries when the payment provider can't be reached (tests set it to 0). */
 export const checkoutRetry = { delayMs: 300 };
 
+/** Another request is creating this pay link right now. Nothing failed: try again in a moment. */
+export class PayLinkBusyError extends ConflictError {
+  constructor() {
+    super('Your payment link is being prepared. Please try again in a moment.');
+    this.name = 'PayLinkBusyError';
+  }
+}
+
 /** The provider couldn't create a pay link; any places stay held (the Owner can resend, the customer can retry). */
 export class PayLinkUnavailableError extends ConflictError {
   constructor(untilText: string | null) {
@@ -240,7 +248,7 @@ export async function startBookingCheckout(
     await notify(claim.reuse.id, claim.reuse.expiresAt);
     return { attemptId: claim.reuse.id, url: claim.reuse.url!, amountPence: amount, reused: true };
   }
-  if ('busy' in claim) throw new ConflictError('Your payment link is being prepared. Please try again in a moment.');
+  if ('busy' in claim) throw new PayLinkBusyError();
   const attempt = claim.attempt!;
 
   const tries = Math.max(1, opts.tries ?? 1);
