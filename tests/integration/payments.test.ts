@@ -9,6 +9,7 @@ import {
   auditEvents,
   bookingDogs,
   cardRefunds,
+  checkoutAttemptDays,
   checkoutAttempts,
   creditNotes,
   customers,
@@ -250,7 +251,14 @@ describe('two offers from one request (same bookingId)', () => {
     // separately: two open checkouts on one bookingId, one day each.
     await giveWaitlistPlace(db(), owner, w1.id, { version: w1.version });
     await giveWaitlistPlace(db(), owner, w2.id, { version: w2.version });
-    const [second, first] = await attemptsFor(quinn.userId);
+    // Find each day's checkout by the day it pays for, not by creation order (two checkouts made
+    // back to back can share a timestamp).
+    const paysFor = new Map(
+      (await db().select().from(checkoutAttemptDays)).map((r) => [r.checkoutAttemptId, r.bookingDogId]),
+    );
+    const attemptFor = async (bookingDogId: string) =>
+      (await attemptsFor(quinn.userId)).find((a) => paysFor.get(a.id) === bookingDogId);
+    const [first, second] = [await attemptFor(w1.id), await attemptFor(w2.id)];
     expect(first!.amountPence).toBe(5000);
     expect(second!.amountPence).toBe(5000);
 
