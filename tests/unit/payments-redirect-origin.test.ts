@@ -53,3 +53,17 @@ describe('payment routes redirect a signed-out visitor to APP_URL, whatever the 
     expect(loc.searchParams.get('callbackUrl')).toBe('/api/payments/return?attempt=abc&cancelled=1');
   });
 });
+
+describe('seeOtherInApp (signed-in redirects inside the site)', () => {
+  it('uses a relative Location, so the client resolves it against the URL it really used', async () => {
+    const { seeOtherInApp } = await import('@/server/redirects');
+    const res = seeOtherInApp('/account/bookings?payment=paid');
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('/account/bookings?payment=paid');
+  });
+  it('never points off-site', async () => {
+    const { seeOtherInApp } = await import('@/server/redirects');
+    for (const bad of ['//evil.example', 'https://evil.example/', '/\\evil.example'])
+      expect(seeOtherInApp(bad).headers.get('location')).toBe('/dashboard');
+  });
+});
