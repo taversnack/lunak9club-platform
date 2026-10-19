@@ -119,3 +119,29 @@ test('signing in from a link before confirming: the confirmation email brings yo
   await page.goto(link);
   await expect(page).toHaveURL(/\/account\/bookings$/);
 });
+
+test('magic link: a customer signs in from the emailed link once and lands on the callback page', async ({ page }) => {
+  await page.goto('/');
+  // No sign-in UI for this yet (Dev4); ask for the link the way the client helper does.
+  const status = await page.evaluate(async (email) => {
+    const r = await fetch('/api/auth/sign-in/magic-link', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, callbackURL: '/account/bookings' }),
+    });
+    return r.status;
+  }, DEMO_CUSTOMER.email);
+  expect(status).toBe(200);
+  let link = '';
+  await expect
+    .poll(async () => (link = await latestLink(DEMO_CUSTOMER.email, 'auth.magic-link')), { timeout: 10_000 })
+    .toContain('/api/auth/magic-link/verify?token=');
+  await page.goto(link);
+  await expect(page).toHaveURL(/\/account\/bookings$/);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  // The same link a second time doesn't sign anyone in: back to sign-in, keeping the way back.
+  await page.context().clearCookies();
+  await page.goto(link);
+  await expect(page).toHaveURL(/\/sign-in\?callbackUrl=%2Faccount%2Fbookings&error=INVALID_TOKEN$/);
+});
