@@ -691,7 +691,7 @@ describe('manual waitlist (D81, D82)', () => {
 
 describe('approvals authorisation', () => {
   it('only the Owner decides; customers only see their own requests', async () => {
-    const d = weekdayAhead(2); // the nearer free slots are taken by now: 34+50 days ran past the 90-day booking window
+    const d = weekdayAhead(34);
     const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'am', taxi: false });
     await expect(approveApprovalRequest(db(), bob, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(rejectApprovalRequest(db(), alice, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
