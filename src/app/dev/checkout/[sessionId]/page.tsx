@@ -2,10 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import s from '@/ui/ui.module.css';
 import { Alert, buttonClass, Card, Stack } from '@/ui/components';
-import { getPaymentProvider } from '@/infra/payments';
-import { asSimulatedProvider } from '@/infra/payments/simulated';
+import { simulatedOr404 } from './simulated';
 import { pounds } from '@/domain/pricing/engine';
-import { simulateCancelAction, simulatePayAction } from './actions';
 
 export const metadata: Metadata = { title: 'Test card payment' };
 export const dynamic = 'force-dynamic';
@@ -13,7 +11,7 @@ export const dynamic = 'force-dynamic';
 /** Stand-in for Stripe's payment page when PAYMENTS_DRIVER=simulated. 404 otherwise. */
 export default async function SimulatedCheckoutPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const p = asSimulatedProvider(getPaymentProvider());
+  const p = simulatedOr404();
   if (!p) notFound();
   const session = p.sessions.get(sessionId);
   if (!session) notFound();
@@ -31,14 +29,13 @@ export default async function SimulatedCheckoutPage({ params }: { params: Promis
           <p>{session.description}</p>
           {state.status === 'open' ? (
             <div className={s.row}>
-              <form action={simulatePayAction}>
-                <input type="hidden" name="sessionId" value={sessionId} />
+              {/* Plain POSTs (not Server Actions), so the browser follows the redirects, as from Stripe. */}
+              <form method="post" action={`/dev/checkout/${encodeURIComponent(sessionId)}/pay`}>
                 <button type="submit" className={buttonClass('primary')}>
                   Pay {pounds(session.amountPence)} with a test card
                 </button>
               </form>
-              <form action={simulateCancelAction}>
-                <input type="hidden" name="sessionId" value={sessionId} />
+              <form method="post" action={`/dev/checkout/${encodeURIComponent(sessionId)}/cancel`}>
                 <button type="submit" className={buttonClass('secondary')}>
                   Cancel
                 </button>

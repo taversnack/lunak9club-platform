@@ -1,6 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, latestEmail, signIn, signOut } from './helpers';
+import {
+  DEMO_CUSTOMER,
+  DEMO_CUSTOMER_2,
+  DEMO_OWNER,
+  expectLandedAfterPayment,
+  latestEmail,
+  signIn,
+  signOut,
+} from './helpers';
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '../../src/domain/booking/wording';
 
 test.describe.configure({ mode: 'serial' });
@@ -86,8 +94,19 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   await axe(page);
   await page.getByRole('button', { name: 'Pay £100.00 with a test card' }).click();
   await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
+  await expectLandedAfterPayment(page, '/account/bookings');
   await expect(page.getByText('See you both soon').first()).toBeVisible();
   await axe(page);
+
+  // The emailed pay link again, now that it's paid: says so (not "the time to pay ran out").
+  await page.goto(new URL(payLink).pathname);
+  await expect(page.getByText('This booking is already paid')).toBeVisible();
+  await expect(page.getByText('That payment link has ended')).toHaveCount(0);
+  await expectLandedAfterPayment(page, '/account/bookings', 'already-paid');
+  await page.getByRole('link', { name: 'View the receipt' }).click();
+  await expect(page).toHaveURL(/\/account\/invoices\/[0-9a-f-]{36}$/);
+  await expect(page.getByText('Paid').first()).toBeVisible();
+  await page.goto('/account/bookings');
 
   const row = page.getByRole('row').filter({ hasText: 'Biscuit' }).first();
   bookedDateLabel = (await row.getByRole('cell').first().textContent())!;
@@ -149,6 +168,7 @@ test('Owner sees the booking on the day, books a trial and checks a dog in and o
     .click();
   await page.getByRole('button', { name: /with a test card/ }).click();
   await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
+  await expectLandedAfterPayment(page, '/account/bookings');
   await signOut(page);
 
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);

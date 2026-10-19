@@ -87,3 +87,17 @@ export async function setVaccinationExpiry(dogName: string, requirementKey: stri
     await c.end();
   }
 }
+
+/**
+ * After a card payment the address bar must show a real page (e.g. /account/bookings?payment=paid),
+ * not /api/payments/return or the simulated checkout's own POST URLs.
+ */
+export async function expectLandedAfterPayment(page: Page, pathname: string | RegExp, payment = 'paid') {
+  await expect(page).toHaveURL(
+    (u) =>
+      !u.pathname.startsWith('/api/') &&
+      !u.pathname.startsWith('/dev/checkout/') &&
+      (typeof pathname === 'string' ? u.pathname === pathname : pathname.test(u.pathname)) &&
+      u.searchParams.get('payment') === payment,
+  );
+}
