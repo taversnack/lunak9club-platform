@@ -92,3 +92,56 @@ test('customer resets a forgotten password', async ({ page }, info) => {
   await signIn(page, email, 'sam-second-password');
   await expect(page).toHaveURL(/\/account$/);
 });
+
+test('signing in from a link before confirming: the confirmation email brings you back to that link', async ({
+  page,
+}, info) => {
+  const email = uniqueEmail('callback', info.project.name);
+  await page.goto('/register');
+  await page.getByLabel('Full name').fill('Robin Callback');
+  await page.getByLabel('Email address').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill('robin-long-password');
+  await page.getByLabel('Confirm password').fill('robin-long-password');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+
+  await page.goto(`/sign-in?callbackUrl=${encodeURIComponent('/account/bookings')}`);
+  await page.getByLabel('Email address').fill(email);
+  await page.getByLabel('Password').fill('robin-long-password');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByText('Please confirm your email')).toBeVisible();
+
+  // The new confirmation email (sent on that sign-in) carries the way back.
+  let link = '';
+  await expect
+    .poll(async () => (link = await latestLink(email, 'auth.verify-email')), { timeout: 10_000 })
+    .toContain(`callbackURL=${encodeURIComponent('/account/bookings')}`);
+  await page.goto(link);
+  await expect(page).toHaveURL(/\/account\/bookings$/);
+});
+
+test('magic link: a customer signs in from the emailed link once and lands on the callback page', async ({ page }) => {
+  await page.goto('/');
+  // No sign-in UI for this yet (Dev4); ask for the link the way the client helper does.
+  const status = await page.evaluate(async (email) => {
+    const r = await fetch('/api/auth/sign-in/magic-link', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, callbackURL: '/account/bookings' }),
+    });
+    return r.status;
+  }, DEMO_CUSTOMER.email);
+  expect(status).toBe(200);
+  let link = '';
+  await expect
+    .poll(async () => (link = await latestLink(DEMO_CUSTOMER.email, 'auth.magic-link')), { timeout: 10_000 })
+    .toContain('/api/auth/magic-link/verify?token=');
+  await page.goto(link);
+  await expect(page).toHaveURL(/\/account\/bookings$/);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  // The same link a second time doesn't sign anyone in: back to sign-in, keeping the way back.
+  await page.context().clearCookies();
+  await page.goto(link);
+  await expect(page).toHaveURL(/\/sign-in\?callbackUrl=%2Faccount%2Fbookings&error=INVALID_TOKEN$/);
+});
