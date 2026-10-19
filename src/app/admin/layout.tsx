@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { NavLink } from '@/ui/nav-link';
 import s from '@/ui/ui.module.css';
 import { SignOutButton } from '@/ui/sign-out-button';
 import { requirePermission } from '@/server/session';
@@ -11,21 +11,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className={s.container}>
       <nav aria-label="Owner" className={s.subnav}>
-        <Link href="/admin">Dashboard</Link>
-        <Link href="/admin/bookings">Bookings</Link>
-        <Link href="/admin/approvals">Requests</Link>
-        <Link href="/admin/memberships">Memberships</Link>
-        <Link href="/admin/invoices">Invoices</Link>
-        <Link href="/admin/refunds">Refunds</Link>
-        <Link href="/admin/reviews">Reviews</Link>
-        <Link href="/admin/incidents">Incidents</Link>
-        <Link href="/admin/customers">Customers</Link>
-        <Link href="/admin/settings/availability">Opening</Link>
-        <Link href="/admin/settings/pricing">Prices</Link>
-        <Link href="/admin/settings/requirements">Requirements</Link>
-        <Link href="/admin/settings/terms">Terms</Link>
-        <Link href="/admin/settings/business">Business</Link>
-        <Link href="/admin/data-requests">Data requests</Link>
+        <NavLink href="/admin">Dashboard</NavLink>
+        <NavLink href="/admin/bookings">Bookings</NavLink>
+        <NavLink href="/admin/approvals">Requests</NavLink>
+        <NavLink href="/admin/memberships">Memberships</NavLink>
+        <NavLink href="/admin/invoices">Invoices</NavLink>
+        <NavLink href="/admin/refunds">Refunds</NavLink>
+        <NavLink href="/admin/reviews">Reviews</NavLink>
+        <NavLink href="/admin/incidents">Incidents</NavLink>
+        <NavLink href="/admin/customers">Customers</NavLink>
+        <NavLink href="/admin/settings/availability">Opening</NavLink>
+        <NavLink href="/admin/settings/pricing">Prices</NavLink>
+        <NavLink href="/admin/settings/requirements">Requirements</NavLink>
+        <NavLink href="/admin/settings/terms">Terms</NavLink>
+        <NavLink href="/admin/settings/business">Business</NavLink>
+        <NavLink href="/admin/data-requests">Data requests</NavLink>
         <SignOutButton />
       </nav>
       {children}
