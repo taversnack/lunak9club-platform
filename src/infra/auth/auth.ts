@@ -10,7 +10,7 @@ import { env } from '../env';
 import { logger } from '../logger';
 import { getEmailProvider } from '../email/providers';
 import { magicLinkMessage, resetPasswordMessage, verifyEmailMessage } from '../email/templates';
-import { safeCallbackPath } from '@/domain/auth/callback-url';
+import { decodeOrNull, safeCallbackPath } from '@/domain/auth/callback-url';
 import { userRoles, auditEvents } from '../db/schema';
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? 'there';
@@ -130,8 +130,10 @@ function createAuth() {
         }
         if (ctx.path === MAGIC_VERIFY_PATH && ctx.query) {
           const q = ctx.query as Record<string, unknown>;
+          // The plugin decodes callbackURL once more itself, so check the decoded form. A malformed
+          // escape (e.g. %E0%A4%A) used to throw a URIError here (HTTP 500): it now falls back.
           const callbackURL = safeCallbackPath(
-            typeof q.callbackURL === 'string' ? decodeURIComponent(q.callbackURL) : q.callbackURL,
+            typeof q.callbackURL === 'string' ? decodeOrNull(q.callbackURL) : q.callbackURL,
           );
           return {
             context: {
