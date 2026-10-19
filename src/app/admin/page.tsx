@@ -129,6 +129,8 @@ export default async function AdminHome() {
       </div>
       <Card aria-labelledby="audit">
         <h2 id="audit">Recent activity</h2>
+        {/* No full audit page exists yet, so show all 20 fetched events. */}
+        {events.length > 0 && <Muted>Latest {events.length} events.</Muted>}
         {events.length === 0 ? (
           <Muted>No activity yet.</Muted>
         ) : (
@@ -142,7 +144,7 @@ export default async function AdminHome() {
               </tr>
             </thead>
             <tbody>
-              {events.slice(0, 8).map((e) => (
+              {events.map((e) => (
                 <tr key={e.id}>
                   <td data-primary="">{auditActionLabel(e.action)}</td>
                   <td data-label="When">{formatDateTimeLondon(e.occurredAt)}</td>
