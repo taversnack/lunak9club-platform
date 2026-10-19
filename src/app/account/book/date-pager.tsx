@@ -54,8 +54,20 @@ export function StickySubmit() {
     form.addEventListener('change', update);
     return () => form.removeEventListener('change', update);
   }, []);
+  // Publish the bar's real height so html's scroll-padding keeps focused controls clear of it (WCAG 2.4.11).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const ro = new ResizeObserver(() => root.style.setProperty('--sticky-submit-h', `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty('--sticky-submit-h');
+    };
+  }, []);
   return (
-    <div ref={ref} className={b.sticky}>
+    <div ref={ref} className={b.sticky} data-sticky-submit="">
       <p className={b.stickyCount} aria-live="polite">
         {count === 0 ? 'No days chosen yet' : `${count} day${count === 1 ? '' : 's'} chosen`}
       </p>

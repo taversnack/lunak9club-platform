@@ -75,7 +75,7 @@
 @media (max-width: 899px) {
   /* Sit above the bottom tab bar. */
   .sticky {
-    bottom: 64px;
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   }
 }
 @media (min-width: 900px) {
