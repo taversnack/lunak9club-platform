@@ -7,8 +7,8 @@ import { SimulatedPaymentProvider } from '@/infra/payments/simulated';
 import { checkoutAttempts, customers, invoices, users } from '@/infra/db/schema';
 import { completeCheckout } from '@/server/services/payments';
 import { invoicesCsv } from '@/server/services/billing';
-import { isoWeekday } from '@/domain/booking/rules';
-import { addDays, londonDate } from '@/domain/time';
+
+import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
@@ -17,13 +17,8 @@ import { approvedDog, readyCustomer } from '../support/onboard';
 const db = () => getDb();
 const mail = new MemoryEmailProvider();
 const stripe = new SimulatedPaymentProvider('http://localhost:3000');
-const today = londonDate(new Date());
 /** An open weekday well away from other test files' dates. */
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n);
-  while (isoWeekday(d) > 5 || ['2026-12-25', '2026-12-28', '2027-01-01'].includes(d)) d = addDays(d, 1);
-  return d;
-}
+const weekdayAhead = weekdayPicker({ unique: false });
 
 const FORMULA = '=HYPERLINK("http://x","click")';
 let owner: TestUser;

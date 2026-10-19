@@ -104,6 +104,11 @@ export default async function BookingsPage({
           The time to pay ran out, so the places were released. You can book again.
         </Alert>
       ) : null}
+      {sp.payment === 'preparing' ? (
+        <Alert tone="info" title="Your payment link is being prepared">
+          That only takes a moment. Your places are still held – press “Pay now” again in a few seconds.
+        </Alert>
+      ) : null}
       {sp.payment === 'unavailable' ? (
         <Alert tone="warning" title="We couldn’t create your payment link">
           Sorry – we couldn’t create your payment link just now. Your places are still held. Please try again in a few
