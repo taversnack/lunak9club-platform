@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/infra/auth/client';
 import { DEFAULT_AFTER_SIGN_IN, safeCallbackPath } from '@/domain/auth/callback-url';
-import { Alert, Button, Field, Stack } from '@/ui/components';
+import { Alert, Field, Stack } from '@/ui/components';
+import { PendingButton } from '@/ui/form';
 
 export function SignInForm({ notice, callbackUrl }: { notice?: 'reset' | 'verified'; callbackUrl?: string }) {
   const router = useRouter();
@@ -64,9 +65,9 @@ export function SignInForm({ notice, callbackUrl }: { notice?: 'reset' | 'verifi
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <Field label="Email address" name="email" type="email" autoComplete="email" required />
         <Field label="Password" name="password" type="password" autoComplete="current-password" required />
-        <Button type="submit" full disabled={pending} aria-disabled={pending}>
-          {pending ? 'Signing in…' : 'Sign in'}
-        </Button>
+        <PendingButton full pending={pending} pendingText="Signing in…">
+          Sign in
+        </PendingButton>
         <p>
           <Link href="/forgot-password">Forgotten your password?</Link>
         </p>
