@@ -600,8 +600,12 @@ describe('manual waitlist (D81, D82)', () => {
     await expect(giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version })).rejects.toThrow(
       /no free place/,
     );
+    // The day view says so up front, so the button can be disabled with a reason.
+    const full = (await ownerDay(db(), owner, date)).waitlist.find((r) => r.id === waiting.id)!;
+    expect(full.giveBlock).toMatch(/no free place/);
     await withdrawMyApprovalRequest(db(), alice, a.requestId!);
     await runTick(db(), system);
+    expect((await ownerDay(db(), owner, date)).waitlist.find((r) => r.id === waiting.id)!.giveBlock).toBeNull();
     expect((await rowOf(bobDog, date)).status).toBe('waitlisted');
     mail.sent.length = 0;
     const g = await giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version });

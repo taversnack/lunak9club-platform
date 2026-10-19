@@ -43,6 +43,20 @@ import { pendingRequestFor, requestedLeft } from './booking-requests';
 import { rejectApprovalRequest } from './approvals';
 import { priceSnapshots } from '@/infra/db/schema';
 
+/** Why a waitlisted dog can't be given a place yet because the day is full, or null if it fits. */
+function noFreePlace(
+  session: Session,
+  taxi: boolean,
+  used: Parameters<typeof fits>[2],
+  cap: Parameters<typeof fits>[3],
+) {
+  const f = fits(session, taxi, used, cap);
+  if (f.ok) return null;
+  return f.reason === 'taxi_full'
+    ? 'Can’t give a place: the taxi is full'
+    : 'Can’t give a place: no free place in this session';
+}
+
 /** Owner: one day — capacity, every dog booked, taxi list, waitlist and compliance warnings. */
 export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Date()) {
   assertAuthorized(actor, 'bookings.manage');
@@ -85,6 +99,7 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
   ]);
   const evals = await evaluateDogs(db, [...new Set(rows.map((r) => r.dogId))], now);
   const missingPay = new Set((await bookingsMissingPayLink(db, actor, { date }, now)).flatMap((m) => m.bookingDogIds));
+  const o = overview.get(date)!;
   const withWarnings = rows.map((r) => {
     const e = evals.get(r.dogId);
     const blocks: AttendanceBlocks = e ? blocksForEvaluation(e, date) : { hard: [], overridable: [] };
@@ -94,7 +109,11 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
       ...r,
       warning,
       /** D82: a dog failing the vaccination check for this date can't be given a place. */
-      giveBlock: vacc ? `Can’t give a place: ${vacc}` : null,
+      giveBlock: vacc
+        ? `Can’t give a place: ${vacc}`
+        : r.status === 'waitlisted'
+          ? noFreePlace(r.session, r.taxi, o.used, o.cap)
+          : null,
       holdLive: r.status === 'pending_payment' && !!r.offerExpiresAt && r.offerExpiresAt > now,
       /** Held for payment but the pay link couldn't be created – the Owner can resend it. */
       payLinkMissing: missingPay.has(r.id),
@@ -104,7 +123,6 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
       checkInNeedsReason: blocks.hard.length === 0 && blocks.overridable.length > 0,
     };
   });
-  const o = overview.get(date)!;
   return {
     date,
     closedReason: closed.get(date) ?? (settings.openWeekdays.includes(isoWeekday(date)) ? null : 'Not an opening day'),
