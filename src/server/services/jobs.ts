@@ -67,16 +67,16 @@ async function once(
 ): Promise<RunOutcome> {
   const [claimed] = await db
     .insert(jobRuns)
-    .values({ job, runKey: key })
+    // Stamped with the tick's own clock (as finishedAt is, and as the retention job measures age),
+    // not the database's now(): mixing the two clocks let retention delete a run it had just made
+    // whenever the tick's time was months ahead of the database's (seen with a pinned test clock).
+    .values({ job, runKey: key, startedAt: now })
     .onConflictDoUpdate({
       target: [jobRuns.job, jobRuns.runKey],
-      set: { status: 'running', startedAt: sql`now()`, finishedAt: null },
+      set: { status: 'running', startedAt: now, finishedAt: null },
       setWhere: or(
         eq(jobRuns.status, 'failed'),
-        and(
-          eq(jobRuns.status, 'running'),
-          lt(jobRuns.startedAt, sql`now() - make_interval(mins => ${STALE_RUN_MINUTES})`),
-        ),
+        and(eq(jobRuns.status, 'running'), lt(jobRuns.startedAt, new Date(now.getTime() - STALE_RUN_MINUTES * 60_000))),
       ),
     })
     .returning({ id: jobRuns.id });

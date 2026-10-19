@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
 import { setPaymentProvider } from '@/infra/payments';
@@ -119,7 +119,8 @@ describe('scheduler tick resilience (M2, M6)', () => {
 
   it("takes over a run left 'running' for over 30 minutes (STALE_RUN_MINUTES), but not one still in progress", async () => {
     const day = '2020-01-07';
-    const minutesAgo = (n: number) => sql`now() - make_interval(mins => ${n})`;
+    // Measured against the tick's time, the clock jobs run on.
+    const minutesAgo = (n: number) => new Date(londonInstant(day, '03:30').getTime() - n * 60_000);
     await db()
       .insert(jobRuns)
       .values([
