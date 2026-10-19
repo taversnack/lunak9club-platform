@@ -401,30 +401,30 @@
   font-weight: 700;
 }
 
-/* Placeholder shown while a page loads (loading.tsx), so a slow connection never looks frozen. */
-.skeleton {
-  display: block;
-  height: 1rem;
-  margin-block: 0.75rem;
-  border-radius: 6px;
-  background: linear-gradient(90deg, #e8e1d4 25%, #f3efe6 50%, #e8e1d4 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+/* Navigation feedback: while a nav link's page loads, a thin bar runs along the top of the screen
+   (client-side, so pages still return their real HTTP status, e.g. 404). */
+.navPending {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 3px;
+  z-index: 1000;
+  background: linear-gradient(90deg, transparent, #b98a4f, transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: nav-pending 1s ease-in-out infinite;
+  pointer-events: none;
 }
-.skeletonTitle {
-  height: 1.75rem;
-  width: 45%;
-}
-.skeletonShort {
-  width: 70%;
-}
-@keyframes skeleton-shimmer {
+@keyframes nav-pending {
+  from {
+    background-position: -50% 0;
+  }
   to {
-    background-position: -200% 0;
+    background-position: 150% 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .skeleton {
+  .navPending {
     animation: none;
+    background: #b98a4f;
   }
 }
