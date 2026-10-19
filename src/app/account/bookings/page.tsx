@@ -9,6 +9,8 @@ import { getDb } from '@/infra/db/client';
 import { myBookings } from '@/server/services/bookings';
 import { myHoldsWithoutPayLink, myOpenCheckouts } from '@/server/services/payments';
 import { pounds } from '@/domain/pricing/engine';
+import { myInvoice } from '@/server/services/billing';
+import { NotFoundError } from '@/server/errors';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
 import { formatDateTimeLondon } from '@/ui/format';
@@ -47,6 +49,18 @@ export default async function BookingsPage({
     myApprovalRequests(getDb(), actor, { type: 'booking.request', status: 'all' }),
     myHoldsWithoutPayLink(getDb(), actor),
   ]);
+  // A pay link for something already paid: show what was paid, when, and the receipt's reference.
+  const receipt =
+    sp.payment === 'already-paid' && sp.receipt && UUID.test(sp.receipt)
+      ? await myInvoice(getDb(), actor, sp.receipt).catch((e: unknown) => {
+          if (e instanceof NotFoundError) return null;
+          throw e;
+        })
+      : null;
+  const paidOn = receipt?.payments
+    .map((x) => x.receivedOn)
+    .sort()
+    .at(-1);
   // The Owner's note on a decided request is shown here only – never emailed (D80).
   const notes = decided.filter((r) => r.status !== 'pending' && r.reason).slice(0, 5);
   return (
@@ -94,11 +108,22 @@ export default async function BookingsPage({
       {sp.payment === 'already-paid' ? (
         <Alert tone="success" title="This booking is already paid">
           <p>There’s nothing more to pay – your places are booked. They’re listed below.</p>
-          {sp.receipt && UUID.test(sp.receipt) ? (
-            <p>
-              <Link href={`/account/invoices/${sp.receipt}` as Route}>View the receipt</Link>
-            </p>
+          {receipt ? (
+            <>
+              <p data-testid="already-paid-summary">
+                {pounds(receipt.bal.paidPence)} paid{paidOn ? ` on ${formatUkDate(paidOn)}` : ''}. Reference{' '}
+                {receipt.inv.number}.
+              </p>
+              <p>
+                <Link href={`/account/invoices/${receipt.inv.id}` as Route}>View the receipt</Link>
+              </p>
+            </>
           ) : null}
+        </Alert>
+      ) : null}
+      {sp.payment === 'booking-cancelled' ? (
+        <Alert tone="info" title="This booking was cancelled">
+          There’s nothing to pay for it. You can book again whenever you like.
         </Alert>
       ) : null}
       {sp.payment === 'processing' ? (

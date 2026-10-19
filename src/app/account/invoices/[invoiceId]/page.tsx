@@ -59,6 +59,19 @@ export default async function MyInvoicePage({
             <>
               <dt>Paid</dt>
               <dd>{pounds(d.bal.paidPence)}</dd>
+              {d.payments.length ? (
+                <>
+                  <dt>Paid on</dt>
+                  <dd>
+                    {formatUkDate(
+                      d.payments
+                        .map((x) => x.receivedOn)
+                        .sort()
+                        .at(-1)!,
+                    )}
+                  </dd>
+                </>
+              ) : null}
             </>
           ) : null}
           <dt>To pay</dt>

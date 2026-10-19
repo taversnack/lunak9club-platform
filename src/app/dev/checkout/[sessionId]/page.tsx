@@ -2,6 +2,10 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import s from '@/ui/ui.module.css';
 import { Alert, buttonClass, Card, Stack } from '@/ui/components';
+import { getDb } from '@/infra/db/client';
+import { getActor } from '@/server/session';
+import { NotFoundError } from '@/server/errors';
+import { mySimulatedCheckout } from '@/server/services/payments';
 import { simulatedOr404 } from './simulated';
 import { pounds } from '@/domain/pricing/engine';
 
@@ -13,8 +17,13 @@ export default async function SimulatedCheckoutPage({ params }: { params: Promis
   const { sessionId } = await params;
   const p = simulatedOr404();
   if (!p) notFound();
+  // Only the customer whose checkout it is can see it (it shows what's being paid for).
+  const mine = await mySimulatedCheckout(getDb(), await getActor(), sessionId).catch((e: unknown) => {
+    if (e instanceof NotFoundError) return null;
+    throw e;
+  });
   const session = p.sessions.get(sessionId);
-  if (!session) notFound();
+  if (!mine || !session) notFound();
   const state = await p.getCheckout(sessionId);
   return (
     <div className={`${s.container} ${s.narrow}`}>
