@@ -16,6 +16,9 @@ import { withdrawRequestAction } from '../actions';
 import { myApprovalRequests } from '@/server/services/approvals';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 
+/** A receipt id from the query string; anything else gets no link. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const metadata: Metadata = { title: 'Your bookings' };
 export const dynamic = 'force-dynamic';
 
@@ -86,6 +89,16 @@ export default async function BookingsPage({
       {sp.payment === 'paid' ? (
         <Alert tone="success" title="Payment received – you’re booked">
           Thank you. We’ve emailed your receipt; you can also find it under Invoices.
+        </Alert>
+      ) : null}
+      {sp.payment === 'already-paid' ? (
+        <Alert tone="success" title="This booking is already paid">
+          <p>There’s nothing more to pay – your places are booked. They’re listed below.</p>
+          {sp.receipt && UUID.test(sp.receipt) ? (
+            <p>
+              <Link href={`/account/invoices/${sp.receipt}` as Route}>View the receipt</Link>
+            </p>
+          ) : null}
         </Alert>
       ) : null}
       {sp.payment === 'processing' ? (

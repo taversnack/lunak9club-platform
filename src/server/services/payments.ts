@@ -348,7 +348,7 @@ export async function payForMyBooking(db: Db, actor: Actor, rawBookingId: string
   const [b] = await db.select({ customerId: bookings.customerId }).from(bookings).where(eq(bookings.id, bookingId));
   if (!b || b.customerId !== customer.id) throw new NotFoundError('Booking');
   const hold = await liveHolds(db, bookingId, now);
-  if (!hold) return { url: null, reason: 'expired' as const };
+  if (!hold) return (await alreadyPaidBooking(db, bookingId)) ?? payLinkEnded('expired');
   const r = await startBookingCheckout(
     db,
     {
@@ -362,7 +362,44 @@ export async function payForMyBooking(db: Db, actor: Actor, rawBookingId: string
     },
     now,
   );
-  return r ? { url: r.url, reason: null } : { url: null, reason: 'expired' as const };
+  return r ? { url: r.url, reason: null, to: null } : payLinkEnded('expired');
+}
+
+/** Where a pay link sends the customer when there's no card page to open (shown as a notice on that page). */
+function payLinkEnded(reason: 'expired' | 'preparing' | 'unavailable'): {
+  url: null;
+  reason: typeof reason;
+  to: string;
+} {
+  return { url: null, reason, to: `/account/bookings?payment=${reason}` };
+}
+
+/** A pay link for something already paid: say so, and link to the receipt. */
+function alreadyPaid(attempt: {
+  purpose: 'booking' | 'invoice';
+  invoiceId: string | null;
+  resultInvoiceId: string | null;
+}) {
+  const to =
+    attempt.purpose === 'invoice' && attempt.invoiceId
+      ? `/account/invoices/${attempt.invoiceId}?payment=already-paid`
+      : `/account/bookings?payment=already-paid${attempt.resultInvoiceId ? `&receipt=${attempt.resultInvoiceId}` : ''}`;
+  return { url: null, reason: 'already-paid' as const, to };
+}
+
+/** The booking's places were paid by card (no places still held): the newest paid checkout for it. */
+async function alreadyPaidBooking(db: Db, bookingId: string) {
+  const [paid] = await db
+    .select({
+      purpose: checkoutAttempts.purpose,
+      invoiceId: checkoutAttempts.invoiceId,
+      resultInvoiceId: checkoutAttempts.resultInvoiceId,
+    })
+    .from(checkoutAttempts)
+    .where(and(eq(checkoutAttempts.bookingId, bookingId), eq(checkoutAttempts.status, 'paid')))
+    .orderBy(desc(checkoutAttempts.completedAt))
+    .limit(1);
+  return paid ? alreadyPaid(paid) : null;
 }
 
 /** Owner: email the customer a pay link again, creating the checkout if it's missing. */
@@ -1012,13 +1049,14 @@ export async function returnFromCheckout(db: Db, actor: Actor, rawId: string, ca
 /** "Pay now" link (from the bookings page or the Owner's payment email). */
 export async function resumeCheckoutUrl(db: Db, actor: Actor, rawId: string, now = new Date()) {
   const attempt = await loadMyAttempt(db, actor, rawId);
-  if (attempt.status === 'paid') return { url: null, reason: 'paid' as const };
-  if (attempt.status === 'open' && attempt.url && attempt.expiresAt > now) return { url: attempt.url, reason: null };
+  if (attempt.status === 'paid') return alreadyPaid(attempt);
+  if (attempt.status === 'open' && attempt.url && attempt.expiresAt > now)
+    return { url: attempt.url, reason: null, to: null };
   // The link in the email still works if the checkout failed or was replaced: make (or reuse) one
   // for the places still held on that booking.
   if (attempt.purpose === 'booking' && attempt.bookingId && !hasPermission(actor, 'invoices.manage'))
     return payForMyBooking(db, actor, attempt.bookingId, now);
-  return { url: null, reason: 'expired' as const };
+  return payLinkEnded('expired');
 }
 
 /** The customer's bookings still waiting for payment. */

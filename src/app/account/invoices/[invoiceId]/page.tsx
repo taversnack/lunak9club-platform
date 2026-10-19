@@ -79,6 +79,11 @@ export default async function MyInvoicePage({
           Thank you – we’ve emailed your receipt.
         </Alert>
       ) : null}
+      {sp.payment === 'already-paid' ? (
+        <Alert tone="success" title="This invoice is already paid">
+          There’s nothing more to pay on it.
+        </Alert>
+      ) : null}
       {sp.payment === 'processing' ? (
         <Alert tone="info" title="Checking your payment">
           We haven’t had confirmation from the card company yet. Please don’t pay twice – this page updates when it
