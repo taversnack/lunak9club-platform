@@ -97,7 +97,7 @@ test('owner signs in to the owner dashboard and sees recent activity', async ({ 
   await expect(page.getByRole('table')).not.toContainText('auth.signed_in');
   await signOut(page);
   await page.goto('/admin');
-  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page).toHaveURL(`/sign-in?callbackUrl=${encodeURIComponent('/admin')}`);
 });
 
 test('wrong password shows a generic error', async ({ page }) => {
