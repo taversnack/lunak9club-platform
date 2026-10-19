@@ -35,11 +35,22 @@ describe('proxy', () => {
     expect(forwarded(res, RETURN_TO_HEADER)).toBe('/admin');
   });
 
-  it('runs on pages but not on API routes or static files', () => {
+  it('runs on every request that can reach a guard, including dotted paths; skips only build assets', () => {
     // The matcher is a single regex-style pattern, so it can be checked as a plain RegExp.
     const re = new RegExp(`^${config.matcher[0]!}$`);
-    for (const p of ['/admin', '/account/bookings', '/admin/dogs/1/check', '/']) expect(re.test(p), p).toBe(true);
-    for (const p of ['/api/payments/pay/1', '/_next/static/x.js', '/favicon.ico', '/logo.png'])
-      expect(re.test(p), p).toBe(false);
+    for (const p of [
+      '/',
+      '/admin',
+      '/account/bookings',
+      '/admin/dogs/1/check',
+      '/account/dogs/x.json', // looks like a file, but it's a page path a guard sees
+      '/admin/settings.php',
+      '/api/payments/pay/1',
+      '/brand/logo.png',
+      '/_next/staticky', // not the build-asset folder
+      '/favicon.ico.json',
+    ])
+      expect(re.test(p), p).toBe(true);
+    for (const p of ['/_next/static/chunks/x.js', '/_next/image', '/favicon.ico']) expect(re.test(p), p).toBe(false);
   });
 });
