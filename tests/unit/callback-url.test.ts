@@ -68,3 +68,22 @@ describe('signInPathFor', () => {
     expect(signInPathFor('//evil.example')).toBe('/sign-in');
   });
 });
+
+describe('safeCallbackPath never throws', () => {
+  it.each([
+    '%E0%A4%A',
+    '/%E0%A4%A',
+    '/%',
+    '/%%',
+    '/%zz',
+    '/%uD800',
+    '/\uD800',
+    '/%ED%A0%80',
+    '/%C0%AF',
+    '%25E0%25A4%25A',
+    '/%FF',
+  ])('%s', (raw) => {
+    expect(() => safeCallbackPath(raw)).not.toThrow();
+    expect(safeCallbackPath(raw).startsWith('/')).toBe(true);
+  });
+});

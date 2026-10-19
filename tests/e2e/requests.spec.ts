@@ -177,7 +177,8 @@ test('a signed-out customer who opens the emailed pay link signs in and lands on
   const payPath = new URL(href!).pathname;
   // Signed out: the pay link sends you to sign in, remembering where you were going.
   await page.goto(payPath);
-  await expect(page).toHaveURL(`/sign-in?callbackUrl=${encodeURIComponent(payPath)}`);
+  // Path and query only: the host is whatever APP_URL says, not necessarily the one the test used.
+  await expect(page).toHaveURL((u) => u.pathname === '/sign-in' && u.searchParams.get('callbackUrl') === payPath);
   await page.getByLabel('Email address').fill(DEMO_CUSTOMER.email);
   await page.getByLabel('Password').fill(DEMO_CUSTOMER.password);
   await page.getByRole('button', { name: 'Sign in' }).click();

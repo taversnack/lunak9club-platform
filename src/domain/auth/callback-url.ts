@@ -53,3 +53,12 @@ export function signInPathFor(path: string): string {
   const safe = safeCallbackPath(path, '');
   return safe ? `/sign-in?callbackUrl=${encodeURIComponent(safe)}` : '/sign-in';
 }
+
+/** `decodeURIComponent` that returns null instead of throwing on a malformed escape. */
+export function decodeOrNull(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
