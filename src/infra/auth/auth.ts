@@ -1,4 +1,6 @@
 import { betterAuth } from 'better-auth';
+import { createAuthMiddleware } from 'better-auth/api';
+import { magicLink } from 'better-auth/plugins/magic-link';
 import { eq } from 'drizzle-orm';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
@@ -7,10 +9,19 @@ import * as schema from '../db/schema';
 import { env } from '../env';
 import { logger } from '../logger';
 import { getEmailProvider } from '../email/providers';
-import { resetPasswordMessage, verifyEmailMessage } from '../email/templates';
+import { magicLinkMessage, resetPasswordMessage, verifyEmailMessage } from '../email/templates';
+import { safeCallbackPath } from '@/domain/auth/callback-url';
 import { userRoles, auditEvents } from '../db/schema';
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? 'there';
+
+/** Magic links expire after this many minutes and work once. */
+export const MAGIC_LINK_MINUTES = 10;
+const MAGIC_LINK_PATH = '/sign-in/magic-link';
+const MAGIC_VERIFY_PATH = '/magic-link/verify';
+
+/** Where a failed magic link (expired, used, refused) lands, keeping the safe way back. */
+const magicErrorPath = (callback: string) => `/sign-in?callbackUrl=${encodeURIComponent(callback)}`;
 
 function createAuth() {
   const e = env();
@@ -27,6 +38,15 @@ function createAuth() {
         entityId: userId,
       })
       .catch((err: unknown) => logger.error({ err: String(err), action }, 'audit write failed'));
+
+  /**
+   * Magic links are for customers only: an account qualifies if every role it holds is `customer`.
+   * The Owner (and any future staff role) keeps password sign-in.
+   */
+  const customerOnly = async (userId: string) => {
+    const roles = await db.select({ key: userRoles.roleKey }).from(userRoles).where(eq(userRoles.userId, userId));
+    return roles.length > 0 && roles.every((r) => r.key === 'customer');
+  };
 
   return betterAuth({
     appName: 'Luna’s K9 Club',
@@ -85,7 +105,46 @@ function createAuth() {
         '/sign-up/email': { window: 60, max: 3 },
         '/request-password-reset': { window: 300, max: 3 },
         '/send-verification-email': { window: 300, max: 3 },
+        [MAGIC_LINK_PATH]: { window: 300, max: 3 },
+        [MAGIC_VERIFY_PATH]: { window: 60, max: 10 },
       },
+    },
+    hooks: {
+      // Magic links only ever carry a same-origin path (see #50's safeCallbackPath), whatever the caller
+      // sent, both when the link is requested and when it's opened (the link's query can be edited).
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === MAGIC_LINK_PATH) {
+          const body = (ctx.body ?? {}) as Record<string, unknown>;
+          const callbackURL = safeCallbackPath(body.callbackURL);
+          return {
+            context: {
+              body: {
+                ...body,
+                callbackURL,
+                errorCallbackURL: magicErrorPath(callbackURL),
+                newUserCallbackURL: undefined, // sign-up by magic link is off
+                name: undefined,
+              },
+            },
+          };
+        }
+        if (ctx.path === MAGIC_VERIFY_PATH && ctx.query) {
+          const q = ctx.query as Record<string, unknown>;
+          const callbackURL = safeCallbackPath(
+            typeof q.callbackURL === 'string' ? decodeURIComponent(q.callbackURL) : q.callbackURL,
+          );
+          return {
+            context: {
+              query: {
+                ...q,
+                callbackURL,
+                errorCallbackURL: magicErrorPath(callbackURL),
+                newUserCallbackURL: undefined,
+              },
+            },
+          };
+        }
+      }),
     },
     advanced: {
       useSecureCookies: e.APP_URL.startsWith('https://'),
@@ -103,6 +162,15 @@ function createAuth() {
       },
       session: {
         create: {
+          // Second line of defence: even with a valid token, a magic link never signs in a non-customer.
+          // Returning false stops the session; the link then redirects with an error.
+          before: async (session, ctx) => {
+            if (ctx?.path === MAGIC_VERIFY_PATH && !(await customerOnly(session.userId))) {
+              logger.warn({ userId: session.userId }, 'magic-link sign-in refused for a non-customer account');
+              await audit('auth.magic_link_refused', session.userId);
+              return false;
+            }
+          },
           after: async (session) => {
             await audit('auth.signed_in', session.userId);
             // Inactivity (retention) is judged from this, not from sessions, which are purged.
@@ -114,7 +182,29 @@ function createAuth() {
         },
       },
     },
-    plugins: [nextCookies()],
+    plugins: [
+      magicLink({
+        expiresIn: MAGIC_LINK_MINUTES * 60,
+        disableSignUp: true, // customers register (name, password, terms) first
+        storeToken: 'hashed', // a leaked verification table can't be replayed
+        // Called for every request, known address or not. The response is always the same
+        // ({ status: true }), and the email goes out in the background, so the timing doesn't
+        // reveal whether an account exists either. Unknown addresses, non-customers and unconfirmed
+        // addresses get nothing (verifying an unproven account here would revoke its other sign-ins).
+        sendMagicLink: async ({ email, url }) => {
+          const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email.toLowerCase()));
+          if (!user || !user.emailVerified || !(await customerOnly(user.id))) {
+            if (user) await audit('auth.magic_link_refused', user.id);
+            return;
+          }
+          void getEmailProvider()
+            .send(magicLinkMessage(user.email, firstName(user.name), url, MAGIC_LINK_MINUTES))
+            .then(() => audit('auth.magic_link_sent', user.id))
+            .catch((err: unknown) => logger.error({ err: String(err) }, 'magic-link email failed'));
+        },
+      }),
+      nextCookies(), // must stay last
+    ],
   });
 }
 
