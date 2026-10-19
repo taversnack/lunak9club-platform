@@ -228,6 +228,8 @@ export async function startBookingCheckout(
     const [attempt] = await tx
       .insert(checkoutAttempts)
       .values({
+        // On the caller's clock, which the 'creating' and reconcile age checks compare against.
+        createdAt: now,
         purpose: 'booking',
         customerId: opts.customerId,
         bookingId: opts.bookingId,
@@ -1056,6 +1058,7 @@ export async function startInvoiceCheckout(db: Db, actor: Actor, rawId: string, 
   const [attempt] = await db
     .insert(checkoutAttempts)
     .values({
+      createdAt: now,
       purpose: 'invoice',
       customerId: detail.inv.customerId,
       invoiceId,
