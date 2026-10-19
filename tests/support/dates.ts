@@ -40,8 +40,20 @@ function claimedDays(): Set<string> {
  * it has already handed out (when `unique`), and, unless `beyondWindow`, always inside the customers'
  * booking window. It throws, rather than quietly returning an unbookable date, if the window has run out.
  * "Today" is read when called, so it follows a pinned clock.
+ *
+ * `avoid` adds days to skip like the ledger's (shared only as a last resort), and `never` days that are
+ * never returned, even when sharing (e.g. days another file closed or capped). Both are read on every
+ * call, so a file can fill them in later (in `beforeAll`).
  */
-export function weekdayPicker(opts: { base?: number; unique?: boolean; beyondWindow?: boolean } = {}) {
+export function weekdayPicker(
+  opts: {
+    base?: number;
+    unique?: boolean;
+    beyondWindow?: boolean;
+    avoid?: ReadonlySet<string>;
+    never?: ReadonlySet<string>;
+  } = {},
+) {
   const used = new Set<string>();
   const last = BOOKING_WINDOW_DAYS - 3; // slack: a late-evening start can't push it over
   return (n: number): string => {
@@ -50,10 +62,13 @@ export function weekdayPicker(opts: { base?: number; unique?: boolean; beyondWin
     const claimed = claimedDays();
     const open = (o: number) => {
       const d = addDays(today, o);
-      return isoWeekday(d) <= 5 && !BANK_HOLIDAYS.has(d) && !(opts.unique !== false && used.has(d));
+      return (
+        isoWeekday(d) <= 5 && !BANK_HOLIDAYS.has(d) && !opts.never?.has(d) && !(opts.unique !== false && used.has(d))
+      );
     };
+    const taken = (o: number) => claimed.has(addDays(today, o)) || !!opts.avoid?.has(addDays(today, o));
     const start = offset;
-    while (!open(offset) || claimed.has(addDays(today, offset))) {
+    while (!open(offset) || taken(offset)) {
       offset += 1;
       if (!opts.beyondWindow && offset > last) {
         // Nothing unclaimed left: share a day, but still never an unbookable one.
