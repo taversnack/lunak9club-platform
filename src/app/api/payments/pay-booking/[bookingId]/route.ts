@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/infra/db/client';
 import { getActor } from '@/server/session';
+import { signInPathFor } from '@/domain/auth/callback-url';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { PayLinkBusyError, payForMyBooking } from '@/server/services/payments';
@@ -12,7 +13,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ bookingI
   const { bookingId } = await params;
   const base = new URL(req.url);
   const actor = await getActor();
-  if (actor.kind === 'anonymous') return NextResponse.redirect(new URL('/sign-in', base));
+  // Signed out (e.g. tapped the emailed pay link): sign in, then come straight back here.
+  if (actor.kind === 'anonymous')
+    return NextResponse.redirect(new URL(signInPathFor(base.pathname + base.search), base));
   try {
     const r = await payForMyBooking(getDb(), actor, bookingId);
     if (r.url) return NextResponse.redirect(r.url, 303);

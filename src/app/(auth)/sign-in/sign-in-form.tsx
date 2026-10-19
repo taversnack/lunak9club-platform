@@ -3,10 +3,18 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/infra/auth/client';
+import { DEFAULT_AFTER_SIGN_IN, safeCallbackPath } from '@/domain/auth/callback-url';
 import { Alert, Button, Field, Stack } from '@/ui/components';
 
-export function SignInForm({ notice }: { notice?: 'reset' | 'verified' | 'welcome' }) {
+export function SignInForm({
+  notice,
+  callbackUrl,
+}: {
+  notice?: 'reset' | 'verified' | 'welcome';
+  callbackUrl?: string;
+}) {
   const router = useRouter();
+  const next = safeCallbackPath(callbackUrl);
   const [error, setError] = useState<string | null>(null);
   const [unverified, setUnverified] = useState(false);
   const [pending, setPending] = useState(false);
@@ -20,7 +28,9 @@ export function SignInForm({ notice }: { notice?: 'reset' | 'verified' | 'welcom
     const { error: err } = await authClient.signIn.email({
       email: String(form.get('email') ?? ''),
       password: String(form.get('password') ?? ''),
-      callbackURL: '/dashboard',
+      // Also used by the confirmation email sent when the address isn't verified yet (sendOnSignIn),
+      // so the link in it signs the customer in and brings them back here too.
+      callbackURL: next,
     });
     setPending(false);
     if (err) {
@@ -33,7 +43,9 @@ export function SignInForm({ notice }: { notice?: 'reset' | 'verified' | 'welcom
       else setError('Something went wrong on our side. Please try again in a moment.');
       return;
     }
-    router.push('/dashboard');
+    if (next === DEFAULT_AFTER_SIGN_IN) router.push(DEFAULT_AFTER_SIGN_IN);
+    // A full page load: the target may be a route handler (a pay link) that redirects to the card page.
+    else window.location.assign(next);
   }
 
   return (
