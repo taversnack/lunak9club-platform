@@ -19,7 +19,7 @@ import {
 } from '@/infra/db/schema';
 import { cancelMyBooking, createMyBookings } from '@/server/services/bookings';
 import { giveWaitlistPlace, ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
-import { issueTx, myInvoice, ownerInvoice } from '@/server/services/billing';
+import { issueTx, markCreditRefunded, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
   handleWebhook,
@@ -341,6 +341,100 @@ describe('automatic refunds (D20, D58)', () => {
     const [cn] = await db().select().from(creditNotes).where(eq(creditNotes.id, ok!.creditNoteId!));
     expect(cn!.refundState).toBe('refunded');
     await expect(retryCardRefund(db(), owner, failed!.id)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  /** Two paid days, £60 by card and £40 by bank transfer; returns the card payment and both day rows. */
+  async function splitPaidTwoDays() {
+    const dates = [weekdayAhead(60), weekdayAhead(60)];
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates, session: 'full', taxi: false }, owner);
+    const a = await payLatest(pia.userId);
+    const [card] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    expect(card!.amountPence).toBe(10000);
+    // Payments are append-only; reshape this one in the test only, as if £60 had been taken by card.
+    await db().transaction(async (tx) => {
+      await tx.execute(sql`alter table payments disable trigger payments_append_only`);
+      await tx.update(payments).set({ amountPence: 6000 }).where(eq(payments.id, card!.id));
+      await tx.execute(sql`alter table payments enable trigger payments_append_only`);
+    });
+    await db().insert(payments).values({
+      invoiceId: card!.invoiceId,
+      amountPence: 4000,
+      method: 'manual',
+      receivedOn: today,
+      reason: 'part paid by bank transfer',
+    });
+    const days = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+    expect(days).toHaveLength(2);
+    const refunds = () => db().select().from(cardRefunds).where(eq(cardRefunds.paymentId, card!.id));
+    const sent = async () =>
+      (await refunds()).filter((r) => r.status === 'succeeded').reduce((n, r) => n + r.amountPence, 0);
+    return { card: card!, days, refunds, sent };
+  }
+
+  /** Test-only: rewrite a refund's amount, past the trigger that keeps card refunds honest. */
+  async function legacyAmount(id: string, amountPence: number) {
+    await db().transaction(async (tx) => {
+      await tx.execute(sql`alter table card_refunds disable trigger card_refunds_lock_trg`);
+      await tx.update(cardRefunds).set({ amountPence }).where(eq(cardRefunds.id, id));
+      await tx.execute(sql`alter table card_refunds enable trigger card_refunds_lock_trg`);
+    });
+  }
+
+  it('a cancellation after a failed refund only queues what the card has left (the failed one is still owed)', async () => {
+    const { days, refunds, sent } = await splitPaidTwoDays();
+    stripe.failRefunds = true;
+    await cancelMyBooking(db(), pia, days[0]!.id);
+    stripe.failRefunds = false;
+    expect((await refunds()).map((r) => [r.status, r.amountPence])).toEqual([['failed', 5000]]);
+    await cancelMyBooking(db(), pia, days[1]!.id);
+    const after = await refunds();
+    // £50 is still retryable, so only £10 of the card's £60 is free: the other £40 is for the Owner.
+    expect(after.filter((r) => r.status !== 'failed').map((r) => r.amountPence)).toEqual([1000]);
+    expect(after.reduce((n, r) => n + r.amountPence, 0)).toBe(6000);
+    // Retrying the failed one now fits exactly; nothing more than the card paid ever goes back.
+    const failed = after.find((r) => r.status === 'failed')!;
+    await retryCardRefund(db(), owner, failed.id);
+    expect(await sent()).toBe(6000);
+    expect(await retryCardRefund(db(), owner, failed.id).catch((e) => e)).toBeInstanceOf(ConflictError);
+  });
+
+  it('a retry is refused when it would push the card past what it paid, or the credit was settled another way', async () => {
+    const { days, refunds, sent } = await splitPaidTwoDays();
+    stripe.failRefunds = true;
+    await cancelMyBooking(db(), pia, days[0]!.id);
+    stripe.failRefunds = false;
+    await cancelMyBooking(db(), pia, days[1]!.id);
+    const failed = (await refunds()).find((r) => r.status === 'failed')!;
+    const later = (await refunds()).find((r) => r.status !== 'failed')!;
+    // A refund queued before this fix, when failed ones weren't counted, could take the whole card.
+    await legacyAmount(later.id, 2000);
+    const calls = stripe.refundCalls;
+    await expect(retryCardRefund(db(), owner, failed.id)).rejects.toThrow(/more than this card paid/);
+    expect(stripe.refundCalls).toBe(calls);
+    expect((await db().select().from(cardRefunds).where(eq(cardRefunds.id, failed.id)))[0]!.status).toBe('failed');
+    await legacyAmount(later.id, 1000);
+
+    // The Owner returned that £50 by bank transfer instead: the failed refund is abandoned.
+    await markCreditRefunded(db(), owner, failed.creditNoteId!, { reason: 'paid back by bank transfer' });
+    await expect(retryCardRefund(db(), owner, failed.id)).rejects.toThrow(/refunded another way/);
+    expect(stripe.refundCalls).toBe(calls);
+    expect((await ownerCardRefunds(db(), owner)).failed.map((x) => x.r.id)).not.toContain(failed.id);
+    expect(await sent()).toBe(1000);
+  });
+
+  it('partial refunds day by day still go back to the card in full', async () => {
+    const dates = [weekdayAhead(62), weekdayAhead(62)];
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates, session: 'full', taxi: false }, owner);
+    const a = await payLatest(pia.userId);
+    const days = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+    expect(await cancelMyBooking(db(), pia, days[0]!.id)).toEqual({ late: false, refundedPence: 5000 });
+    expect(await cancelMyBooking(db(), pia, days[1]!.id)).toEqual({ late: false, refundedPence: 5000 });
+    const [pay] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    const rs = await db().select().from(cardRefunds).where(eq(cardRefunds.paymentId, pay!.id));
+    expect(rs.map((r) => [r.status, r.amountPence])).toEqual([
+      ['succeeded', 5000],
+      ['succeeded', 5000],
+    ]);
   });
 
   it('concurrent ticks claim an interrupted refund once; a webhook settling it clears the old reason, is audited and emails the customer', async () => {
