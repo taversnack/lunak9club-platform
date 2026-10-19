@@ -387,6 +387,10 @@ export async function confirmMyOffer(db: Db, actor: Actor, input: unknown, now =
       .for('update');
     if (!offer) throw new NotFoundError('Offer');
     const startsOn = offer.startsOn > today ? offer.startsOn : addDays(today, 1);
+    // A day may have filled since the Owner's offer: block, as a request would be (never waitlist).
+    const plan: DaysPlan = { weekdays: offer.weekdays, session: offer.session as Session, taxi: offer.taxi };
+    const full = await fullDatesFor(tx, dog.id, plan, startsOn, now);
+    if (full.length) throw new ConflictError(fullDatesMessage(full));
     const r = await setMembershipDaysTx(tx, me, {
       weekdays: offer.weekdays,
       session: offer.session as Session,
@@ -730,12 +734,7 @@ export async function notifyUnconfirmedDays(db: Db, actor: Actor, now = new Date
     const body = `${list.length} member${list.length === 1 ? ' hasn’t' : 's haven’t'} confirmed their days for ${formatMonth(month)}. Their days are kept as booked. You can confirm for them from their customer page.`;
     for (const to of await ownerEmails(db))
       await sendSafely(
-        ownerBillingMessage(
-          to,
-          `Luna’s K9 Club: unconfirmed membership days for ${formatMonth(month)}`,
-          body,
-          appUrl('/admin'),
-        ),
+        ownerBillingMessage(to, `Unconfirmed membership days for ${formatMonth(month)}`, body, appUrl('/admin')),
       );
   }
   return { month, unconfirmed: list.length };

@@ -16,6 +16,7 @@ import {
 import {
   checkInvite,
   confirmMyMonth,
+  confirmMyOffer,
   finishSignup,
   inviteStatus,
   myMonthConfirmations,
@@ -241,6 +242,39 @@ describe('full days block approval (D90)', () => {
   });
 });
 
+describe('confirming the Owner’s offer checks space (D87)', () => {
+  it('a day that filled after the offer blocks the confirmation (never waitlisted); it works once there’s space', async () => {
+    const fern = await makeUser(db(), 'customer', 'Fern Offer');
+    await readyCustomer(db(), fern);
+    const dog = await approvedDog(db(), owner, fern, 'Moss');
+    const [c] = await db().select().from(customers).where(eq(customers.userId, fern.userId));
+    const start = nextWeekday(5, addDays(today, 3));
+    const [offer] = await db()
+      .insert(membershipOffers)
+      .values({ customerId: c!.id, dogName: 'Moss', weekdays: [5], session: 'full', startsOn: start })
+      .returning();
+    const full = addDays(start, 7);
+    await db().execute(
+      sql`insert into service_days (service_date, session_capacity) values (${full}, 0) on conflict (service_date) do update set session_capacity = 0`,
+    );
+    try {
+      const err = await confirmMyOffer(db(), fern, { offerId: offer!.id, dogId: dog }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ConflictError);
+      expect((err as Error).message).toMatch(/There’s no space on .+\. Choose other days\./);
+      expect(await db().select().from(memberships).where(eq(memberships.dogId, dog))).toHaveLength(0);
+      expect(await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, dog))).toHaveLength(0);
+      const [still] = await db().select().from(membershipOffers).where(eq(membershipOffers.id, offer!.id));
+      expect(still!.closedAt).toBeNull();
+    } finally {
+      await db().execute(sql`update service_days set session_capacity = null where service_date = ${full}`);
+    }
+    await confirmMyOffer(db(), fern, { offerId: offer!.id, dogId: dog });
+    const rows = await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, dog));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.filter((r) => r.status === 'waitlisted')).toHaveLength(0);
+  });
+});
+
 describe('Owner changes days (D89)', () => {
   it('no approval; the customer is emailed with no sensitive data', async () => {
     const before = mail.sent.length;
@@ -285,7 +319,7 @@ describe('monthly confirmation (D88)', () => {
       startsOn: addDays(today, 1),
     });
     const now = new Date(`${month}-02T08:30:00Z`);
-    const subject = /unconfirmed membership days/;
+    const subject = /unconfirmed membership days/i;
     const ownerMails = () => mail.sent.filter((m) => m.to === owner.email && subject.test(m.subject)).length;
     const before = ownerMails();
     const unconfirmed = (await unconfirmedMembers(db(), owner, month)).length;
@@ -293,6 +327,10 @@ describe('monthly confirmation (D88)', () => {
     await runTick(db(), SYSTEM, new Date(now.getTime() + 3_600_000));
     await runTick(db(), SYSTEM, new Date(now.getTime() + 86_400_000));
     expect(ownerMails() - before).toBe(unconfirmed ? 1 : 0);
+    expect(unconfirmed).toBeGreaterThan(0);
+    // The club name appears once in the subject (the template adds it).
+    for (const m of mail.sent.filter((x) => x.to === owner.email && subject.test(x.subject)))
+      expect(m.subject).toMatch(/^Luna’s K9 Club: Unconfirmed membership days for \w+ \d{4}$/);
     const runs = await db()
       .select()
       .from(jobRuns)
