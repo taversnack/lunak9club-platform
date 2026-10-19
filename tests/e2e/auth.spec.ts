@@ -120,7 +120,23 @@ test('signing in from a link before confirming: the confirmation email brings yo
   await expect(page).toHaveURL(/\/account\/bookings$/);
 });
 
-test('magic link: a customer signs in from the emailed link once and lands on the callback page', async ({ page }) => {
+test('magic link: a customer signs in from the emailed link once and lands on the callback page', async ({
+  page,
+}, info) => {
+  // Each project (mobile, desktop) uses its own new, confirmed customer, so the two runs never share
+  // an inbox or a token.
+  const email = uniqueEmail('magic', info.project.name);
+  await page.goto('/register');
+  await page.getByLabel('Full name').fill('Mags Link');
+  await page.getByLabel('Email address').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill('mags-long-password');
+  await page.getByLabel('Confirm password').fill('mags-long-password');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  await page.goto(await latestLink(email, 'auth.verify-email'));
+  await expect(page).toHaveURL(/\/account$/);
+  await page.context().clearCookies();
+
   await page.goto('/');
   // No sign-in UI for this yet (Dev4); ask for the link the way the client helper does.
   const status = await page.evaluate(async (email) => {
@@ -130,12 +146,10 @@ test('magic link: a customer signs in from the emailed link once and lands on th
       body: JSON.stringify({ email, callbackURL: '/account/bookings' }),
     });
     return r.status;
-  }, DEMO_CUSTOMER.email);
+  }, email);
   expect(status).toBe(200);
-  let link = '';
-  await expect
-    .poll(async () => (link = await latestLink(DEMO_CUSTOMER.email, 'auth.magic-link')), { timeout: 10_000 })
-    .toContain('/api/auth/magic-link/verify?token=');
+  const link = await latestLink(email, 'auth.magic-link');
+  expect(link).toContain('/api/auth/magic-link/verify?token=');
   await page.goto(link);
   await expect(page).toHaveURL(/\/account\/bookings$/);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
