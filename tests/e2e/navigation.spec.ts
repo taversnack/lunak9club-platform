@@ -49,9 +49,12 @@ test.describe('@a11y 390px layout', () => {
           const el = document.activeElement as HTMLElement | null;
           if (!el || el === document.body) return null;
           // Anything fixed or sticky at the bottom (tab bar, sticky submit) that the control isn't part of.
-          const bars = [...document.querySelectorAll<HTMLElement>('[data-tabbar], [data-sticky-submit]')].filter(
-            (b) => !b.contains(el) && getComputedStyle(b).display !== 'none',
+          const all = [...document.querySelectorAll<HTMLElement>('[data-tabbar], [data-sticky-submit]')].filter(
+            (b) => getComputedStyle(b).display !== 'none',
           );
+          // Controls that live in one of the bars are always on top; nothing to check.
+          if (all.some((b) => b.contains(el))) return null;
+          const bars = all;
           const top = Math.min(window.innerHeight, ...bars.map((b) => b.getBoundingClientRect().top));
           const box = el.getBoundingClientRect();
           const name = el.getAttribute('aria-label') || el.getAttribute('name') || el.textContent || el.tagName;
