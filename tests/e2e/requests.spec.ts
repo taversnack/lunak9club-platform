@@ -138,7 +138,7 @@ test('Give place: a full day, the waitlist and the Owner choosing the dog', asyn
   await page.goto(`/admin/bookings?date=${dayIso}`);
   // D82: a full day can't be given away – the button is disabled up front with the reason.
   await expect(page.getByRole('button', { name: 'Give place to Biscuit' })).toBeDisabled();
-  await expect(page.getByText('Can’t give a place: day is full.')).toBeVisible();
+  await expect(page.getByText('Can’t give a place: no free place in this session')).toBeVisible();
   const req = page.getByRole('listitem').filter({ hasText: 'Requested' }).first();
   await req.getByText(/^Decline this day/).click();
   await req.getByLabel(/Reason for declining/).fill('Keeping numbers low');

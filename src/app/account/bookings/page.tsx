@@ -105,8 +105,8 @@ export default async function BookingsPage({
         </Alert>
       ) : null}
       {sp.payment === 'preparing' ? (
-        <Alert tone="info" title="Your payment page is being prepared">
-          Your payment page is being prepared. Please try “Pay now” again in a moment.
+        <Alert tone="info" title="Your payment link is being prepared">
+          That only takes a moment. Your places are still held – press “Pay now” again in a few seconds.
         </Alert>
       ) : null}
       {sp.payment === 'unavailable' ? (

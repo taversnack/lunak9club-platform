@@ -2,12 +2,12 @@
 import { redirect } from 'next/navigation';
 import type { Route } from 'next';
 import { getPaymentProvider } from '@/infra/payments';
-import { isSimulatedProvider } from '@/infra/payments/simulated';
+import { asSimulatedProvider } from '@/infra/payments/simulated';
 
 /** Simulated checkout only (PAYMENTS_DRIVER=simulated). Stands in for Stripe's hosted page. */
 function simulated() {
-  const p = getPaymentProvider();
-  if (!isSimulatedProvider(p)) throw new Error('Not available');
+  const p = asSimulatedProvider(getPaymentProvider());
+  if (!p) throw new Error('Not available');
   return p;
 }
 

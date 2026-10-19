@@ -116,6 +116,14 @@ const describeDays = (days: { dogName: string }[]) => {
 /** Pause between tries when the payment provider can't be reached (tests set it to 0). */
 export const checkoutRetry = { delayMs: 300 };
 
+/** Another request is creating this pay link right now. Nothing failed: try again in a moment. */
+export class PayLinkBusyError extends ConflictError {
+  constructor() {
+    super('Your payment link is being prepared. Please try again in a moment.');
+    this.name = 'PayLinkBusyError';
+  }
+}
+
 /** The provider couldn't create a pay link; any places stay held (the Owner can resend, the customer can retry). */
 export class PayLinkUnavailableError extends ConflictError {
   constructor(untilText: string | null) {
@@ -125,26 +133,6 @@ export class PayLinkUnavailableError extends ConflictError {
         : 'We couldn’t create your payment link just now. Please try again in a few minutes.',
     );
     this.name = 'PayLinkUnavailableError';
-  }
-}
-
-/** Another request is still creating the checkout – not a failure; the customer tries again shortly. */
-export class PayLinkPreparingError extends ConflictError {
-  constructor() {
-    super('Your payment page is being prepared. Please try again in a moment.');
-    this.name = 'PayLinkPreparingError';
-  }
-}
-
-/** How long a request waits for a checkout another request is creating (tests may shorten it). */
-export const checkoutWait = { totalMs: 6000, stepMs: 150 };
-
-async function waitForCheckout(db: Db, attemptId: string) {
-  const deadline = Date.now() + checkoutWait.totalMs;
-  for (;;) {
-    const [a] = await db.select().from(checkoutAttempts).where(eq(checkoutAttempts.id, attemptId));
-    if (!a || a.status !== 'creating' || Date.now() >= deadline) return a ?? null;
-    await new Promise((r) => setTimeout(r, checkoutWait.stepMs));
   }
 }
 
@@ -227,7 +215,8 @@ export async function startBookingCheckout(
       if (sameDays(covers) && a.amountPence === amount) {
         if (a.status === 'open' && a.url) return { reuse: a, stale };
         // Another request is creating the link for these days right now.
-        if (a.status === 'creating' && a.createdAt > new Date(now.getTime() - 2 * 60_000)) return { busy: a.id, stale };
+        if (a.status === 'creating' && a.createdAt > new Date(now.getTime() - 2 * 60_000))
+          return { busy: true as const, stale };
       }
       // Overlapping, different amount, legacy or abandoned: close it without touching the holds.
       await tx
@@ -259,15 +248,7 @@ export async function startBookingCheckout(
     await notify(claim.reuse.id, claim.reuse.expiresAt);
     return { attemptId: claim.reuse.id, url: claim.reuse.url!, amountPence: amount, reused: true };
   }
-  if ('busy' in claim && claim.busy) {
-    // Another request is creating this checkout: wait briefly and hand over the same one.
-    const ready = await waitForCheckout(db, claim.busy);
-    if (ready?.status === 'open' && ready.url) {
-      await notify(ready.id, ready.expiresAt);
-      return { attemptId: ready.id, url: ready.url, amountPence: amount, reused: true };
-    }
-    throw new PayLinkPreparingError();
-  }
+  if ('busy' in claim) throw new PayLinkBusyError();
   const attempt = claim.attempt!;
 
   const tries = Math.max(1, opts.tries ?? 1);

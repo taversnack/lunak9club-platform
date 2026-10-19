@@ -10,7 +10,6 @@ import {
   memberships,
   approvalRequests,
   bookingDogs,
-  checkoutAttemptDays,
   checkoutAttempts,
   complianceSubmissions,
   customers,
@@ -46,7 +45,7 @@ import {
   bookingsMissingPayLink,
   checkoutRetry,
   myHoldsWithoutPayLink,
-  PayLinkPreparingError,
+  PayLinkBusyError,
   PayLinkUnavailableError,
   payForMyBooking,
   releaseExpiredCheckouts,
@@ -56,9 +55,10 @@ import {
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError, type Actor } from '@/server/policy/authorize';
 import { addDays, londonDate } from '@/domain/time';
-import { isoWeekday } from '@/domain/booking/rules';
+
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '@/domain/booking/wording';
 import { formatDateTimeLondon } from '@/ui/format';
+import { weekdayPicker } from '../support/dates';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts, simulated } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
@@ -68,14 +68,7 @@ const mail = new MemoryEmailProvider();
 const storage = new FsStorageProvider(mkdtempSync(join(tmpdir(), 'lunak9-r-')));
 const today = londonDate(new Date());
 const system: Actor = { kind: 'system', job: 'test' };
-const HOLIDAYS = new Set(['2026-12-25', '2026-12-28', '2027-01-01']);
-const used = new Set<string>();
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n + 50); // clear of the dates other test files use
-  while (isoWeekday(d) > 5 || HOLIDAYS.has(d) || used.has(d)) d = addDays(d, 1);
-  used.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker({ base: 40 });
 
 /** Reused by the pay-link tests (other customers' dogs) so they need no extra dates. */
 let payDate = '';
@@ -517,49 +510,41 @@ describe('pay links when the card service is down', () => {
 
   it('the Owner resend creates the missing link; simultaneous clicks make one checkout', async () => {
     const r = await approvedWith(3, bob, await onboardedDog(bob, 'Twin'));
-    // A slow card service: five clicks at once all get the same checkout – none sees a failure.
-    const sim = simulated();
-    const real = sim.createCheckout.bind(sim);
-    const spy = vi.spyOn(sim, 'createCheckout').mockImplementation(async (req) => {
-      await new Promise((res) => setTimeout(res, 400));
-      return real(req);
-    });
-    const clicks = await Promise.allSettled(Array.from({ length: 5 }, () => payForMyBooking(db(), bob, r.bookingId)));
-    const providerCalls = spy.mock.calls.length;
-    spy.mockRestore();
-    expect(clicks.map((c) => c.status)).toEqual(Array(5).fill('fulfilled'));
-    const urls = new Set(clicks.map((c) => (c as PromiseFulfilledResult<{ url: string | null }>).value.url));
-    expect(urls.size).toBe(1);
-    expect(providerCalls).toBe(1);
-    // If the other click is still creating it after the wait, the answer is "being prepared", not a failure.
-    const { checkoutWait } = await import('@/server/services/payments');
-    const saved = { ...checkoutWait };
-    checkoutWait.totalMs = 0;
-    const [live] = (await attemptsFor(r.bookingId)).filter((a) => a.status === 'open');
-    await db().update(checkoutAttempts).set({ status: 'expired' }).where(eq(checkoutAttempts.id, live!.id));
-    const [creating] = await db()
-      .insert(checkoutAttempts)
-      .values({
-        purpose: 'booking',
-        customerId: live!.customerId,
-        bookingId: r.bookingId,
-        amountPence: live!.amountPence,
-        description: 'test',
-        provider: 'simulated',
-        expiresAt: live!.expiresAt,
-      })
-      .returning();
-    // It's for the same day (#8 records each checkout's days).
-    await db()
-      .insert(checkoutAttemptDays)
-      .values({ checkoutAttemptId: creating!.id, bookingDogId: (await rowsOf(r.bookingId))[0]!.id });
-    await expect(payForMyBooking(db(), bob, r.bookingId)).rejects.toBeInstanceOf(PayLinkPreparingError);
-    Object.assign(checkoutWait, saved);
-    await db().update(checkoutAttempts).set({ status: 'failed' }).where(eq(checkoutAttempts.id, creating!.id));
+    const both = await Promise.allSettled([
+      payForMyBooking(db(), bob, r.bookingId),
+      payForMyBooking(db(), bob, r.bookingId),
+    ]);
+    expect(both.some((b) => b.status === 'fulfilled')).toBe(true);
     mail.sent.length = 0;
     await resendPayLink(db(), owner, r.bookingId);
     expect((await attemptsFor(r.bookingId)).filter((a) => a.status === 'open')).toHaveLength(1);
     expect(mail.sent.some((m) => m.to === bob.email && m.template === 'booking.request-approved')).toBe(true);
+    await payOpenCheckouts(db());
+  });
+
+  it('a Pay now that loses the race is told the link is being prepared, not that it failed', async () => {
+    const r = await approvedWith(3, bob, await onboardedDog(bob, 'Racer'));
+    const real = simulated().createCheckout.bind(simulated());
+    const slow = vi.spyOn(simulated(), 'createCheckout').mockImplementation(async (a) => {
+      await new Promise((res) => setTimeout(res, 300));
+      return real(a);
+    });
+    const both = await Promise.allSettled([
+      payForMyBooking(db(), bob, r.bookingId),
+      (async () => {
+        await new Promise((res) => setTimeout(res, 100));
+        return payForMyBooking(db(), bob, r.bookingId);
+      })(),
+    ]);
+    slow.mockRestore();
+    const lost = both.find((b) => b.status === 'rejected') as PromiseRejectedResult | undefined;
+    // Either the second click reused the finished link, or it is told, accurately, to try again.
+    if (lost) {
+      expect(lost.reason).toBeInstanceOf(PayLinkBusyError);
+      expect(lost.reason).not.toBeInstanceOf(PayLinkUnavailableError);
+    }
+    expect(both.some((b) => b.status === 'fulfilled')).toBe(true);
+    expect((await attemptsFor(r.bookingId)).filter((a) => a.status === 'open')).toHaveLength(1);
     await payOpenCheckouts(db());
   });
 
@@ -612,16 +597,16 @@ describe('manual waitlist (D81, D82)', () => {
     const w = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
     const waiting = await rowOf(bobDog, date);
     expect(waiting.status).toBe('waitlisted');
-    // Shown up front on the day view (button disabled with the reason), and still refused on the server.
-    const full = (await ownerDay(db(), owner, date)).waitlist.find((x) => x.id === waiting.id)!;
-    expect(full.giveBlock).toBe('Can’t give a place: day is full.');
     await expect(giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version })).rejects.toThrow(
       /no free place/,
     );
+    // The day view says so up front, so the button can be disabled with a reason.
+    const full = (await ownerDay(db(), owner, date)).waitlist.find((r) => r.id === waiting.id)!;
+    expect(full.giveBlock).toMatch(/no free place/);
     await withdrawMyApprovalRequest(db(), alice, a.requestId!);
     await runTick(db(), system);
+    expect((await ownerDay(db(), owner, date)).waitlist.find((r) => r.id === waiting.id)!.giveBlock).toBeNull();
     expect((await rowOf(bobDog, date)).status).toBe('waitlisted');
-    expect((await ownerDay(db(), owner, date)).waitlist.find((x) => x.id === waiting.id)!.giveBlock).toBeNull();
     mail.sent.length = 0;
     const g = await giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version });
     const given = await rowOf(bobDog, date);
@@ -635,7 +620,7 @@ describe('manual waitlist (D81, D82)', () => {
   });
 
   it('Give place blocks a dog failing the vaccination check up front, with the reason (D82)', async () => {
-    const date = weekdayAhead(1); // a near free slot: far ones roll past the 90-day booking window
+    const date = weekdayAhead(7);
     const pip = await onboardedDog(bob, 'Pip');
     await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), bob, { dogIds: [pip], dates: [date], session: 'full', taxi: false });
@@ -706,7 +691,7 @@ describe('manual waitlist (D81, D82)', () => {
 
 describe('approvals authorisation', () => {
   it('only the Owner decides; customers only see their own requests', async () => {
-    const d = weekdayAhead(2); // near free slot (34+50 days ran past the 90-day window)
+    const d = weekdayAhead(34);
     const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'am', taxi: false });
     await expect(approveApprovalRequest(db(), bob, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(rejectApprovalRequest(db(), alice, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);

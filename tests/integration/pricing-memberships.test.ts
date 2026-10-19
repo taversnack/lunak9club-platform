@@ -27,6 +27,7 @@ import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
 import { changeEffectiveDate } from '@/domain/membership/rules';
 import { addDays, londonDate } from '@/domain/time';
+import { BANK_HOLIDAYS, weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
@@ -34,16 +35,17 @@ import { approvedDog, readyCustomer, releaseMemberDays } from '../support/onboar
 
 const db = () => getDb();
 const today = londonDate(new Date());
-const used = new Set<string>();
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n);
-  while (isoWeekday(d) > 5 || ['2026-12-25', '2026-12-28', '2027-01-01'].includes(d) || used.has(d)) d = addDays(d, 1);
-  used.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker();
+/** The next Monday that isn't a bank holiday. */
 const nextMonday = () => {
   let d = addDays(today, 1);
-  while (isoWeekday(d) !== 1) d = addDays(d, 1);
+  while (isoWeekday(d) !== 1 || BANK_HOLIDAYS.has(d)) d = addDays(d, 1);
+  return d;
+};
+/** The first Friday on or after the membership's start that isn't a bank holiday. */
+const firstFridayAfterStart = () => {
+  let d = nextMonday();
+  while (isoWeekday(d) !== 5 || BANK_HOLIDAYS.has(d)) d = addDays(d, 1);
   return d;
 };
 
@@ -268,8 +270,7 @@ describe('memberships', () => {
 
   it('members’ extra days are priced at their member rate (D17)', async () => {
     // A Friday after the membership has started (it starts next Monday).
-    let fri = addDays(nextMonday(), 4);
-    while (isoWeekday(fri) !== 5) fri = addDays(fri, 1);
+    const fri = firstFridayAfterStart();
     const p = await previewMyBookings(db(), cara, { dogIds: [caraDog], dates: [fri], session: 'full', taxi: false });
     expect(p.lines[0]!.price).toMatchObject({ totalPence: 4500, rateCode: 'member_high_full' });
     const other = await previewMyBookings(db(), cara, {
@@ -288,8 +289,7 @@ describe('memberships', () => {
       session: 'full',
       startsOn: nextMonday(),
     });
-    let fri = nextMonday();
-    while (isoWeekday(fri) !== 5) fri = addDays(fri, 1);
+    const fri = firstFridayAfterStart();
     await db().execute(
       sql`insert into service_days (service_date, session_capacity) values (${fri}, 0) on conflict (service_date) do update set session_capacity = 0`,
     );
