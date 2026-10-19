@@ -39,15 +39,7 @@ export default async function MyRequestsPage({
   const done = items.filter((i) => i.status !== 'pending');
   return (
     <Stack>
-      <PageHeader
-        title="Your requests"
-        lead="Days you’ve asked for that need Luna’s K9 Club to approve them."
-        actions={
-          <Link href="/account/book" className={buttonClass('primary')}>
-            Book a day
-          </Link>
-        }
-      />
+      <PageHeader title="Your requests" lead="Days you’ve asked for that need Luna’s K9 Club to approve them." />
       {sp.withdrawn ? <Alert tone="info">Your request has been withdrawn. There’s no charge.</Alert> : null}
       <Card aria-labelledby="waiting">
         <h2 id="waiting">Waiting ({waiting.length})</h2>

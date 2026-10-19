@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react';
 import s from './shell.module.css';
 import { SignOutButton } from './sign-out-button';
 import { LinkPending } from './nav-link';
@@ -98,9 +98,21 @@ export function AppShell({
   const path = usePathname() ?? '';
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
+  // Set when a link in the drawer is followed: the drawer then closes without sending focus back to Menu,
+  // and the new page's heading gets focus instead.
+  const followed = useRef(false);
 
   useEffect(() => {
     if (dialog.current?.open) dialog.current.close();
+    if (followed.current) {
+      followed.current = false;
+      requestAnimationFrame(() => {
+        const h1 = document.querySelector<HTMLElement>('main h1');
+        const target = h1 ?? document.getElementById('main');
+        if (h1 && !h1.hasAttribute('tabindex')) h1.setAttribute('tabindex', '-1');
+        target?.focus();
+      });
+    }
   }, [path]);
 
   const open = () => {
@@ -109,7 +121,14 @@ export function AppShell({
   };
   const onClose = () => {
     opener.current?.setAttribute('aria-expanded', 'false');
-    opener.current?.focus();
+    if (!followed.current) opener.current?.focus();
+  };
+  const onDrawerLink = (e: MouseEvent) => {
+    const a = (e.target as HTMLElement).closest('a');
+    if (!a) return;
+    const to = new URL(a.href, window.location.href).pathname;
+    if (to !== path) followed.current = true;
+    else dialog.current?.close();
   };
   const initial = userName.trim().charAt(0).toUpperCase() || '?';
 
@@ -176,6 +195,7 @@ export function AppShell({
         onClose={onClose}
         onClick={(e) => {
           if (e.target === dialog.current) dialog.current.close();
+          else onDrawerLink(e);
         }}
       >
         <div className={s.drawerHead}>
