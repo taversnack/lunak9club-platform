@@ -747,3 +747,31 @@
     padding: var(--space-4);
   }
 }
+
+/* Navigation feedback: while a nav link's page loads, a thin bar runs along the top of the screen
+   (client-side, so pages still return their real HTTP status, e.g. 404). */
+.navPending {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 3px;
+  z-index: 1000;
+  background: linear-gradient(90deg, transparent, #b98a4f, transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: nav-pending 1s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes nav-pending {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .navPending {
+    animation: none;
+    background: #b98a4f;
+  }
+}

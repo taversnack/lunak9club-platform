@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, type ReactNode } from 'react';
 import s from './shell.module.css';
 import { SignOutButton } from './sign-out-button';
+import { LinkPending } from './nav-link';
 
 export type NavItem = { href: Route; label: string; icon?: ReactNode; badge?: ReactNode };
 export type NavGroup = { label: string; items: NavItem[] };
@@ -59,6 +60,7 @@ function NavList({ groups, path, root, label }: { groups: NavGroup[]; path: stri
                   {i.icon}
                   <span>{i.label}</span>
                   {i.badge ? <span className={s.badgeSlot}>{i.badge}</span> : null}
+                  <LinkPending />
                 </Link>
               </li>
             ))}
@@ -125,6 +127,7 @@ export function AppShell({
                   <li key={t.href}>
                     <Link href={t.href} aria-current={isCurrent(path, t.href, root) ? 'page' : undefined}>
                       {t.label}
+                      <LinkPending />
                     </Link>
                   </li>
                 ))}
@@ -135,6 +138,7 @@ export function AppShell({
             {cta ? (
               <Link href={cta.href} className={s.ctaPill}>
                 {cta.label}
+                <LinkPending />
               </Link>
             ) : null}
             <span className={s.user}>
@@ -193,6 +197,7 @@ export function AppShell({
           {cta ? (
             <Link href={cta.href} className={s.ctaPillDark}>
               {cta.label}
+              <LinkPending />
             </Link>
           ) : null}
           <SignOutButton />
@@ -216,6 +221,7 @@ export function AppShell({
                 <Link href={t.href} aria-current={isCurrent(path, t.href, root) ? 'page' : undefined}>
                   {t.icon}
                   <span>{t.label}</span>
+                  <LinkPending />
                 </Link>
               </li>
             ))}
