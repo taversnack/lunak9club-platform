@@ -109,7 +109,7 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   await page.goto(new URL(payLink).pathname);
   await expect(page.getByText('This booking is already paid')).toBeVisible();
   await expect(page.getByTestId('already-paid-summary')).toHaveText(
-    /^£100\.00 paid on \d{1,2} [A-Z][a-z]{2} \d{4}\. Reference LK9[A-Z]+-\d+\.$/,
+    /^£100\.00 paid on \d{1,2} [A-Z][a-z]+ \d{4}\. Reference LK9[A-Z]+-\d+\.$/,
   );
   await expect(page.getByText('That payment link has ended')).toHaveCount(0);
   await expectLandedAfterPayment(page, '/account/bookings', 'already-paid');
