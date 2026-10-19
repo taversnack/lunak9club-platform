@@ -204,10 +204,14 @@ export default async function CustomerPage({
               <li key={m.month} className={s.listItem}>
                 <span>
                   {m.monthText}:{' '}
-                  {m.confirmedAt ? `confirmed${m.byOwner ? ' by you' : ' by the customer'}` : 'not confirmed yet'}
+                  {m.confirmedAt
+                    ? `confirmed${m.byOwner ? ' by you' : ' by the customer'}${m.late ? ' after the confirm-by date' : ''}`
+                    : 'not confirmed yet'}
                 </span>
                 {m.confirmedAt ? (
-                  <StatusBadge tone="success">Confirmed</StatusBadge>
+                  <StatusBadge tone={m.late ? 'warning' : 'success'}>
+                    {m.late ? 'Confirmed late' : 'Confirmed'}
+                  </StatusBadge>
                 ) : (
                   <ActionForm action={ownerConfirmMonthAction}>
                     <input type="hidden" name="customerId" value={customerId} />

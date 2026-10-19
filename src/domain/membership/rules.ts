@@ -54,6 +54,11 @@ export function confirmByDate(month: string, confirmByDay: number): IsoDate {
   return `${month}-${String(confirmByDay).padStart(2, '0')}`;
 }
 
+/** D94: a confirmation made after the month's confirm-by date is accepted but marked late. */
+export function isLateConfirmation(month: string, confirmByDay: number, confirmedOn: IsoDate): boolean {
+  return confirmedOn > confirmByDate(month, confirmByDay);
+}
+
 /**
  * D90: a one-off move is a straight swap inside the same month (same session, taxi and price).
  * Returns the reason it isn't allowed, or null. Notice and space are checked by the caller.

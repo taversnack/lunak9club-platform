@@ -72,12 +72,14 @@ export default async function MembershipPage() {
                   <strong>{m.monthText}</strong>
                   <div className={s.hint}>
                     {m.confirmedAt
-                      ? `Confirmed${m.byOwner ? ' by Luna’s K9 Club' : ''}.`
+                      ? `Confirmed${m.byOwner ? ' by Luna’s K9 Club' : ''}${m.late ? `, after ${formatUkDate(m.by)}` : ''}.`
                       : `Please confirm by ${formatUkDate(m.by)}. If you don’t, your days stay as they are.`}
                   </div>
                 </div>
                 {m.confirmedAt ? (
-                  <StatusBadge tone="success">Confirmed</StatusBadge>
+                  <StatusBadge tone={m.late ? 'warning' : 'success'}>
+                    {m.late ? 'Confirmed late' : 'Confirmed'}
+                  </StatusBadge>
                 ) : (
                   <ActionForm action={confirmMonthAction}>
                     <input type="hidden" name="month" value={m.month} />

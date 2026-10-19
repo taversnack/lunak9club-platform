@@ -74,6 +74,8 @@ export const membershipMonthConfirmations = pgTable(
     confirmedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     confirmedBy: text().references(() => users.id, { onDelete: 'set null' }),
     byOwner: boolean().notNull().default(false),
+    /** Confirmed after the month's confirm-by date: still accepted, shown as late (D94). */
+    late: boolean().notNull().default(false),
   },
   (t) => [
     uniqueIndex('membership_month_confirmations_uq').on(t.customerId, t.month),

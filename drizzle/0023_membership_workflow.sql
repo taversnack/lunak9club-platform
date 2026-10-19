@@ -15,6 +15,7 @@ CREATE TABLE "membership_month_confirmations" (
 	"confirmed_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"confirmed_by" text,
 	"by_owner" boolean DEFAULT false NOT NULL,
+	"late" boolean DEFAULT false NOT NULL,
 	CONSTRAINT "membership_month_confirmations_month_chk" CHECK ("membership_month_confirmations"."month" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$')
 );
 --> statement-breakpoint

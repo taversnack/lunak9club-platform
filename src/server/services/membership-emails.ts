@@ -9,6 +9,7 @@ import { appUrl } from '../notify';
 import { loadSettings } from './booking-shared';
 import { eq } from 'drizzle-orm';
 import { businessSettings } from '@/infra/db/schema';
+import { dogsToConfirm } from './membership-confirmations';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Q = Db | Tx;
@@ -33,11 +34,11 @@ export async function currentFaqs(q: Q): Promise<FaqItem[]> {
 
 /**
  * Extras for a membership invoice email: the "confirm your days" section while the confirm-by
- * date hasn't passed, and the FAQ. Booking (pay-at-booking) invoices get nothing extra.
+ * date hasn't passed and the customer has days to confirm (not a joining month, D93), and the FAQ. Booking (pay-at-booking) invoices get nothing extra.
  */
 export async function invoiceEmailExtras(
   q: Q,
-  inv: { kind: string; periodMonth: string },
+  inv: { kind: string; periodMonth: string; customerId: string },
   now = new Date(),
 ): Promise<InvoiceMembershipExtras> {
   if (inv.kind !== 'membership') return {};
@@ -45,6 +46,8 @@ export async function invoiceEmailExtras(
   const by = confirmByDate(inv.periodMonth, bs.confirmByDay);
   const faqs = await currentFaqs(q);
   if (by < londonDate(now)) return { faqs };
+  // A dog's joining month is covered by the joining invoice: nothing to confirm (D93).
+  if (!(await dogsToConfirm(q, inv.periodMonth, inv.customerId)).length) return { faqs };
   return {
     confirm: {
       monthText: formatMonth(inv.periodMonth),

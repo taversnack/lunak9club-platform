@@ -467,7 +467,11 @@ async function sendInvoice(db: Db, actor: Actor, id: string, now: Date) {
           periodText: formatMonth(issued.month),
         },
         appUrl(`/account/invoices/${id}`),
-        await invoiceEmailExtras(db, { kind: issued.kind, periodMonth: issued.month }, now),
+        await invoiceEmailExtras(
+          db,
+          { kind: issued.kind, periodMonth: issued.month, customerId: issued.customerId },
+          now,
+        ),
       ),
     );
     await db.update(invoices).set({ emailSentAt: new Date() }).where(eq(invoices.id, id));

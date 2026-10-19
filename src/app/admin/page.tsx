@@ -129,6 +129,7 @@ export default async function AdminHome() {
               {unconfirmed.map((u) => (
                 <li key={u.customerId}>
                   <Link href={`/admin/customers/${u.customerId}#membership`}>{u.name}</Link>
+                  {u.dogs.length ? ` (${u.dogs.join(', ')})` : ''}
                 </li>
               ))}
             </ul>

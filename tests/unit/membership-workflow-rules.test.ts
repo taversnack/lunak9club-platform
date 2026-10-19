@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { confirmByDate, firstUninvoicedMonthStart, moveOnceProblem } from '@/domain/membership/rules';
+import {
+  confirmByDate,
+  firstUninvoicedMonthStart,
+  isLateConfirmation,
+  moveOnceProblem,
+} from '@/domain/membership/rules';
 import { membershipFaqs, ordinal } from '@/domain/membership/faq';
 
 describe('firstUninvoicedMonthStart (D89)', () => {
@@ -60,5 +65,16 @@ describe('membership FAQ (D91)', () => {
       '23rd',
       '28th',
     ]);
+  });
+});
+
+describe('isLateConfirmation (D94)', () => {
+  it('is on time up to and including the confirm-by date, late after it', () => {
+    expect(isLateConfirmation('2026-11', 1, '2026-10-25')).toBe(false);
+    expect(isLateConfirmation('2026-11', 1, '2026-11-01')).toBe(false);
+    expect(isLateConfirmation('2026-11', 1, '2026-11-02')).toBe(true);
+    expect(isLateConfirmation('2026-11', 5, '2026-11-05')).toBe(false);
+    expect(isLateConfirmation('2026-11', 5, '2026-11-06')).toBe(true);
+    expect(isLateConfirmation('2026-12', 1, '2027-01-01')).toBe(true);
   });
 });

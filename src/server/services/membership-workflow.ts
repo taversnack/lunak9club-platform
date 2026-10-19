@@ -2,7 +2,7 @@ import { subjectKey } from '@/domain/approvals/rules';
 import 'server-only';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import {
@@ -17,11 +17,15 @@ import {
   userRoles,
   users,
 } from '@/infra/db/schema';
-import { formatMonth, monthOf, monthRange, type Month } from '@/domain/billing/rules';
+import { formatMonth, monthOf, type Month } from '@/domain/billing/rules';
 import { type Session } from '@/domain/booking/rules';
-import { confirmByDate, validWeekdays } from '@/domain/membership/rules';
+import { confirmByDate, isLateConfirmation, validWeekdays } from '@/domain/membership/rules';
 import { addDays, formatUkDate, londonDate, type IsoDate } from '@/domain/time';
-import { customerInviteMessage, membershipDaysChangedMessage, ownerBillingMessage } from '@/infra/email/templates';
+import {
+  customerInviteMessage,
+  membershipDaysChangedMessage,
+  ownerConfirmationSummaryMessage,
+} from '@/infra/email/templates';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
@@ -33,6 +37,7 @@ import { loadSettings } from './booking-shared';
 import { refreshMembershipDrafts } from './billing';
 import { materialiseMemberships } from './memberships';
 import { currentFaqs } from './membership-emails';
+import { dogsToConfirm } from './membership-confirmations';
 import { checkMoveOnce, type MembershipDaysPayload, type MoveOncePayload } from './membership-approvals';
 import {
   changeStartFor,
@@ -606,21 +611,14 @@ export async function ownerSetMembershipDays(db: Db, actor: Actor, rawDogId: str
 
 const MonthInput = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Choose a month') });
 
-async function hasMemberDays(db: Db, customerId: string, month: Month) {
-  const { first, last } = monthRange(month);
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(bookingDogs)
-    .where(
-      and(
-        eq(bookingDogs.customerId, customerId),
-        eq(bookingDogs.kind, 'membership'),
-        gte(bookingDogs.serviceDate, first),
-        lte(bookingDogs.serviceDate, last),
-        inArray(bookingDogs.status, ['confirmed', 'waitlisted']),
-      ),
-    );
-  return (row?.n ?? 0) > 0;
+/** True if the customer has days in `month` that need confirming (joiners' first month excluded, D93). */
+async function hasDaysToConfirm(db: Db, customerId: string, month: Month) {
+  return (await dogsToConfirm(db, month, customerId)).length > 0;
+}
+
+async function confirmByDay(db: Db) {
+  const [bs] = await db.select().from(businessSettings).where(eq(businessSettings.id, 1));
+  return bs?.confirmByDay ?? 1;
 }
 
 /** Confirmation state for the customer's membership page: which months can be confirmed and by when. */
@@ -628,7 +626,7 @@ export async function myMonthConfirmations(db: Db, actor: Actor, now = new Date(
   const me = asUser(actor);
   const customer = await getMyCustomer(db, me);
   assertAuthorized(me, 'memberships.self.manage', { ownerUserId: customer.userId });
-  const [bs] = await db.select().from(businessSettings).where(eq(businessSettings.id, 1));
+  const byDay = await confirmByDay(db);
   const thisMonth = monthOf(londonDate(now));
   const months = [thisMonth, monthOf(addDays(`${thisMonth}-28`, 7))];
   const done = await db
@@ -642,26 +640,37 @@ export async function myMonthConfirmations(db: Db, actor: Actor, now = new Date(
     );
   const out = [];
   for (const m of months) {
-    if (!(await hasMemberDays(db, customer.id, m))) continue;
+    if (!(await hasDaysToConfirm(db, customer.id, m))) continue;
     const c = done.find((x) => x.month === m);
     out.push({
       month: m,
       monthText: formatMonth(m),
-      by: confirmByDate(m, bs?.confirmByDay ?? 1),
+      by: confirmByDate(m, byDay),
       confirmedAt: c?.confirmedAt ?? null,
       byOwner: c?.byOwner ?? false,
+      late: c?.late ?? false,
     });
   }
   return out;
 }
 
-async function recordConfirmation(db: Db, actor: Actor, customerId: string, month: Month, byOwner: boolean) {
-  if (!(await hasMemberDays(db, customerId, month)))
-    throw new ConflictError(`There are no membership days booked in ${formatMonth(month)} to confirm.`);
+async function recordConfirmation(db: Db, actor: Actor, customerId: string, month: Month, byOwner: boolean, now: Date) {
+  if (!(await hasDaysToConfirm(db, customerId, month)))
+    throw new ConflictError(
+      `There are no membership days to confirm in ${formatMonth(month)}. Days in the month a dog joined are covered by the joining invoice.`,
+    );
+  const late = isLateConfirmation(month, await confirmByDay(db), londonDate(now));
   await db.transaction(async (tx) => {
     const inserted = await tx
       .insert(membershipMonthConfirmations)
-      .values({ customerId, month, confirmedBy: actor.kind === 'user' ? actor.userId : null, byOwner })
+      .values({
+        customerId,
+        month,
+        confirmedAt: now,
+        confirmedBy: actor.kind === 'user' ? actor.userId : null,
+        byOwner,
+        late,
+      })
       .onConflictDoNothing()
       .returning({ id: membershipMonthConfirmations.id });
     if (inserted.length)
@@ -670,74 +679,94 @@ async function recordConfirmation(db: Db, actor: Actor, customerId: string, mont
         action: byOwner ? 'membership.month_confirmed_by_owner' : 'membership.month_confirmed',
         entityType: 'customer',
         entityId: customerId,
-        metadata: { month },
+        metadata: { month, late },
       });
   });
 }
 
-/** The customer confirms a month's days (D88). Idempotent. */
-export async function confirmMyMonth(db: Db, actor: Actor, input: unknown) {
+/** The customer confirms a month's days (D88). Idempotent. After the confirm-by date it's marked late (D94). */
+export async function confirmMyMonth(db: Db, actor: Actor, input: unknown, now = new Date()) {
   const me = asUser(actor);
   const customer = await getMyCustomer(db, me);
   assertAuthorized(me, 'memberships.self.manage', { ownerUserId: customer.userId });
   const { month } = parseInput(MonthInput, input);
-  await recordConfirmation(db, me, customer.id, month, false);
+  await recordConfirmation(db, me, customer.id, month, false, now);
 }
 
-/** The Owner confirms a month's days for the customer (D88). Idempotent. */
-export async function ownerConfirmMonth(db: Db, actor: Actor, rawCustomerId: string, input: unknown) {
+/** The Owner confirms a month's days for the customer (D88). Idempotent; late after the confirm-by date (D94). */
+export async function ownerConfirmMonth(db: Db, actor: Actor, rawCustomerId: string, input: unknown, now = new Date()) {
   assertAuthorized(actor, 'memberships.manage');
   const { month } = parseInput(MonthInput, input);
   const id = idOrNotFound(rawCustomerId, 'Customer');
-  await recordConfirmation(db, actor, id, month, true);
+  await recordConfirmation(db, actor, id, month, true, now);
 }
 
-/** Members with days in `month` who haven't confirmed them (Owner dashboard and the job, D88). */
-export async function unconfirmedMembers(db: Db, actor: Actor, month: Month) {
+export type ConfirmationStatus = 'confirmed' | 'late' | 'unconfirmed';
+
+/**
+ * Who has and hasn't confirmed `month`, by customer and dog (D92). Members who joined partway
+ * through the month aren't listed (D93). Names only (D33).
+ */
+export async function monthConfirmationSummary(db: Db, actor: Actor, month: Month) {
   assertAuthorized(actor, 'memberships.manage');
-  const { first, last } = monthRange(month);
-  const rows = await db
-    .selectDistinct({ customerId: bookingDogs.customerId, name: users.name })
-    .from(bookingDogs)
-    .innerJoin(customers, eq(customers.id, bookingDogs.customerId))
-    .innerJoin(users, eq(users.id, customers.userId))
-    .leftJoin(
-      membershipMonthConfirmations,
-      and(
-        eq(membershipMonthConfirmations.customerId, bookingDogs.customerId),
-        eq(membershipMonthConfirmations.month, month),
-      ),
-    )
-    .where(
-      and(
-        eq(bookingDogs.kind, 'membership'),
-        gte(bookingDogs.serviceDate, first),
-        lte(bookingDogs.serviceDate, last),
-        inArray(bookingDogs.status, ['confirmed', 'waitlisted']),
-        isNull(membershipMonthConfirmations.id),
-        isNull(customers.anonymisedAt),
-      ),
-    )
-    .orderBy(asc(users.name));
-  return rows;
+  const [rows, confs] = await Promise.all([
+    dogsToConfirm(db, month),
+    db.select().from(membershipMonthConfirmations).where(eq(membershipMonthConfirmations.month, month)),
+  ]);
+  const byCustomer = new Map<
+    string,
+    { customerId: string; name: string; dogs: string[]; status: ConfirmationStatus; byOwner: boolean }
+  >();
+  for (const r of rows) {
+    let e = byCustomer.get(r.customerId);
+    if (!e) {
+      const c = confs.find((x) => x.customerId === r.customerId);
+      e = {
+        customerId: r.customerId,
+        name: r.customerName,
+        dogs: [],
+        status: c ? (c.late ? 'late' : 'confirmed') : 'unconfirmed',
+        byOwner: c?.byOwner ?? false,
+      };
+      byCustomer.set(r.customerId, e);
+    }
+    e.dogs.push(r.dogName);
+  }
+  return [...byCustomer.values()];
+}
+
+/** Members with days in `month` who haven't confirmed them (Owner dashboard, D88/D93). */
+export async function unconfirmedMembers(db: Db, actor: Actor, month: Month) {
+  return (await monthConfirmationSummary(db, actor, month))
+    .filter((r) => r.status === 'unconfirmed')
+    .map(({ customerId, name, dogs }) => ({ customerId, name, dogs }));
 }
 
 /**
  * Job (D88), from the day after the confirm-by day: days that weren't confirmed are KEPT and the
- * Owner gets one summary email for the month (count only; names are in the portal).
+ * Owner gets one summary email for the month listing who has confirmed (on time or late) and who
+ * hasn't, by customer and dog (D92). Names only, nothing else about the customer (D33).
  */
 export async function notifyUnconfirmedDays(db: Db, actor: Actor, now = new Date()) {
   assertAuthorized(actor, 'jobs.run');
   const month = monthOf(londonDate(now));
-  const list = await unconfirmedMembers(db, actor, month);
-  if (list.length) {
-    const body = `${list.length} member${list.length === 1 ? ' hasn’t' : 's haven’t'} confirmed their days for ${formatMonth(month)}. Their days are kept as booked. You can confirm for them from their customer page.`;
+  const summary = await monthConfirmationSummary(db, actor, month);
+  const pick = (st: ConfirmationStatus) =>
+    summary.filter((r) => r.status === st).map((r) => ({ name: r.name, dogs: r.dogs, byOwner: r.byOwner }));
+  const groups = { unconfirmed: pick('unconfirmed'), late: pick('late'), confirmed: pick('confirmed') };
+  if (summary.length) {
+    const byText = formatUkDate(confirmByDate(month, await confirmByDay(db)));
     for (const to of await ownerEmails(db))
       await sendSafely(
-        ownerBillingMessage(to, `Unconfirmed membership days for ${formatMonth(month)}`, body, appUrl('/admin')),
+        ownerConfirmationSummaryMessage(to, { monthText: formatMonth(month), byText, ...groups }, appUrl('/admin')),
       );
   }
-  return { month, unconfirmed: list.length };
+  return {
+    month,
+    unconfirmed: groups.unconfirmed.length,
+    late: groups.late.length,
+    confirmed: groups.confirmed.length,
+  };
 }
 
 /** Owner's membership view for one customer: dogs' days, open offers and this/next month's confirmations. */
@@ -759,16 +788,23 @@ export async function ownerMembershipOverview(db: Db, actor: Actor, rawCustomerI
     db.select().from(membershipMonthConfirmations).where(eq(membershipMonthConfirmations.customerId, id)),
   ]);
   const thisMonth = monthOf(today);
-  const months: { month: Month; monthText: string; hasDays: boolean; confirmedAt: Date | null; byOwner: boolean }[] =
-    [];
+  const months: {
+    month: Month;
+    monthText: string;
+    hasDays: boolean;
+    confirmedAt: Date | null;
+    byOwner: boolean;
+    late: boolean;
+  }[] = [];
   for (const m of [thisMonth, monthOf(addDays(`${thisMonth}-28`, 7))]) {
     const c = confs.find((x) => x.month === m);
     months.push({
       month: m,
       monthText: formatMonth(m),
-      hasDays: await hasMemberDays(db, id, m),
+      hasDays: await hasDaysToConfirm(db, id, m),
       confirmedAt: c?.confirmedAt ?? null,
       byOwner: c?.byOwner ?? false,
+      late: c?.late ?? false,
     });
   }
   return {

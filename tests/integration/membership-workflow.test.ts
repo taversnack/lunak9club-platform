@@ -6,6 +6,7 @@ import { setEmailProvider } from '@/infra/email/providers';
 import {
   accounts,
   approvalRequests,
+  businessSettings,
   jobRuns,
   bookingDogs,
   customers,
@@ -19,16 +20,20 @@ import {
   confirmMyOffer,
   finishSignup,
   inviteStatus,
+  monthConfirmationSummary,
   myMonthConfirmations,
   notifyUnconfirmedDays,
   ownerConfirmMonth,
   ownerCreateCustomer,
+  ownerMembershipOverview,
   ownerSetMembershipDays,
   requestMyMembershipDays,
   requestMyMoveOnce,
   resendCustomerInvite,
   unconfirmedMembers,
 } from '@/server/services/membership-workflow';
+import { invoiceEmailExtras } from '@/server/services/membership-emails';
+import { confirmByDate } from '@/domain/membership/rules';
 import { approveApprovalRequest, rejectApprovalRequest } from '@/server/services/approvals';
 import '@/server/services/approval-types';
 const SYSTEM = { kind: 'system', job: 'test' } as const;
@@ -289,20 +294,30 @@ describe('Owner changes days (D89)', () => {
 });
 
 describe('monthly confirmation (D88)', () => {
-  it('customer and Owner confirmations are idempotent; the job keeps days and only counts', async () => {
-    const months = await myMonthConfirmations(db(), cust);
-    const month = months[0]!.month;
-    await confirmMyMonth(db(), cust, { month });
-    await confirmMyMonth(db(), cust, { month });
+  it('customer and Owner confirmations are idempotent; the job keeps days', async () => {
+    // Pin the clock inside the month after Pepper's membership started, so it's a confirmable month.
+    const [m0] = await db()
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.dogId, custDog), eq(memberships.status, 'active')));
+    const month = addDays(`${m0!.startsOn.slice(0, 7)}-28`, 7).slice(0, 7);
+    const now = new Date(`${month}-01T09:00:00Z`);
+    const months = await myMonthConfirmations(db(), cust, now);
+    expect(months[0]!.month).toBe(month);
+    await confirmMyMonth(db(), cust, { month }, now);
+    await confirmMyMonth(db(), cust, { month }, now);
     const [c] = await db().select().from(customers).where(eq(customers.userId, cust.userId));
-    await ownerConfirmMonth(db(), owner, c!.id, { month });
+    await ownerConfirmMonth(db(), owner, c!.id, { month }, now);
     const list = await unconfirmedMembers(db(), owner, month);
     expect(list.find((u) => u.customerId === c!.id)).toBeUndefined();
     const before = await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, custDog));
     const before2 = mail.sent.length;
-    const r = await notifyUnconfirmedDays(db(), SYSTEM);
+    const r = await notifyUnconfirmedDays(db(), SYSTEM, new Date(`${month}-02T09:00:00Z`));
     expect(typeof r.unconfirmed).toBe('number');
-    for (const m of mail.sent.slice(before2)) expect(m.text).not.toContain('Wendy');
+    for (const m of mail.sent.slice(before2)) {
+      expect(m.text).not.toContain(cust.email);
+      expect(m.text).not.toMatch(sensitive);
+    }
     const after = await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, custDog));
     expect(after.length).toBe(before.length);
     await expect(notifyUnconfirmedDays(db(), cust)).rejects.toBeInstanceOf(AuthorizationError);
@@ -319,7 +334,7 @@ describe('monthly confirmation (D88)', () => {
       startsOn: addDays(today, 1),
     });
     const now = new Date(`${month}-02T08:30:00Z`);
-    const subject = /unconfirmed membership days/i;
+    const subject = /membership confirmations for/;
     const ownerMails = () => mail.sent.filter((m) => m.to === owner.email && subject.test(m.subject)).length;
     const before = ownerMails();
     const unconfirmed = (await unconfirmedMembers(db(), owner, month)).length;
@@ -330,12 +345,128 @@ describe('monthly confirmation (D88)', () => {
     expect(unconfirmed).toBeGreaterThan(0);
     // The club name appears once in the subject (the template adds it).
     for (const m of mail.sent.filter((x) => x.to === owner.email && subject.test(x.subject)))
-      expect(m.subject).toMatch(/^Luna’s K9 Club: Unconfirmed membership days for \w+ \d{4}$/);
+      expect(m.subject).toMatch(/^Luna’s K9 Club: membership confirmations for \w+ \d{4} – /);
     const runs = await db()
       .select()
       .from(jobRuns)
       .where(and(eq(jobRuns.job, 'membership-unconfirmed'), eq(jobRuns.runKey, month)));
     expect(runs).toHaveLength(1);
     expect(runs[0]!.status).toBe('succeeded');
+  });
+});
+
+describe('monthly confirmation decisions (D92–D94)', () => {
+  // Next month: dogs with days from tomorrow are in place on its 1st; a dog starting after the 1st joins partway.
+  const month = addDays(`${today.slice(0, 7)}-28`, 7).slice(0, 7);
+  const first = `${month}-01`;
+  const tag = Date.now().toString(36);
+  let by: string;
+  let onTime: Date;
+  let late: Date;
+  let jobAt: Date;
+  const people: Record<'alma' | 'bert' | 'cara' | 'dina', { user: TestUser; customerId: string; name: string }> =
+    {} as never;
+
+  beforeAll(async () => {
+    const [bs] = await db().select().from(businessSettings).where(eq(businessSettings.id, 1));
+    by = confirmByDate(month, bs!.confirmByDay);
+    onTime = new Date(`${by}T09:00:00Z`);
+    late = new Date(`${addDays(by, 1)}T07:00:00Z`);
+    jobAt = new Date(`${addDays(by, 1)}T09:30:00Z`);
+    const make = async (key: keyof typeof people, first: string) => {
+      const name = `${first} ${tag}`;
+      const user = await makeUser(db(), 'customer', name);
+      await readyCustomer(db(), user);
+      const [c] = await db().select().from(customers).where(eq(customers.userId, user.userId));
+      people[key] = { user, customerId: c!.id, name };
+      return user;
+    };
+    const inPlace = { weekdays: [2], session: 'full', startsOn: addDays(today, 1) };
+    const alma = await make('alma', 'Alma');
+    await ownerSetMembershipDays(db(), owner, await approvedDog(db(), owner, alma, 'Rolo'), inPlace);
+    const bert = await make('bert', 'Bert');
+    await ownerSetMembershipDays(db(), owner, await approvedDog(db(), owner, bert, 'Tess'), inPlace);
+    const cara = await make('cara', 'Cara');
+    await ownerSetMembershipDays(db(), owner, await approvedDog(db(), owner, cara, 'Ziggy'), inPlace);
+    await ownerSetMembershipDays(db(), owner, await approvedDog(db(), owner, cara, 'Nala'), inPlace);
+    const dina = await make('dina', 'Dina');
+    await ownerSetMembershipDays(db(), owner, await approvedDog(db(), owner, dina, 'Juno'), {
+      weekdays: [1, 2, 3, 4, 5],
+      session: 'full',
+      startsOn: nextWeekday(3, addDays(first, 1)),
+    });
+  });
+
+  it('a mid-month joiner gets no confirmation for that month: not in the portal, not confirmable, no invoice section (D93)', async () => {
+    const { user, customerId } = people.dina;
+    expect((await myMonthConfirmations(db(), user, onTime)).find((m) => m.month === month)).toBeUndefined();
+    await expect(confirmMyMonth(db(), user, { month }, onTime)).rejects.toThrow(/covered by the joining invoice/);
+    await expect(ownerConfirmMonth(db(), owner, customerId, { month }, onTime)).rejects.toBeInstanceOf(ConflictError);
+    const extras = await invoiceEmailExtras(db(), { kind: 'membership', periodMonth: month, customerId });
+    expect(extras.confirm).toBeUndefined();
+    expect(extras.faqs?.length).toBeGreaterThan(0);
+    const member = await invoiceEmailExtras(db(), {
+      kind: 'membership',
+      periodMonth: month,
+      customerId: people.alma.customerId,
+    });
+    expect(member.confirm?.url).toContain(`confirm=${month}`);
+    expect((await unconfirmedMembers(db(), owner, month)).find((u) => u.customerId === customerId)).toBeUndefined();
+  });
+
+  it('a confirmation after the confirm-by day is accepted but marked late, in both portals (D94)', async () => {
+    await confirmMyMonth(db(), people.alma.user, { month }, onTime);
+    await confirmMyMonth(db(), people.bert.user, { month }, late);
+    const bertSees = (await myMonthConfirmations(db(), people.bert.user, late)).find((m) => m.month === month)!;
+    expect(bertSees.confirmedAt).not.toBeNull();
+    expect(bertSees.late).toBe(true);
+    const almaSees = (await myMonthConfirmations(db(), people.alma.user, late)).find((m) => m.month === month)!;
+    expect(almaSees.late).toBe(false);
+    const ownerSees = await ownerMembershipOverview(db(), owner, people.bert.customerId, late);
+    expect(ownerSees.months.find((m) => m.month === month)).toMatchObject({ late: true, byOwner: false });
+    // Confirming again later doesn't change an on-time confirmation.
+    await confirmMyMonth(db(), people.alma.user, { month }, late);
+    const again = (await myMonthConfirmations(db(), people.alma.user, late)).find((m) => m.month === month)!;
+    expect(again.late).toBe(false);
+  });
+
+  it('the Owner summary lists who has confirmed (on time or late) and who hasn’t, by customer and dog (D92, D33)', async () => {
+    const summary = await monthConfirmationSummary(db(), owner, month);
+    const find = (k: keyof typeof people) => summary.find((r) => r.customerId === people[k].customerId);
+    expect(find('alma')).toMatchObject({ status: 'confirmed', dogs: ['Rolo'] });
+    expect(find('bert')).toMatchObject({ status: 'late', dogs: ['Tess'] });
+    expect(find('cara')).toMatchObject({ status: 'unconfirmed', dogs: ['Nala', 'Ziggy'] });
+    expect(find('dina')).toBeUndefined();
+
+    const before = mail.sent.length;
+    const r = await notifyUnconfirmedDays(db(), SYSTEM, jobAt);
+    expect(r.unconfirmed).toBeGreaterThanOrEqual(1);
+    expect(r.late).toBeGreaterThanOrEqual(1);
+    expect(r.confirmed).toBeGreaterThanOrEqual(1);
+    const m = mail.sent.slice(before).find((x) => x.to === owner.email)!;
+    expect(m.subject).toMatch(
+      new RegExp(`^Luna’s K9 Club: membership confirmations for \\w+ \\d{4} – \\d+ not confirmed$`),
+    );
+    const i = (t: string) => m.text.indexOf(t);
+    const cara = `- ${people.cara.name}: Nala, Ziggy`;
+    const bert = `- ${people.bert.name}: Tess`;
+    const alma = `- ${people.alma.name}: Rolo`;
+    for (const line of [cara, bert, alma]) expect(i(line)).toBeGreaterThan(-1);
+    expect(i('Not confirmed')).toBeLessThan(i(cara));
+    expect(i(cara)).toBeLessThan(i('Confirmed late'));
+    expect(i('Confirmed late')).toBeLessThan(i(bert));
+    expect(i(bert)).toBeLessThan(i('\nConfirmed ('));
+    expect(i('\nConfirmed (')).toBeLessThan(i(alma));
+    expect(m.text).not.toContain(people.dina.name);
+    expect(m.text).not.toContain('Juno');
+    for (const p of Object.values(people)) expect(m.text).not.toContain(p.user.email);
+    expect(m.text).not.toMatch(sensitive);
+    expect(m.html).toContain(people.cara.name);
+
+    // The Owner confirming for Cara after the deadline is late too.
+    await ownerConfirmMonth(db(), owner, people.cara.customerId, { month }, late);
+    expect(
+      (await monthConfirmationSummary(db(), owner, month)).find((x) => x.customerId === people.cara.customerId),
+    ).toMatchObject({ status: 'late', byOwner: true });
   });
 });

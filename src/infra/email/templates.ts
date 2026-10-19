@@ -237,6 +237,50 @@ export function ownerBillingMessage(to: string, subject: string, body: string, u
   };
 }
 
+type ConfirmationLine = { name: string; dogs: string[]; byOwner?: boolean };
+
+/**
+ * Owner's monthly confirmation summary (D88, D92, D94): who has confirmed (on time or late) and who
+ * hasn't, by customer and dog. Customer and dog names only – nothing else about them (D33).
+ */
+export function ownerConfirmationSummaryMessage(
+  to: string,
+  s: {
+    monthText: string;
+    byText: string;
+    unconfirmed: ConfirmationLine[];
+    late: ConfirmationLine[];
+    confirmed: ConfirmationLine[];
+  },
+  url: string,
+): EmailMessage {
+  const line = (l: ConfirmationLine) => `${l.name}: ${l.dogs.join(', ')}${l.byOwner ? ' (confirmed by you)' : ''}`;
+  const sections = [
+    { title: `Not confirmed (${s.unconfirmed.length}) – their days are kept as booked`, rows: s.unconfirmed },
+    { title: `Confirmed late, after ${s.byText} (${s.late.length})`, rows: s.late },
+    { title: `Confirmed (${s.confirmed.length})`, rows: s.confirmed },
+  ].filter((x) => x.rows.length);
+  const title = `Membership confirmations for ${s.monthText}`;
+  const intro = `Members were asked to confirm their days for ${s.monthText} by ${s.byText}. Members who joined during ${s.monthText} aren’t included: their joining invoice covers it.`;
+  const subjectTail = s.unconfirmed.length ? ` – ${s.unconfirmed.length} not confirmed` : ' – all confirmed';
+  return {
+    to,
+    template: 'owner.membership-confirmations',
+    subject: `${BRAND}: membership confirmations for ${s.monthText}${subjectTail}`,
+    text: `${intro}\n\n${sections.map((x) => `${x.title}:\n${x.rows.map((r) => `- ${line(r)}`).join('\n')}`).join('\n\n')}\n\nYou can confirm for a member from their customer page:\n${url}`,
+    html: layout(
+      title,
+      `<p>${escapeHtml(intro)}</p>${sections
+        .map(
+          (x) =>
+            `<h2>${escapeHtml(x.title)}</h2><ul>${x.rows.map((r) => `<li>${escapeHtml(line(r))}</li>`).join('')}</ul>`,
+        )
+        .join('')}<p>You can confirm for a member from their customer page.</p>${button(url, 'Open the dashboard')}`,
+      '',
+    ),
+  };
+}
+
 // Card payments (D6, D59). Amounts and invoice numbers only – never card details.
 export function paymentReceivedMessage(
   to: string,

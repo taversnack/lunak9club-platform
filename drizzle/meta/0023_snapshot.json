@@ -1,5 +1,5 @@
 {
-  "id": "e3939487-29fc-456c-9546-32bd32df26f7",
+  "id": "5982c5c6-5fa3-49a2-9fc0-ae43db5f7b55",
   "prevId": "426ca8f4-8e29-4db2-9918-9d31df8e7d5f",
   "version": "7",
   "dialect": "postgresql",
@@ -6827,6 +6827,13 @@
         },
         "by_owner": {
           "name": "by_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "late": {
+          "name": "late",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
