@@ -5,7 +5,7 @@ import { buttonClass, Card, Stack } from '@/ui/components';
 
 export default function NotFound() {
   return (
-    <div className={s.container}>
+    <div className={`${s.container} ${s.narrow}`}>
       <Card as="div">
         <div className={p.error}>
           <Stack>
@@ -13,9 +13,7 @@ export default function NotFound() {
               404
             </p>
             <h1>Page not found</h1>
-            <p className={s.muted}>
-              This page may have moved, or the link might be out of date. Try one of these instead.
-            </p>
+            <p className={s.muted}>We couldn’t find that page. It may have moved, or the link may be out of date.</p>
             <div className={p.errorActions}>
               <Link href="/dashboard" className={buttonClass('primary')}>
                 Go to your dashboard
@@ -25,7 +23,7 @@ export default function NotFound() {
               </Link>
             </div>
             <p>
-              <Link href="/">Go to the home page</Link>
+              <Link href="/">Home</Link>
             </p>
           </Stack>
         </div>

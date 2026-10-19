@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import s from '@/ui/ui.module.css';
 import { Alert, buttonClass, Card, Stack } from '@/ui/components';
 import { getPaymentProvider } from '@/infra/payments';
-import { SimulatedPaymentProvider } from '@/infra/payments/simulated';
+import { asSimulatedProvider } from '@/infra/payments/simulated';
 import { pounds } from '@/domain/pricing/engine';
 import { simulateCancelAction, simulatePayAction } from './actions';
 
@@ -13,8 +13,8 @@ export const dynamic = 'force-dynamic';
 /** Stand-in for Stripe's payment page when PAYMENTS_DRIVER=simulated. 404 otherwise. */
 export default async function SimulatedCheckoutPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const p = getPaymentProvider();
-  if (!(p instanceof SimulatedPaymentProvider)) notFound();
+  const p = asSimulatedProvider(getPaymentProvider());
+  if (!p) notFound();
   const session = p.sessions.get(sessionId);
   if (!session) notFound();
   const state = await p.getCheckout(sessionId);
