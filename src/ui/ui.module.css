@@ -407,7 +407,7 @@
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-3);
-  border: 1.5px solid var(--color-border);
+  border: 1.5px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   cursor: pointer;
@@ -487,7 +487,7 @@
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-5);
-  border: 1px dashed var(--color-border-strong);
+  border: 1px dashed var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface-muted);
 }

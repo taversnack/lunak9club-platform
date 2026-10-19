@@ -67,12 +67,15 @@
   --shadow-3: 0 2px 4px rgb(43 35 32 / 8%), 0 12px 32px rgb(43 35 32 / 10%);
   --shadow-card: var(--shadow-2);
 
-  /* Borders for tinted states (AA against their -bg pair; border is decorative). */
-  --color-border-strong: #b9ab98;
-  --color-success-border: #9fcdb1;
-  --color-warning-border: #e8c77f;
-  --color-danger-border: #eba9a2;
-  --color-info-border: #a9c2e6;
+  /* Borders. --color-border (#ddd3c6, about 1.5:1) is for decorative dividers and card edges only.
+     --color-border-strong marks meaningful boundaries (control outlines such as day choices):
+     4.4:1 on surface, 4.0:1 on bg, 3.7:1 on surface-muted (WCAG 1.4.11 needs 3:1).
+     The state borders reach at least 3.6:1 against their own -bg tint and 4:1 on white. */
+  --color-border-strong: #857664;
+  --color-success-border: #3f8a5c;
+  --color-warning-border: #a87410;
+  --color-danger-border: #c4483d;
+  --color-info-border: #4a78bd;
 
   /* Layout and interaction. */
   --content-max: 72rem;
