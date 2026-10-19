@@ -1,6 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, latestEmail, signIn, signOut } from './helpers';
+import {
+  DEMO_CUSTOMER,
+  DEMO_CUSTOMER_2,
+  DEMO_OWNER,
+  expectLandedAfterPayment,
+  latestEmail,
+  signIn,
+  signOut,
+} from './helpers';
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '../../src/domain/booking/wording';
 
 test.describe.configure({ mode: 'serial' });
@@ -84,10 +92,32 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   // Simulated card page stands in for Stripe in tests (PAYMENTS_DRIVER=simulated).
   await expect(page.getByRole('heading', { name: 'Test card payment' })).toBeVisible();
   await axe(page);
+  // The card page's buttons only accept posts from our own pages (no cross-site form can pay).
+  const checkoutPath = new URL(page.url()).pathname;
+  const csrf = await page.request.post(`${checkoutPath}/pay`, {
+    headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' },
+    maxRedirects: 0,
+  });
+  expect(csrf.status()).toBe(403);
   await page.getByRole('button', { name: 'Pay £100.00 with a test card' }).click();
   await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
+  await expectLandedAfterPayment(page, '/account/bookings');
   await expect(page.getByText('See you both soon').first()).toBeVisible();
   await axe(page);
+
+  // The emailed pay link again, now that it's paid: says so (not "the time to pay ran out").
+  await page.goto(new URL(payLink).pathname);
+  await expect(page.getByText('This booking is already paid')).toBeVisible();
+  await expect(page.getByTestId('already-paid-summary')).toHaveText(
+    /^£100\.00 paid on \d{1,2} [A-Z][a-z]+ \d{4}\. Reference LK9[A-Z]+-\d+\.$/,
+  );
+  await expect(page.getByText('That payment link has ended')).toHaveCount(0);
+  await expectLandedAfterPayment(page, '/account/bookings', 'already-paid');
+  await page.getByRole('link', { name: 'View the receipt' }).click();
+  await expect(page).toHaveURL(/\/account\/invoices\/[0-9a-f-]{36}$/);
+  await expect(page.getByText('Paid').first()).toBeVisible();
+  await expect(page.getByText('Paid on', { exact: true })).toBeVisible();
+  await page.goto('/account/bookings');
 
   const row = page.getByRole('row').filter({ hasText: 'Biscuit' }).first();
   bookedDateLabel = (await row.getByRole('cell').first().textContent())!;
@@ -149,6 +179,7 @@ test('Owner sees the booking on the day, books a trial and checks a dog in and o
     .click();
   await page.getByRole('button', { name: /with a test card/ }).click();
   await expect(page.getByText('Payment received – you’re booked')).toBeVisible();
+  await expectLandedAfterPayment(page, '/account/bookings');
   await signOut(page);
 
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
