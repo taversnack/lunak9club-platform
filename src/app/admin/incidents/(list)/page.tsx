@@ -18,7 +18,7 @@ function IncidentTable({ rows, label }: { rows: Row[]; label: string }) {
   if (!rows.length) return <Muted>None.</Muted>;
   return (
     <div className={s.tableWrap} role="region" aria-label={label} tabIndex={0}>
-      <table className={s.table}>
+      <table className={`${s.table} ${s.stackTable}`}>
         <thead>
           <tr>
             <th scope="col">When</th>
@@ -32,18 +32,18 @@ function IncidentTable({ rows, label }: { rows: Row[]; label: string }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.inc.id}>
-              <td>
+              <td data-primary="">
                 <Link href={`/admin/incidents/${r.inc.id}`}>{formatDateTimeLondon(r.inc.occurredAt)}</Link>
               </td>
-              <td>
+              <td data-label="Dog">
                 {r.dogName} <span className={s.hint}>({r.customerName})</span>
               </td>
-              <td>{INCIDENT_KIND_LABELS[r.inc.kind]}</td>
-              <td>
+              <td data-label="What">{INCIDENT_KIND_LABELS[r.inc.kind]}</td>
+              <td data-label="Severity">
                 <StatusBadge tone={SEVERITY_TONE[r.inc.severity]!}>{SEVERITY_LABELS[r.inc.severity]}</StatusBadge>
               </td>
-              <td>{r.inc.acknowledgedAt ? 'Yes' : 'Not yet'}</td>
-              <td>{r.inc.followUpDue ? formatUkDate(r.inc.followUpDue) : '–'}</td>
+              <td data-label="Customer read it">{r.inc.acknowledgedAt ? 'Yes' : 'Not yet'}</td>
+              <td data-label="Follow-up">{r.inc.followUpDue ? formatUkDate(r.inc.followUpDue) : '–'}</td>
             </tr>
           ))}
         </tbody>

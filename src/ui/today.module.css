@@ -1,0 +1,31 @@
+.kpis {
+  display: grid;
+  gap: var(--space-4);
+}
+.split {
+  display: grid;
+  gap: var(--space-4);
+}
+.attentionItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+@media (min-width: 700px) {
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1200px) {
+  .kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .split {
+    grid-template-columns: 3fr 2fr;
+  }
+}

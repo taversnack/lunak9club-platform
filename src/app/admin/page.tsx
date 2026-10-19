@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { auditActionLabel, auditEntityLabel } from '@/domain/audit-labels';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
-import { Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
+import { Card, DataTable, Muted, PageHeader, Stack, StatCard, StatusBadge } from '@/ui/components';
+import t from '@/ui/today.module.css';
 import { requirePermission } from '@/server/session';
 import { listRecentAuditEvents } from '@/server/queries/audit';
 import { listRequirements, reviewQueue } from '@/server/services/owner-review';
@@ -37,69 +38,77 @@ export default async function AdminHome() {
   ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
+  const places = Math.min(today.left.am, today.left.pm);
+  const attention = [
+    { key: 'records', n: queue.pending.length, text: 'Records to review', href: '/admin/reviews' as const },
+    { key: 'ready', n: queue.ready.length, text: 'Dogs ready to approve', href: '/admin/reviews#ready' as const },
+    {
+      key: 'assess',
+      n: queue.awaitingAssessment.length,
+      text: 'Waiting for meet and greet or trial',
+      href: '/admin/reviews#assessments' as const,
+    },
+    { key: 'data', n: waitingRequests, text: 'Data requests', href: '/admin/data-requests' as const },
+  ];
   return (
     <Stack>
-      <h1>Owner dashboard</h1>
-      <Grid>
-        <Card aria-labelledby="approvals">
-          <h2 id="approvals">Requests waiting</h2>
-          <p className={s.bigNumber}>{approvals}</p>
-          <Link href="/admin/approvals">Open requests</Link>
-        </Card>
-        <Card aria-labelledby="records">
-          <h2 id="records">Records to review</h2>
-          <p className={s.bigNumber}>{queue.pending.length}</p>
-          <Link href="/admin/reviews">Open reviews</Link>
-        </Card>
-        <Card aria-labelledby="ready">
-          <h2 id="ready">Dogs ready to approve</h2>
-          <p className={s.bigNumber}>{queue.ready.length}</p>
-          <Link href="/admin/reviews#ready">See dogs</Link>
-        </Card>
-        <Card aria-labelledby="assess">
-          <h2 id="assess">Waiting for meet and greet or trial</h2>
-          <p className={s.bigNumber}>{queue.awaitingAssessment.length}</p>
-          <Link href="/admin/reviews#assessments">See dogs</Link>
-        </Card>
-      </Grid>
-      <Grid>
-        <Card aria-labelledby="today">
-          <h2 id="today">Today</h2>
-          {today.closedReason ? (
-            <Muted>Closed – {today.closedReason}</Muted>
-          ) : (
+      <PageHeader title="Owner dashboard" lead={`Today · ${formatUkDate(londonDate(new Date()))}`} />
+      <div className={t.kpis}>
+        <StatCard
+          label="Dogs in today"
+          value={today.closedReason ? 'Closed' : today.booked.length}
+          detail={
+            today.closedReason
+              ? today.closedReason
+              : `${checkedIn} checked in · ${today.taxi.length} taxi · ${today.waitlist.length} waiting · ${places} places left`
+          }
+          href="/admin/bookings"
+          linkText="Open today"
+        />
+        <StatCard label="Requests waiting" value={approvals} href="/admin/approvals" linkText="Open requests" />
+        <StatCard
+          label="Invoices owed"
+          value={pounds(billing.duePence)}
+          detail={
             <>
-              <p className={s.bigNumber}>{today.booked.length} dogs</p>
-              <p>
-                {checkedIn} checked in · {today.taxi.length} taxi · {today.waitlist.length} waiting ·{' '}
-                {Math.min(today.left.am, today.left.pm)} places left
-              </p>
+              {billing.drafts} to check · {billing.scheduled} waiting to send · {billing.unpaid} unpaid ·{' '}
+              <strong>{billing.overdue} overdue</strong> · {billing.refundRequests} refund requests
             </>
-          )}
-          <Link href="/admin/bookings">Open today</Link>
-        </Card>
-        <Card aria-labelledby="money">
-          <h2 id="money">Invoices</h2>
-          <p className={s.bigNumber}>{pounds(billing.duePence)} owed</p>
-          <p>
-            {billing.drafts} to check · {billing.scheduled} waiting to send · {billing.unpaid} unpaid ·{' '}
-            <strong>{billing.overdue} overdue</strong> · {billing.refundRequests} refund requests
-          </p>
-          {billing.missingDetails.length ? (
-            <p>
-              <StatusBadge tone="warning">Business details missing</StatusBadge>{' '}
-              <Link href="/admin/settings/business">Add them</Link>
-            </p>
-          ) : null}
-          <Link href="/admin/invoices">Open invoices</Link>
-        </Card>
-      </Grid>
-      <Grid>
-        <Card aria-labelledby="incidents">
-          <h2 id="incidents">Incidents</h2>
-          <p className={s.bigNumber}>{welfare.open} open</p>
-          <p>{welfare.followUpsDue} follow-ups due</p>
-          <Link href="/admin/incidents">Open incidents</Link>
+          }
+          href="/admin/invoices"
+          linkText="Open invoices"
+        />
+        <StatCard
+          label="Incidents open"
+          value={welfare.open}
+          detail={`${welfare.followUpsDue} follow-ups due`}
+          href="/admin/incidents"
+          linkText="Open incidents"
+        />
+      </div>
+      {billing.missingDetails.length ? (
+        <p>
+          <StatusBadge tone="warning">Business details missing</StatusBadge>{' '}
+          <Link href="/admin/settings/business">Add them</Link>
+        </p>
+      ) : null}
+      <div className={t.split}>
+        <Card aria-labelledby="attention">
+          <div className={s.cardHead}>
+            <h2 id="attention">Needs attention</h2>
+          </div>
+          <ul className={s.cardList}>
+            {attention.map((a) => (
+              <li key={a.key} className={t.attentionItem}>
+                <span>
+                  <strong>{a.n}</strong> {a.text}
+                </span>
+                <Link href={a.href}>
+                  Open <span className="visually-hidden">{a.text}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </Card>
         <Card aria-labelledby="expiring">
           <h2 id="expiring">Vaccinations expiring (30 days)</h2>
@@ -117,48 +126,40 @@ export default async function AdminHome() {
           )}
           <p className={s.hint}>{reminderDaysCopy(requirements)}</p>
         </Card>
-        {waitingRequests ? (
-          <Card aria-labelledby="requests">
-            <h2 id="requests">Data requests</h2>
-            <p className={s.bigNumber}>{waitingRequests}</p>
-            <Link href="/admin/data-requests">Review requests</Link>
-          </Card>
-        ) : null}
-      </Grid>
+      </div>
       <Card aria-labelledby="audit">
         <h2 id="audit">Recent activity</h2>
+        {/* No full audit page exists yet, so show all 20 fetched events. */}
+        {events.length > 0 && <Muted>Latest {events.length} events.</Muted>}
         {events.length === 0 ? (
           <Muted>No activity yet.</Muted>
         ) : (
-          <div className={s.tableWrap} role="region" aria-label="Recent activity table" tabIndex={0}>
-            <table className={s.table}>
-              <caption className="visually-hidden">Most recent audit events</caption>
-              <thead>
-                <tr>
-                  <th scope="col">When</th>
-                  <th scope="col">Action</th>
-                  <th scope="col">Record</th>
-                  <th scope="col">Result</th>
+          <DataTable caption="Most recent audit events" captionHidden stack>
+            <thead>
+              <tr>
+                <th scope="col">Action</th>
+                <th scope="col">When</th>
+                <th scope="col">Record</th>
+                <th scope="col">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((e) => (
+                <tr key={e.id}>
+                  <td data-primary="">{auditActionLabel(e.action)}</td>
+                  <td data-label="When">{formatDateTimeLondon(e.occurredAt)}</td>
+                  <td data-label="Record">{auditEntityLabel(e.entityType)}</td>
+                  <td>
+                    <StatusBadge
+                      tone={e.outcome === 'success' ? 'success' : e.outcome === 'denied' ? 'warning' : 'danger'}
+                    >
+                      {e.outcome === 'success' ? 'Success' : e.outcome === 'denied' ? 'Denied' : 'Failed'}
+                    </StatusBadge>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {events.map((e) => (
-                  <tr key={e.id}>
-                    <td>{formatDateTimeLondon(e.occurredAt)}</td>
-                    <td>{auditActionLabel(e.action)}</td>
-                    <td>{auditEntityLabel(e.entityType)}</td>
-                    <td>
-                      <StatusBadge
-                        tone={e.outcome === 'success' ? 'success' : e.outcome === 'denied' ? 'warning' : 'danger'}
-                      >
-                        {e.outcome === 'success' ? 'Success' : e.outcome === 'denied' ? 'Denied' : 'Failed'}
-                      </StatusBadge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </DataTable>
         )}
       </Card>
     </Stack>

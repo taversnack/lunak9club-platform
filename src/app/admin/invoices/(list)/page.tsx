@@ -10,7 +10,7 @@ import { billingOverview, ownerInvoices, type InvoiceFilter } from '@/server/ser
 import { formatMonth } from '@/domain/billing/rules';
 import { pounds } from '@/domain/pricing/engine';
 import { formatUkDate } from '@/domain/time';
-import { runBillingNowAction } from '../actions';
+import { runBillingNowAction } from '../../actions';
 
 export const metadata: Metadata = { title: 'Invoices' };
 export const dynamic = 'force-dynamic';
@@ -99,7 +99,7 @@ export default async function OwnerInvoicesPage({
           <Muted>No invoices here.</Muted>
         ) : (
           <div className={s.tableWrap} role="region" aria-label="Invoices" tabIndex={0}>
-            <table className={s.table}>
+            <table className={`${s.table} ${s.stackTable}`}>
               <thead>
                 <tr>
                   <th scope="col">Customer</th>
@@ -115,15 +115,15 @@ export default async function OwnerInvoicesPage({
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.inv.id}>
-                    <td>
+                    <td data-primary="">
                       <Link href={`/admin/invoices/${r.inv.id}`}>{r.customerName}</Link>
                     </td>
-                    <td>{formatMonth(r.inv.periodMonth)}</td>
-                    <td>{r.inv.number ?? '–'}</td>
-                    <td>{r.lineCount}</td>
-                    <td>{pounds(r.bal.totalPence)}</td>
-                    <td>{r.inv.number ? pounds(r.bal.duePence) : '–'}</td>
-                    <td>{r.inv.dueDate ? formatUkDate(r.inv.dueDate) : '–'}</td>
+                    <td data-label="Month">{formatMonth(r.inv.periodMonth)}</td>
+                    <td data-label="Number">{r.inv.number ?? '–'}</td>
+                    <td data-label="Days">{r.lineCount}</td>
+                    <td data-label="Total">{pounds(r.bal.totalPence)}</td>
+                    <td data-label="Still owed">{r.inv.number ? pounds(r.bal.duePence) : '–'}</td>
+                    <td data-label="Due">{r.inv.dueDate ? formatUkDate(r.inv.dueDate) : '–'}</td>
                     <td>
                       <InvoiceState state={r.state} />
                     </td>

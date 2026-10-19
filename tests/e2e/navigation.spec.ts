@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { DEMO_CUSTOMER, signIn } from './helpers';
+import { DEMO_CUSTOMER, DEMO_OWNER, signIn } from './helpers';
 
 test('@a11y customer menu drawer: aria-expanded, Esc closes and returns focus, no axe violations', async ({ page }) => {
   await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
@@ -92,5 +92,31 @@ test.describe('menu drawer at 390px', () => {
     await expect(page).toHaveURL(/\/account\/profile/);
     await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).not.toBe('hidden');
+  });
+});
+
+test.describe('admin sidebar at 1280x800', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false });
+
+  test('a short admin page does not scroll vertically because of the sidebar', async ({ page }) => {
+    await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.goto('/admin/reviews');
+    const nav = page.locator('[data-sidebar]');
+    await expect(nav).toBeVisible();
+    const m = await page.evaluate(() => {
+      const side = document.querySelector('[data-sidebar]')!;
+      const main = document.querySelector('main')!;
+      return {
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        sideHeight: side.getBoundingClientRect().height,
+        mainHeight: main.getBoundingClientRect().height,
+      };
+    });
+    // The sidebar never sets the row height; it scrolls inside instead.
+    expect(m.sideHeight).toBeLessThanOrEqual(Math.ceil(m.mainHeight));
+    expect(m.sideHeight).toBeLessThanOrEqual(m.innerHeight);
+    expect(m.scrollHeight, JSON.stringify(m)).toBeLessThanOrEqual(m.innerHeight);
   });
 });

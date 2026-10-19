@@ -30,7 +30,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           <Muted>{q ? 'No customers match that search.' : 'No customers yet.'}</Muted>
         ) : (
           <div className={s.tableWrap} role="region" aria-label="Customers" tabIndex={0}>
-            <table className={s.table}>
+            <table className={`${s.table} ${s.stackTable}`}>
               <thead>
                 <tr>
                   <th scope="col">Name</th>
@@ -43,13 +43,13 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               <tbody>
                 {rows.map((c) => (
                   <tr key={c.id}>
-                    <td>
+                    <td data-primary="">
                       <Link href={`/admin/customers/${c.id}`}>{c.name}</Link>
                     </td>
-                    <td>{c.email}</td>
-                    <td>{c.phone ?? '–'}</td>
-                    <td>{c.postcode ?? '–'}</td>
-                    <td>{c.dogCount}</td>
+                    <td data-label="Email">{c.email}</td>
+                    <td data-label="Phone">{c.phone ?? '–'}</td>
+                    <td data-label="Postcode">{c.postcode ?? '–'}</td>
+                    <td data-label="Dogs">{c.dogCount}</td>
                   </tr>
                 ))}
               </tbody>
