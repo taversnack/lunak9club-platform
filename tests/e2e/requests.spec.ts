@@ -166,3 +166,29 @@ test('Give place: a full day, the waitlist and the Owner choosing the dog', asyn
   expect(link.text).toMatch(/\/api\/payments\/pay\//);
   void info;
 });
+
+test('a signed-out customer who opens the emailed pay link signs in and lands on the card payment', async ({
+  page,
+}) => {
+  const link = await latestEmail(DEMO_CUSTOMER.email, 'payment.link');
+  const href = /https?:\/\/[^\s"<>]+\/api\/payments\/pay\/[0-9a-f-]+/.exec(link.text)?.[0];
+  expect(href).toBeTruthy();
+  const payPath = new URL(href!).pathname;
+  // Signed out: the pay link sends you to sign in, remembering where you were going.
+  await page.goto(payPath);
+  await expect(page).toHaveURL(`/sign-in?callbackUrl=${encodeURIComponent(payPath)}`);
+  await page.getByLabel('Email address').fill(DEMO_CUSTOMER.email);
+  await page.getByLabel('Password').fill(DEMO_CUSTOMER.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  // …and after signing in you're on the card payment, not the dashboard.
+  await expect(page).toHaveURL(/\/dev\/checkout\//);
+  await expect(page.getByRole('heading', { name: 'Test card payment' })).toBeVisible();
+});
+
+test('a sign-in link pointing at another site lands on the dashboard instead', async ({ page }) => {
+  await page.goto(`/sign-in?callbackUrl=${encodeURIComponent('//evil.example/steal')}`);
+  await page.getByLabel('Email address').fill(DEMO_CUSTOMER.email);
+  await page.getByLabel('Password').fill(DEMO_CUSTOMER.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/account$/); // /dashboard sends a customer to /account
+});
