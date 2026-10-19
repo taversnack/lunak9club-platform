@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { closeDb, createDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
-import { bookingDogs, bookingSettings, complianceSubmissions, dogs, serviceDays } from '@/infra/db/schema';
+import { bookingDogs, bookingSettings, closures, complianceSubmissions, dogs, serviceDays } from '@/infra/db/schema';
 import { addMyContact, updateMyProfile } from '@/server/services/customers';
 import { createMyDog, submitMyOnboardingForm, saveMyDogVet } from '@/server/services/dogs';
 import { acceptTerms, myTermsStatus } from '@/server/services/policies';
-import { bookingCalendar, cancelMyBooking, myBookings } from '@/server/services/bookings';
+import { bookingCalendar, cancelMyBooking, createMyBookings, myBookings } from '@/server/services/bookings';
 import {
   addClosure,
   attendanceCsv,
@@ -19,6 +19,7 @@ import {
   ownerCancel,
   ownerCreateBooking,
   ownerDay,
+  removeClosure,
   setDayCapacity,
 } from '@/server/services/owner-bookings';
 import { recordAssessment, setDogStatus } from '@/server/services/owner-review';
@@ -26,6 +27,7 @@ import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { addDays, londonDate } from '@/domain/time';
 import { isoWeekday } from '@/domain/booking/rules';
+import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
@@ -43,15 +45,8 @@ const mail = new MemoryEmailProvider();
 const storage = new FsStorageProvider(mkdtempSync(join(tmpdir(), 'lunak9-b-')));
 const today = londonDate(new Date());
 /** Next open weekday at least `n` days ahead that isn't a seeded bank holiday. */
-const HOLIDAYS = new Set(['2026-12-25', '2026-12-28', '2027-01-01']);
-const used = new Set<string>();
 /** A distinct open weekday at least `n` days ahead (each call returns a date no other test uses). */
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n);
-  while (isoWeekday(d) > 5 || HOLIDAYS.has(d) || used.has(d)) d = addDays(d, 1);
-  used.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker();
 
 let owner: TestUser;
 let alice: TestUser;
@@ -168,6 +163,25 @@ describe('customer booking', () => {
       owner,
     );
     expect(again.outcomes[0]).toMatchObject({ outcome: 'skipped', reason: 'Already booked' });
+  });
+
+  it('closing a day and booking it at the same moment never leaves a booking on a closed day', async () => {
+    for (let i = 0; i < 4; i++) {
+      const date = weekdayAhead(21 + i);
+      const [booked, closed] = await Promise.allSettled([
+        createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'am', taxi: false }),
+        addClosure(db(), owner, { date, reason: 'Race test' }),
+      ]);
+      const [c] = await db().select().from(closures).where(eq(closures.serviceDate, date));
+      const live = await db()
+        .select()
+        .from(bookingDogs)
+        .where(and(eq(bookingDogs.serviceDate, date), inArray(bookingDogs.status, ['requested', 'confirmed'])));
+      // Either the booking won (and the closure was refused), or the closure won (and the booking was refused).
+      expect(!!c && live.length > 0).toBe(false);
+      expect(booked.status === 'fulfilled' || closed.status === 'fulfilled').toBe(true);
+      if (c) await removeClosure(db(), owner, date);
+    }
   });
 
   it('refuses today, weekends, closures and dates beyond a vaccination expiry', async () => {

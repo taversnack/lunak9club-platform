@@ -258,6 +258,13 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
   };
   await db.transaction(async (tx) => {
     const days = await lockDays(tx, dates, settings, now);
+    // Closing a day takes the same lock, so a closure added since the check above is visible now.
+    const closedNow = await closuresBetween(tx, dates[0]!, dates.at(-1)!);
+    for (const date of dates)
+      if (closedNow.has(date))
+        throw new ValidationError('Some of these can’t be booked.', {
+          dates: `${date}: Closed: ${closedNow.get(date)}`,
+        });
     const existing = await tx
       .select({ dogId: bookingDogs.dogId, serviceDate: bookingDogs.serviceDate })
       .from(bookingDogs)
