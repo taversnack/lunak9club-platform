@@ -37,7 +37,7 @@ import { sendVaccinationReminders } from '@/server/services/reminders';
 import { ConflictError, ValidationError } from '@/server/errors';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, formatUkDate, londonDate, londonInstant } from '@/domain/time';
-import { BANK_HOLIDAYS, firstOpenWeekday } from '../support/dates';
+import { BANK_HOLIDAYS, BOOKING_WINDOW_DAYS, firstOpenWeekday } from '../support/dates';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
@@ -53,11 +53,21 @@ const system = { kind: 'system', job: 'test' } as const;
 const PINNED_NOW = new Date(process.env.VACC_TEST_NOW || process.env.TEST_NOW || Date.now());
 vi.useFakeTimers({ toFake: ['Date'], now: PINNED_NOW });
 const today = londonDate(new Date());
-const used = new Set<string>();
-function weekdayAhead(n: number): string {
+const used = new Set<string>(); // days this file has picked, plus days other files touched (beforeAll)
+const mine = new Set<string>(); // days this file has picked
+const closedOrCapped = new Set<string>(); // other files' closures and capacity changes: never shared
+function weekdayAhead(n: number, ownerOnly = false): string {
+  const open = (d: string) => isoWeekday(d) <= 5 && !BANK_HOLIDAYS.has(d);
   let d = addDays(today, n);
-  while (isoWeekday(d) > 5 || BANK_HOLIDAYS.has(d) || used.has(d)) d = addDays(d, 1);
+  while (!open(d) || used.has(d)) d = addDays(d, 1);
+  // Customers can only book inside the window: rather than drift past it when other files have
+  // touched most days, share one of theirs (never one of this file's own).
+  if (!ownerOnly && d > addDays(today, BOOKING_WINDOW_DAYS - 3)) {
+    d = addDays(today, n);
+    while (!open(d) || mine.has(d) || closedOrCapped.has(d)) d = addDays(d, 1);
+  }
   used.add(d);
+  mine.add(d);
   return d;
 }
 /**
@@ -66,7 +76,7 @@ function weekdayAhead(n: number): string {
  * (day 200). Only the Owner can book these, so closing them or setting capacity can't collide.
  */
 function ownerOnlyWeekday(): string {
-  return weekdayAhead(100 + used.size);
+  return weekdayAhead(100 + used.size, true);
 }
 function nextMonday(): string {
   let d = addDays(today, 1);
@@ -173,6 +183,12 @@ beforeAll(async () => {
           and (session_capacity is not null or taxi_capacity is not null)`,
   );
   for (const r of touched.rows) used.add(r.d);
+  const special = await db().execute<{ d: string }>(
+    sql`select service_date::text as d from closures where service_date > ${today}
+        union select service_date::text from service_days where service_date > ${today}
+          and (session_capacity is not null or taxi_capacity is not null)`,
+  );
+  for (const r of special.rows) closedOrCapped.add(r.d);
 });
 afterAll(async () => {
   // Free every place this file took so later files see empty days.
