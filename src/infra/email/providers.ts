@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
@@ -6,14 +6,23 @@ import { env } from '../env';
 import { logger } from '../logger';
 import type { EmailMessage, EmailProvider } from './types';
 
-/** Writes each message to MAIL_DIR as JSON. Used by automated tests; nothing leaves the machine. */
+let fileSeq = 0;
+
+/**
+ * Writes each message to MAIL_DIR as JSON. Used by automated tests; nothing leaves the machine.
+ * Each file is written under a temporary name and then renamed, so a reader never sees half a message.
+ * Names are `<ms>-<sequence>-<id>.json`, so they sort in the order the messages were sent.
+ */
 export class FileEmailProvider implements EmailProvider {
   readonly name = 'file';
   constructor(private readonly dir: string) {}
   async send(message: EmailMessage) {
     const id = randomUUID();
     await mkdir(this.dir, { recursive: true });
-    await writeFile(join(this.dir, `${Date.now()}-${id}.json`), JSON.stringify({ id, ...message }, null, 2));
+    const name = `${Date.now()}-${String(++fileSeq).padStart(6, '0')}-${id}.json`;
+    const tmp = join(this.dir, `${name}.tmp`);
+    await writeFile(tmp, JSON.stringify({ id, ...message }, null, 2));
+    await rename(tmp, join(this.dir, name));
     return { id };
   }
 }
