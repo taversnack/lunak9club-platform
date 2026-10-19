@@ -1,0 +1,3 @@
+# Historical finding, deliberately ignored (owner decision): a fake Stripe-style key used as a test value
+# in tests/unit/env.test.ts (commit 73c4a66). It was never a real secret and has since been removed from the code.
+73c4a66210a8cb1381b9e80649cf859ad7686304:tests/unit/env.test.ts:generic-api-key:36

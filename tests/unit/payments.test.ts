@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkStripeKey } from '@/infra/payments';
-import { SimulatedPaymentProvider } from '@/infra/payments/simulated';
+import { asSimulatedProvider, SimulatedPaymentProvider } from '@/infra/payments/simulated';
+import type { PaymentProvider } from '@/infra/payments/types';
 
 // Fake keys built from parts so secret scanners don't mistake them for real ones.
 const LIVE_KEY = ['sk', 'live', 'abc123'].join('_');
@@ -49,5 +50,20 @@ describe('simulated provider', () => {
     const b = await p.refund('pi_1', 100, 'k1', 'r1');
     expect(a.id).toBe(b.id);
     expect(p.refunds.filter((r) => r.key === 'k1')).toHaveLength(1);
+  });
+});
+
+describe('asSimulatedProvider', () => {
+  it('recognises the simulated driver even when it came from another copy of the class', () => {
+    // Next dev bundles route handlers and pages separately, so `instanceof` can be false for the same driver.
+    const p = new SimulatedPaymentProvider('http://localhost:3000');
+    const fromOtherBundle = Object.assign(Object.create(null), p) as PaymentProvider;
+    expect(fromOtherBundle instanceof SimulatedPaymentProvider).toBe(false);
+    expect(asSimulatedProvider(fromOtherBundle)).toBe(fromOtherBundle);
+    expect(asSimulatedProvider(p)).toBe(p);
+  });
+
+  it('refuses any other driver', () => {
+    expect(asSimulatedProvider({ name: 'stripe' } as PaymentProvider)).toBeNull();
   });
 });
