@@ -45,6 +45,7 @@ import {
   bookingsMissingPayLink,
   checkoutRetry,
   myHoldsWithoutPayLink,
+  PayLinkBusyError,
   PayLinkUnavailableError,
   payForMyBooking,
   releaseExpiredCheckouts,
@@ -54,9 +55,10 @@ import {
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError, type Actor } from '@/server/policy/authorize';
 import { addDays, londonDate } from '@/domain/time';
-import { isoWeekday } from '@/domain/booking/rules';
+
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '@/domain/booking/wording';
 import { formatDateTimeLondon } from '@/ui/format';
+import { weekdayPicker } from '../support/dates';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts, simulated } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
@@ -66,14 +68,7 @@ const mail = new MemoryEmailProvider();
 const storage = new FsStorageProvider(mkdtempSync(join(tmpdir(), 'lunak9-r-')));
 const today = londonDate(new Date());
 const system: Actor = { kind: 'system', job: 'test' };
-const HOLIDAYS = new Set(['2026-12-25', '2026-12-28', '2027-01-01']);
-const used = new Set<string>();
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n + 50); // clear of the dates other test files use
-  while (isoWeekday(d) > 5 || HOLIDAYS.has(d) || used.has(d)) d = addDays(d, 1);
-  used.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker({ base: 40 });
 
 /** Reused by the pay-link tests (other customers' dogs) so they need no extra dates. */
 let payDate = '';
@@ -527,6 +522,32 @@ describe('pay links when the card service is down', () => {
     await payOpenCheckouts(db());
   });
 
+  it('a Pay now that loses the race is told the link is being prepared, not that it failed', async () => {
+    const r = await approvedWith(3, bob, await onboardedDog(bob, 'Racer'));
+    const real = simulated().createCheckout.bind(simulated());
+    const slow = vi.spyOn(simulated(), 'createCheckout').mockImplementation(async (a) => {
+      await new Promise((res) => setTimeout(res, 300));
+      return real(a);
+    });
+    const both = await Promise.allSettled([
+      payForMyBooking(db(), bob, r.bookingId),
+      (async () => {
+        await new Promise((res) => setTimeout(res, 100));
+        return payForMyBooking(db(), bob, r.bookingId);
+      })(),
+    ]);
+    slow.mockRestore();
+    const lost = both.find((b) => b.status === 'rejected') as PromiseRejectedResult | undefined;
+    // Either the second click reused the finished link, or it is told, accurately, to try again.
+    if (lost) {
+      expect(lost.reason).toBeInstanceOf(PayLinkBusyError);
+      expect(lost.reason).not.toBeInstanceOf(PayLinkUnavailableError);
+    }
+    expect(both.some((b) => b.status === 'fulfilled')).toBe(true);
+    expect((await attemptsFor(r.bookingId)).filter((a) => a.status === 'open')).toHaveLength(1);
+    await payOpenCheckouts(db());
+  });
+
   it('an unpaid hold with no link lapses at its deadline', async () => {
     const r = await approvedWith(3, bob, await onboardedDog(bob, 'Lapse'));
     const [row] = await rowsOf(r.bookingId);
@@ -579,8 +600,12 @@ describe('manual waitlist (D81, D82)', () => {
     await expect(giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version })).rejects.toThrow(
       /no free place/,
     );
+    // The day view says so up front, so the button can be disabled with a reason.
+    const full = (await ownerDay(db(), owner, date)).waitlist.find((r) => r.id === waiting.id)!;
+    expect(full.giveBlock).toMatch(/no free place/);
     await withdrawMyApprovalRequest(db(), alice, a.requestId!);
     await runTick(db(), system);
+    expect((await ownerDay(db(), owner, date)).waitlist.find((r) => r.id === waiting.id)!.giveBlock).toBeNull();
     expect((await rowOf(bobDog, date)).status).toBe('waitlisted');
     mail.sent.length = 0;
     const g = await giveWaitlistPlace(db(), owner, waiting.id, { version: waiting.version });
@@ -666,7 +691,7 @@ describe('manual waitlist (D81, D82)', () => {
 
 describe('approvals authorisation', () => {
   it('only the Owner decides; customers only see their own requests', async () => {
-    const d = weekdayAhead(3);
+    const d = weekdayAhead(34);
     const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'am', taxi: false });
     await expect(approveApprovalRequest(db(), bob, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(rejectApprovalRequest(db(), alice, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);

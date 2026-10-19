@@ -6,8 +6,9 @@ import { setPaymentProvider } from '@/infra/payments';
 import { SimulatedPaymentProvider } from '@/infra/payments/simulated';
 import { bookingDogs, checkoutAttempts, customers, jobRuns } from '@/infra/db/schema';
 import { runTick } from '@/server/services/jobs';
-import { isoWeekday } from '@/domain/booking/rules';
-import { addDays, londonDate, londonInstant } from '@/domain/time';
+
+import { londonInstant } from '@/domain/time';
+import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
@@ -47,14 +48,8 @@ let owner: TestUser;
 let tess: TestUser;
 let tessDog: string;
 
-const usedDates = new Set<string>();
 /** A distinct weekday at least n days ahead (two calls never return the same day, whatever today is). */
-function weekdayAhead(n: number): string {
-  let d = addDays(londonDate(new Date()), n);
-  while (isoWeekday(d) > 5 || usedDates.has(d)) d = addDays(d, 1);
-  usedDates.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker();
 
 beforeAll(async () => {
   setEmailProvider(mail);
