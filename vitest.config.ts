@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import OrderedSequencer from './tests/support/ordered-sequencer';
 
 const alias = {
   '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -10,6 +11,8 @@ const alias = {
 export default defineConfig({
   resolve: { alias },
   test: {
+    // Root-level: sequencing isn't a per-project option.
+    sequence: { sequencer: OrderedSequencer },
     projects: [
       {
         resolve: { alias },
