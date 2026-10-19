@@ -3,7 +3,7 @@
 Before/after screenshots for the stacked UI PRs, kept on this orphan branch so they never reach `main`.
 
 - `pr-57/` 0a tokens: home, account, admin
-- `pr-55/` 0b components (shown as used in 0c/0d)
+- `pr-55/` 0b components and restyle: before = dev4/ui-tokens (a7a08c4), after = dev4/ui-components (ccc7c08), same build type and database; includes `sign-in-pending` (button caught mid-submit)
 - `pr-59/` 0c account: overview, requests
 - `pr-60/` 0d admin: Today dashboard, approvals
 - `pr-61/` 0e public: home, 404, access denied
