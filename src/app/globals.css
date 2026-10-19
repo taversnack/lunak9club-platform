@@ -84,6 +84,8 @@
   --focus-ring: 3px solid var(--color-focus);
   --transition-fast: 120ms ease-out;
   --target-min: 44px;
+  /* Height of the mobile bottom tab bar (AppShell), shared by the bar and the scroll padding. */
+  --tabbar-h: 64px;
 }
 
 *,
@@ -171,6 +173,11 @@ a:hover {
   }
 }
 
+/* Lock the page behind the open menu drawer. */
+html:has(#app-drawer[open]) {
+  overflow: hidden;
+}
+
 /* Signed-in areas render their own header (AppShell); hide the public one and its spacing there. */
 body:has([data-app-shell]) .site-header {
   display: none;
@@ -180,7 +187,11 @@ main:has([data-app-shell]) {
   padding-top: 0;
 }
 @media (max-width: 899px) {
+  /* WCAG 2.4.11: keep focused controls clear of the fixed tab bar when the browser scrolls them into view. */
+  html:has([data-tabbar]) {
+    scroll-padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--space-2));
+  }
   body:has([data-tabbar]) > footer {
-    padding-bottom: calc(var(--space-5) + 64px);
+    padding-bottom: calc(var(--space-5) + var(--tabbar-h) + env(safe-area-inset-bottom));
   }
 }

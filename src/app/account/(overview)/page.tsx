@@ -43,14 +43,8 @@ export default async function AccountPage() {
 
   return (
     <Stack>
-      <div className={s.row}>
-        <h1>Hello, {first}</h1>
-        {canBook ? (
-          <Link href="/account/book" className={buttonClass('primary')}>
-            Book a day
-          </Link>
-        ) : null}
-      </div>
+      {/* "Book a day" lives in the header (always visible), so no second button here. */}
+      <h1>Hello, {first}</h1>
       {todo.length ? (
         <Alert tone="info" title="To finish setting up your account">
           <ul>
