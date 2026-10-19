@@ -226,7 +226,7 @@ export function AppShell({
 
       <div className={sidebar ? s.withSidebar : undefined}>
         {sidebar ? (
-          <aside className={s.sidebar}>
+          <aside className={s.sidebar} data-sidebar="">
             <NavList groups={groups} path={path} root={root} label={navLabel} />
           </aside>
         ) : null}
