@@ -15,6 +15,8 @@ test.beforeAll(({}, info) => {
 });
 
 async function axe(page: Page) {
+  // Title is streamed with metadata; wait for it so axe doesn't race it (document-title).
+  await expect(page).toHaveTitle(/\S/);
   const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 }

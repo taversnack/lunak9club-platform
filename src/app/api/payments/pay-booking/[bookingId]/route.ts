@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/infra/db/client';
 import { getActor } from '@/server/session';
+import { seeOtherInApp, toSignIn } from '@/server/redirects';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { PayLinkBusyError, PayLinkUnavailableError, payForMyBooking } from '@/server/services/payments';
@@ -10,23 +11,20 @@ export const dynamic = 'force-dynamic';
 /** "Pay now" for a held booking: opens the existing checkout or creates one on demand. */
 export async function GET(req: Request, { params }: { params: Promise<{ bookingId: string }> }) {
   const { bookingId } = await params;
-  const base = new URL(req.url);
   const actor = await getActor();
-  if (actor.kind === 'anonymous') return NextResponse.redirect(new URL('/sign-in', base));
+  // Signed out (e.g. tapped the emailed pay link): sign in, then come straight back here.
+  if (actor.kind === 'anonymous') return toSignIn(req);
   try {
     const r = await payForMyBooking(getDb(), actor, bookingId);
     if (r.url) return NextResponse.redirect(r.url, 303);
-    return NextResponse.redirect(new URL(`/account/bookings?payment=${r.reason}`, base), 303);
+    return seeOtherInApp(`/account/bookings?payment=${r.reason}`);
   } catch (e) {
     if (e instanceof AuthorizationError || e instanceof NotFoundError)
       return new Response('Not found', { status: 404 });
-    if (e instanceof PayLinkBusyError)
-      return NextResponse.redirect(new URL('/account/bookings?payment=preparing', base), 303);
-    if (e instanceof PayLinkUnavailableError)
-      return NextResponse.redirect(new URL('/account/bookings?payment=unavailable', base), 303);
+    if (e instanceof PayLinkBusyError) return seeOtherInApp('/account/bookings?payment=preparing');
+    if (e instanceof PayLinkUnavailableError) return seeOtherInApp('/account/bookings?payment=unavailable');
     // Any other conflict means the places were released (or nothing is left to pay): say so, not "still held".
-    if (e instanceof ConflictError)
-      return NextResponse.redirect(new URL('/account/bookings?payment=expired', base), 303);
+    if (e instanceof ConflictError) return seeOtherInApp('/account/bookings?payment=expired');
     throw e;
   }
 }

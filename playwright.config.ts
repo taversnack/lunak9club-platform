@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { testDatabaseUrl } from './tests/support/test-db-url'; // also loads .env
+
 /** Port for the E2E server. Override with E2E_PORT when several checkouts share one machine. */
 export const DEFAULT_E2E_PORT = 3100;
 const PORT = Number(process.env.E2E_PORT || DEFAULT_E2E_PORT);
@@ -8,8 +10,10 @@ const PORT = Number(process.env.E2E_PORT || DEFAULT_E2E_PORT);
  * server on a different database). Local dev can opt in with E2E_REUSE_SERVER=1; never on CI.
  */
 const REUSE_SERVER = !process.env.CI && process.env.E2E_REUSE_SERVER === '1';
-const BASE = `http://localhost:${PORT}`;
-const TEST_DB = process.env.TEST_DATABASE_URL ?? 'postgres://lunak9:lunak9@localhost:5432/lunak9_test';
+// E2E_HOST defaults to 127.0.0.1 because `localhost` may not resolve to loopback on every machine.
+const HOST = process.env.E2E_HOST || '127.0.0.1';
+const BASE = process.env.E2E_BASE_URL || `http://${HOST}:${PORT}`;
+const TEST_DB = testDatabaseUrl();
 export const E2E_MAIL_DIR = '.tmp/e2e-mail';
 
 export default defineConfig({

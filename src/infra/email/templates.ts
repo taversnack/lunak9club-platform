@@ -42,6 +42,20 @@ export function verifyEmailMessage(to: string, firstName: string, url: string): 
   };
 }
 
+export function magicLinkMessage(to: string, firstName: string, url: string, minutes: number): EmailMessage {
+  const title = 'Your sign-in link';
+  return {
+    to,
+    template: 'auth.magic-link',
+    subject: `${BRAND}: your sign-in link`,
+    text: `Hi ${firstName},\n\nUse this link to sign in to your ${BRAND} account:\n${url}\n\nIt works once and expires in ${minutes} minutes.`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Use the button below to sign in. It works once and expires in ${minutes} minutes.</p>${button(url, 'Sign in')}`,
+    ),
+  };
+}
+
 export function resetPasswordMessage(to: string, firstName: string, url: string): EmailMessage {
   const title = 'Reset your password';
   return {
