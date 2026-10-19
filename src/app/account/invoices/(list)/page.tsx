@@ -29,7 +29,7 @@ export default async function MyInvoicesPage() {
           <Muted>You don’t have any invoices yet.</Muted>
         ) : (
           <div className={s.tableWrap} role="region" aria-label="Your invoices" tabIndex={0}>
-            <table className={s.table}>
+            <table className={`${s.table} ${s.stackTable}`}>
               <thead>
                 <tr>
                   <th scope="col">Invoice</th>
@@ -43,13 +43,13 @@ export default async function MyInvoicesPage() {
               <tbody>
                 {rows.map(({ inv, bal, state }) => (
                   <tr key={inv.id}>
-                    <td>
+                    <td data-primary="">
                       <Link href={`/account/invoices/${inv.id}`}>{inv.number}</Link>
                     </td>
-                    <td>{formatMonth(inv.periodMonth)}</td>
-                    <td>{pounds(bal.totalPence)}</td>
-                    <td>{pounds(bal.duePence)}</td>
-                    <td>{inv.dueDate ? formatUkDate(inv.dueDate) : '–'}</td>
+                    <td data-label="Month">{formatMonth(inv.periodMonth)}</td>
+                    <td data-label="Total">{pounds(bal.totalPence)}</td>
+                    <td data-label="To pay">{pounds(bal.duePence)}</td>
+                    <td data-label="Due">{inv.dueDate ? formatUkDate(inv.dueDate) : '–'}</td>
                     <td>
                       <InvoiceState state={state} />
                     </td>

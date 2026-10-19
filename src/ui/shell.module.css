@@ -262,7 +262,7 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  min-height: 58px;
+  height: calc(var(--tabbar-h) - 1px);
   padding: var(--space-2) 0;
   color: var(--color-text-muted);
   font-size: var(--text-xs);
@@ -280,7 +280,9 @@
   border-radius: var(--radius-pill);
 }
 .tabbar a[aria-current='page'] svg {
-  background: var(--color-brand-sand);
+  /* Navy pill, white icon: 13.4:1 against the white bar (WCAG 1.4.11). aria-current marks it for AT. */
+  background: var(--color-brand-navy);
+  color: #fff;
 }
 
 @media (min-width: 900px) {

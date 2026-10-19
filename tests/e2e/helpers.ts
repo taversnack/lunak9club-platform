@@ -58,8 +58,17 @@ export async function signIn(page: Page, email: string, password: string) {
   await page.getByRole('button', { name: 'Sign in' }).click();
 }
 
+/** Opens the app menu (drawer) when needed, then follows a link in the named navigation. */
+export async function navTo(page: Page, area: string, name: string, exact = false) {
+  const link = page.getByRole('navigation', { name: area }).getByRole('link', { name, exact });
+  if (!(await link.first().isVisible())) await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await link.first().click();
+}
+
 export async function signOut(page: Page) {
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  const btn = page.getByRole('button', { name: 'Sign out' });
+  if (!(await btn.first().isVisible())) await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await btn.first().click();
   await expect(page).toHaveURL(/\/sign-in/);
 }
 

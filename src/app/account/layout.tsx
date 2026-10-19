@@ -1,29 +1,43 @@
-import { NavLink } from '@/ui/nav-link';
-import s from '@/ui/ui.module.css';
-import { SignOutButton } from '@/ui/sign-out-button';
+import { AppShell, type NavGroup, type NavItem } from '@/ui/app-shell';
+import { BookIcon, HomeIcon, InvoiceIcon, ListIcon } from '@/ui/nav-icons';
 import { requirePermission } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
 
+const tabs: NavItem[] = [
+  { href: '/account', label: 'Overview', icon: <HomeIcon /> },
+  { href: '/account/book', label: 'Book', icon: <BookIcon /> },
+  { href: '/account/bookings', label: 'Bookings', icon: <ListIcon /> },
+  { href: '/account/invoices', label: 'Invoices', icon: <InvoiceIcon /> },
+];
+
+const groups: NavGroup[] = [
+  { label: 'Day care', items: [...tabs.slice(0, 3), { href: '/account/requests', label: 'Requests' }, tabs[3]!] },
+  {
+    label: 'Your account',
+    items: [
+      { href: '/account/membership', label: 'Membership' },
+      { href: '/account/dogs/new', label: 'Add a dog' },
+      { href: '/account/profile', label: 'Your details' },
+      { href: '/account/contacts', label: 'Contacts' },
+      { href: '/account/terms', label: 'Terms' },
+      { href: '/account/data', label: 'Your data' },
+    ],
+  },
+];
+
 export default async function AccountLayout({ children }: { children: React.ReactNode }) {
-  await requirePermission('account.access');
+  const actor = await requirePermission('account.access');
   return (
-    <div className={s.container}>
-      <nav aria-label="Your account" className={s.subnav}>
-        <NavLink href="/account">Overview</NavLink>
-        <NavLink href="/account/book">Book</NavLink>
-        <NavLink href="/account/bookings">Bookings</NavLink>
-        <NavLink href="/account/requests">Requests</NavLink>
-        <NavLink href="/account/membership">Membership</NavLink>
-        <NavLink href="/account/invoices">Invoices</NavLink>
-        <NavLink href="/account/dogs/new">Add a dog</NavLink>
-        <NavLink href="/account/profile">Your details</NavLink>
-        <NavLink href="/account/contacts">Contacts</NavLink>
-        <NavLink href="/account/terms">Terms</NavLink>
-        <NavLink href="/account/data">Your data</NavLink>
-        <SignOutButton />
-      </nav>
+    <AppShell
+      root="/account"
+      navLabel="Your account"
+      userName={actor.name}
+      cta={{ href: '/account/book', label: 'Book a day' }}
+      tabs={tabs}
+      groups={groups}
+    >
       {children}
-    </div>
+    </AppShell>
   );
 }

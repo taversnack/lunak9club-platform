@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut } from './helpers';
+import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut, navTo } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -19,7 +19,7 @@ test('customer sees prices and asks for a 2-day membership', async ({ page }, in
   const { user, dog } = who(info.project.name);
   await signIn(page, user.email, user.password);
   await expect(page).toHaveURL(/\/account$/);
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Membership' }).click();
+  await navTo(page, 'Your account', 'Membership');
   await expect(page.getByRole('heading', { name: 'Membership', level: 1 })).toBeVisible();
   const prices = page.getByRole('region', { name: 'Prices', exact: true });
   await expect(prices).toContainText('£50.00');
@@ -42,7 +42,7 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   const { user, dog } = who(info.project.name);
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Memberships' }).click();
+  await navTo(page, 'Owner', 'Memberships');
   await axe(page);
   await page.getByRole('button', { name: `Approve ${dog}` }).click();
   await expect(page.getByText(/Approved\. \d+ days booked/)).toBeVisible();
@@ -76,7 +76,7 @@ test('Owner checks the membership invoice draft and sends it', async ({ page }, 
   await page.getByRole('button', { name: 'Save business details' }).click();
   await expect(page.getByText('Business details saved.')).toBeVisible();
 
-  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Invoices' }).click();
+  await navTo(page, 'Owner', 'Invoices');
   await expect(page.getByRole('heading', { name: 'Invoices', level: 1 })).toBeVisible();
   await page.getByRole('button', { name: 'Update drafts and send anything due now' }).click();
   await expect(page.getByText(/Billing updated/)).toBeVisible();
@@ -99,7 +99,7 @@ test('customer sees the invoice and can download the PDF', async ({ page }, info
   const { user } = who(info.project.name);
   await signIn(page, user.email, user.password);
   await expect(page).toHaveURL(/\/account$/);
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Invoices' }).click();
+  await navTo(page, 'Your account', 'Invoices');
   await expect(page.getByRole('heading', { name: 'Your invoices', level: 1 })).toBeVisible();
   await axe(page);
   await page
