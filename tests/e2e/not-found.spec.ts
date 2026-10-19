@@ -16,6 +16,7 @@ test('a signed-out visitor on the 404 page is offered sign-in and home, not acco
 
 test('a signed-in customer on the 404 page keeps the dashboard and booking links', async ({ page }) => {
   await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+  await expect(page).toHaveURL(/\/account$/); // signed in (session cookie set) before leaving
   const r = await page.goto(MISSING);
   expect(r?.status()).toBe(404);
   const main = page.locator('main');
