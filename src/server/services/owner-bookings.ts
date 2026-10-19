@@ -685,13 +685,16 @@ export const ClosureInput = z.object({ date: isoDate('the date'), reason: requir
 export async function addClosure(db: Db, actor: Actor, input: unknown) {
   assertAuthorized(actor, 'availability.manage');
   const d = parseInput(ClosureInput, input);
-  const live = await db
-    .select({ id: bookingDogs.id })
-    .from(bookingDogs)
-    .where(and(eq(bookingDogs.serviceDate, d.date), inArray(bookingDogs.status, [...OPEN_STATUSES])));
-  if (live.length)
-    throw new ConflictError(`There are ${live.length} bookings on this day. Cancel them first, then close the day.`);
+  const settings = await loadSettings(db);
   await db.transaction(async (tx) => {
+    // Take the day's lock first, as every booking does, so nobody can book it between the count and the closure.
+    await lockDays(tx, [d.date], settings);
+    const live = await tx
+      .select({ id: bookingDogs.id })
+      .from(bookingDogs)
+      .where(and(eq(bookingDogs.serviceDate, d.date), inArray(bookingDogs.status, [...OPEN_STATUSES])));
+    if (live.length)
+      throw new ConflictError(`There are ${live.length} bookings on this day. Cancel them first, then close the day.`);
     const ins = await tx
       .insert(closures)
       .values({ serviceDate: d.date, reason: d.reason, createdBy: actor.kind === 'user' ? actor.userId : null })
