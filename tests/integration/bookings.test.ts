@@ -26,6 +26,7 @@ import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { addDays, londonDate } from '@/domain/time';
 import { isoWeekday } from '@/domain/booking/rules';
+import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
@@ -43,15 +44,8 @@ const mail = new MemoryEmailProvider();
 const storage = new FsStorageProvider(mkdtempSync(join(tmpdir(), 'lunak9-b-')));
 const today = londonDate(new Date());
 /** Next open weekday at least `n` days ahead that isn't a seeded bank holiday. */
-const HOLIDAYS = new Set(['2026-12-25', '2026-12-28', '2027-01-01']);
-const used = new Set<string>();
 /** A distinct open weekday at least `n` days ahead (each call returns a date no other test uses). */
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n);
-  while (isoWeekday(d) > 5 || HOLIDAYS.has(d) || used.has(d)) d = addDays(d, 1);
-  used.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker();
 
 let owner: TestUser;
 let alice: TestUser;

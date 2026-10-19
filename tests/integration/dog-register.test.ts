@@ -64,7 +64,7 @@ const fieldsOf = async (p: Promise<unknown>) => {
 
 describe('onboarding form: register fields', () => {
   it('saves dates, exercise and insurance, and records who answered each consent and when', async () => {
-    const t1 = new Date('2026-10-01T09:00:00Z');
+    const t1 = new Date(Date.now());
     await submitMyOnboardingForm(
       db(),
       carol,
@@ -96,12 +96,12 @@ describe('onboarding form: register fields', () => {
 
   it('keeps when/by if an answer is unchanged, and updates both only for answers that change', async () => {
     const before = await perms(dogId);
-    const t2 = new Date('2026-10-02T09:00:00Z');
+    const t2 = new Date(Date.now() + 86_400_000);
     await submitMyOnboardingForm(db(), carol, dogId, validOnboarding, t2);
     const same = await perms(dogId);
     expect(same.cratingConsentAt?.toISOString()).toBe(before.cratingConsentAt?.toISOString());
 
-    const t3 = new Date('2026-10-03T09:00:00Z');
+    const t3 = new Date(Date.now() + 2 * 86_400_000);
     await submitMyOnboardingForm(db(), carol, dogId, { ...validOnboarding, cratingConsent: 'no' }, t3);
     const changed = await perms(dogId);
     expect(changed.cratingConsent).toBe(false);
@@ -243,7 +243,7 @@ describe('agreed vet', () => {
       saveMyDogVet(db(), carol, dogId, { practiceName: 'Town Vets', phone: '01483000000', agreedVet: 'other' }),
     );
     expect(missing).toMatchObject({ agreedPracticeName: expect.any(String), agreedPhone: expect.any(String) });
-    const t = new Date('2026-10-03T10:00:00Z');
+    const t = new Date(Date.now() + 2 * 86_400_000 + 3_600_000);
     await saveMyDogVet(
       db(),
       carol,

@@ -31,8 +31,9 @@ import {
 import { ownerCardRefunds, retryCardRefund, submitPendingRefunds } from '@/server/services/card-refunds';
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
-import { isoWeekday } from '@/domain/booking/rules';
-import { addDays, londonDate } from '@/domain/time';
+
+import { londonDate } from '@/domain/time';
+import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
@@ -74,14 +75,8 @@ const db = () => getDb();
 const mail = new MemoryEmailProvider();
 const stripe = new TestProvider('http://localhost:3000');
 const today = londonDate(new Date());
-const used = new Set<string>();
 /** Distinct open weekdays well away from other test files' dates. */
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n);
-  while (isoWeekday(d) > 5 || ['2026-12-25', '2026-12-28', '2027-01-01'].includes(d) || used.has(d)) d = addDays(d, 1);
-  used.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker();
 
 let owner: TestUser;
 let pia: TestUser;

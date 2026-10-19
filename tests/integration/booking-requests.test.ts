@@ -54,9 +54,10 @@ import {
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError, type Actor } from '@/server/policy/authorize';
 import { addDays, londonDate } from '@/domain/time';
-import { isoWeekday } from '@/domain/booking/rules';
+
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '@/domain/booking/wording';
 import { formatDateTimeLondon } from '@/ui/format';
+import { weekdayPicker } from '../support/dates';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts, simulated } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
@@ -66,14 +67,7 @@ const mail = new MemoryEmailProvider();
 const storage = new FsStorageProvider(mkdtempSync(join(tmpdir(), 'lunak9-r-')));
 const today = londonDate(new Date());
 const system: Actor = { kind: 'system', job: 'test' };
-const HOLIDAYS = new Set(['2026-12-25', '2026-12-28', '2027-01-01']);
-const used = new Set<string>();
-function weekdayAhead(n: number): string {
-  let d = addDays(today, n + 50); // clear of the dates other test files use
-  while (isoWeekday(d) > 5 || HOLIDAYS.has(d) || used.has(d)) d = addDays(d, 1);
-  used.add(d);
-  return d;
-}
+const weekdayAhead = weekdayPicker({ base: 40 });
 
 /** Reused by the pay-link tests (other customers' dogs) so they need no extra dates. */
 let payDate = '';

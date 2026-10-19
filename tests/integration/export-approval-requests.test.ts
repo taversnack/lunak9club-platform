@@ -6,8 +6,7 @@ import { approvalRequests } from '@/infra/db/schema';
 import { createMyBookings } from '@/server/services/bookings';
 import { rejectApprovalRequest } from '@/server/services/approvals';
 import { exportMyData } from '@/server/services/privacy';
-import { isoWeekday } from '@/domain/booking/rules';
-import { addDays, londonDate } from '@/domain/time';
+import { firstOpenWeekday } from '../support/dates';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
 import { approvedDog, readyCustomer } from '../support/onboard';
@@ -31,8 +30,7 @@ afterAll(async () => {
 
 describe('data export: approval requests', () => {
   it('includes the customer’s requests with the Owner’s note, and nothing staff-only', async () => {
-    let date = addDays(londonDate(new Date()), 63);
-    while (isoWeekday(date) > 5) date = addDays(date, 1);
+    const date = firstOpenWeekday(63);
     const r = await createMyBookings(db(), cara, { dogIds: [dog], dates: [date], session: 'full', taxi: false });
     expect(r.requestId).toBeTruthy();
     await rejectApprovalRequest(db(), owner, r.requestId!, { reason: 'We are closed for training that day.' });
