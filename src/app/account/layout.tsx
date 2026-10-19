@@ -19,6 +19,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
         <NavLink href="/account/dogs/new">Add a dog</NavLink>
         <NavLink href="/account/profile">Your details</NavLink>
         <NavLink href="/account/contacts">Contacts</NavLink>
+        <NavLink href="/account/faq">Questions</NavLink>
         <NavLink href="/account/terms">Terms</NavLink>
         <NavLink href="/account/data">Your data</NavLink>
         <SignOutButton />
