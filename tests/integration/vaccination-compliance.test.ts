@@ -37,7 +37,7 @@ import { sendVaccinationReminders } from '@/server/services/reminders';
 import { ConflictError, ValidationError } from '@/server/errors';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, formatUkDate, londonDate, londonInstant } from '@/domain/time';
-import { BANK_HOLIDAYS, BOOKING_WINDOW_DAYS, firstOpenWeekday } from '../support/dates';
+import { firstOpenWeekday, weekdayPicker } from '../support/dates';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
@@ -53,31 +53,19 @@ const system = { kind: 'system', job: 'test' } as const;
 const PINNED_NOW = new Date(process.env.VACC_TEST_NOW || process.env.TEST_NOW || Date.now());
 vi.useFakeTimers({ toFake: ['Date'], now: PINNED_NOW });
 const today = londonDate(new Date());
-const used = new Set<string>(); // days this file has picked, plus days other files touched (beforeAll)
-const mine = new Set<string>(); // days this file has picked
+const touched = new Set<string>(); // days other files booked, closed or capped (beforeAll): avoided
 const closedOrCapped = new Set<string>(); // other files' closures and capacity changes: never shared
-function weekdayAhead(n: number, ownerOnly = false): string {
-  const open = (d: string) => isoWeekday(d) <= 5 && !BANK_HOLIDAYS.has(d);
-  let d = addDays(today, n);
-  while (!open(d) || used.has(d)) d = addDays(d, 1);
-  // Customers can only book inside the window: rather than drift past it when other files have
-  // touched most days, share one of theirs (never one of this file's own).
-  if (!ownerOnly && d > addDays(today, BOOKING_WINDOW_DAYS - 3)) {
-    d = addDays(today, n);
-    while (!open(d) || mine.has(d) || closedOrCapped.has(d)) d = addDays(d, 1);
-  }
-  used.add(d);
-  mine.add(d);
-  return d;
-}
+/** An open weekday inside the customers' booking window, `n` or more days ahead. */
+const weekdayAhead = weekdayPicker({ avoid: touched, never: closedOrCapped });
 /**
  * A weekday only this file uses: beyond the customers' 90-day window (so no other test file books
  * it – they share the database and run in parallel) but before the test vaccinations run out
  * (day 200). Only the Owner can book these, so closing them or setting capacity can't collide.
  */
-function ownerOnlyWeekday(): string {
-  return weekdayAhead(100 + used.size, true);
-}
+const ownerOnlyWeekday = (() => {
+  const pick = weekdayPicker({ base: 100, beyondWindow: true, avoid: touched, never: closedOrCapped });
+  return () => pick(0);
+})();
 function nextMonday(): string {
   let d = addDays(today, 1);
   while (isoWeekday(d) !== 1) d = addDays(d, 1);
@@ -175,14 +163,14 @@ beforeAll(async () => {
   dogPrimary = await approvedDog(db(), owner, cass, 'Pebble');
   // Other test files share this database and leave bookings, closures and capacity changes behind.
   // Treat any day they touched as taken, so the days picked here start empty whatever today is.
-  const touched = await db().execute<{ d: string }>(
+  const touchedRows = await db().execute<{ d: string }>(
     sql`select service_date::text as d from booking_dogs where service_date > ${today}
           and status in ('confirmed', 'pending_payment', 'waitlisted', 'requested')
         union select service_date::text from closures where service_date > ${today}
         union select service_date::text from service_days where service_date > ${today}
           and (session_capacity is not null or taxi_capacity is not null)`,
   );
-  for (const r of touched.rows) used.add(r.d);
+  for (const r of touchedRows.rows) touched.add(r.d);
   const special = await db().execute<{ d: string }>(
     sql`select service_date::text as d from closures where service_date > ${today}
         union select service_date::text from service_days where service_date > ${today}
