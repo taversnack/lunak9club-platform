@@ -320,19 +320,32 @@ export function SubmitButton({
   );
 }
 
-/** Submit button for plain (GET or non-ActionForm) forms: shows a spinner and pending text while submitting. */
+/**
+ * Submit button with a spinner and aria-busy while submitting. Works inside a <form action> (reads
+ * useFormStatus) or, for client forms that submit with fetch, pass `pending` yourself.
+ */
 export function PendingButton({
   children,
   pendingText = 'Loading…',
   variant = 'primary',
+  pending: pendingProp,
+  full = false,
 }: {
   children: ReactNode;
   pendingText?: string;
   variant?: 'primary' | 'secondary' | 'ghost' | 'cta';
+  pending?: boolean;
+  full?: boolean;
 }) {
-  const { pending } = useFormStatus();
+  const status = useFormStatus();
+  const pending = pendingProp ?? status.pending;
   return (
-    <button type="submit" className={`${s.button} ${s[variant]}`} aria-busy={pending || undefined} disabled={pending}>
+    <button
+      type="submit"
+      className={`${s.button} ${s[variant]}${full ? ` ${s.full}` : ''}`}
+      aria-busy={pending || undefined}
+      disabled={pending}
+    >
       {pending ? <span className={s.spinner} aria-hidden="true" /> : null}
       {pending ? pendingText : children}
     </button>
