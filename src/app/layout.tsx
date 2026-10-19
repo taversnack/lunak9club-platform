@@ -21,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <a className="skip-link" href="#main">
           Skip to main content
         </a>
-        <header className={s.header}>
+        <header className={`${s.header} site-header`}>
           <div className={`${s.container} ${s.headerInner}`}>
             <Link href="/" className={s.brand}>
               <Image src="/brand/lunak9-logo.png" alt="Luna’s K9 Club home" width={200} height={71} priority />

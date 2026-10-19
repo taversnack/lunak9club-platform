@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/infra/auth/client';
-import { Alert, Button, Field, Stack } from '@/ui/components';
+import { Alert, Field, Stack } from '@/ui/components';
+import { PendingButton } from '@/ui/form';
 
 type Errors = Partial<Record<'name' | 'email' | 'password' | 'confirm' | 'form', string>>;
 
@@ -68,9 +69,9 @@ export function RegisterForm() {
           required
           error={errors.confirm}
         />
-        <Button type="submit" full disabled={pending} aria-disabled={pending}>
-          {pending ? 'Creating account…' : 'Create account'}
-        </Button>
+        <PendingButton full pending={pending} pendingText="Creating account…">
+          Create account
+        </PendingButton>
         <p>
           Already have an account? <Link href="/sign-in">Sign in</Link>
         </p>
