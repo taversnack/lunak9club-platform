@@ -20,6 +20,17 @@ type Q = Db | Tx;
 const SYSTEM: Actor = { kind: 'system', job: 'card-refunds' };
 
 /**
+ * A failed refund stays retryable – and counts against its payment – until it is abandoned: its
+ * credit note was marked refunded another way (e.g. by bank transfer). Use with a left join on
+ * creditNotes.
+ */
+const notAbandoned = or(
+  ne(cardRefunds.status, 'failed'),
+  isNull(cardRefunds.creditNoteId),
+  eq(creditNotes.refundState, 'awaiting_refund'),
+);
+
+/**
  * Queue money back to the card(s) that paid an invoice (D58), inside the caller's transaction.
  * Only card payments can be refunded here; anything paid another way stays for the Owner to
  * return by hand. Returns how much was queued.
@@ -36,16 +47,21 @@ export async function queueCardRefunds(
     .orderBy(asc(payments.createdAt))
     .for('update');
   if (!cardPayments.length) return 0;
+  // Everything already committed against each payment: succeeded, on its way, and failed-but-
+  // retryable refunds (the Owner can press Try again on those at any time, so their money is still
+  // spoken for). Only a failed refund that was abandoned – its credit note settled another way –
+  // frees its amount again.
   const already = await tx
     .select({ paymentId: cardRefunds.paymentId, amount: sum(cardRefunds.amountPence).mapWith(Number) })
     .from(cardRefunds)
+    .leftJoin(creditNotes, eq(creditNotes.id, cardRefunds.creditNoteId))
     .where(
       and(
         inArray(
           cardRefunds.paymentId,
           cardPayments.map((p) => p.id),
         ),
-        ne(cardRefunds.status, 'failed'),
+        notAbandoned,
       ),
     )
     .groupBy(cardRefunds.paymentId);
@@ -288,24 +304,60 @@ export async function applyRefundUpdate(
 export async function retryCardRefund(db: Db, actor: Actor, rawId: string) {
   assertAuthorized(actor, 'refunds.manage');
   const id = idOrNotFound(rawId, 'Refund');
-  const [r] = await db.select().from(cardRefunds).where(eq(cardRefunds.id, id));
-  if (!r) throw new NotFoundError('Refund');
-  if (r.status !== 'failed') throw new ConflictError('Only failed refunds can be tried again.');
-  const res = await submitPendingRefunds(db, { ids: [id] });
-  // Someone else (another click, or the scheduler) claimed it first: their attempt is the retry.
-  if (!res.claimed) throw new ConflictError('This refund is already being tried again.');
-  await recordAudit(db, { actor, action: 'refund.card_retry', entityType: 'card_refund', entityId: id });
-  return res;
+  await db.transaction(async (tx) => {
+    const [r] = await tx.select().from(cardRefunds).where(eq(cardRefunds.id, id)).for('update');
+    if (!r) throw new NotFoundError('Refund');
+    if (r.status !== 'failed') throw new ConflictError('Only failed refunds can be tried again.');
+    // Lock the payment so two retries (or a retry and a new cancellation) are checked one at a time.
+    const [pay] = await tx.select().from(payments).where(eq(payments.id, r.paymentId)).for('update');
+    if (!pay) throw new NotFoundError('Payment');
+    if (r.creditNoteId) {
+      const [cn] = await tx.select().from(creditNotes).where(eq(creditNotes.id, r.creditNoteId));
+      if (cn && cn.refundState !== 'awaiting_refund')
+        throw new ConflictError(
+          'This credit note has already been refunded another way, so the card refund can’t be tried again.',
+        );
+    }
+    // Never send more back to the card than it paid: count what has gone, or is on its way, on
+    // this payment (refunds queued before failed ones were counted could otherwise add up to more).
+    const [other] = await tx
+      .select({ amount: sum(cardRefunds.amountPence).mapWith(Number) })
+      .from(cardRefunds)
+      .where(
+        and(
+          eq(cardRefunds.paymentId, r.paymentId),
+          ne(cardRefunds.id, r.id),
+          inArray(cardRefunds.status, ['requested', 'submitted', 'succeeded']),
+        ),
+      );
+    const committed = other?.amount ?? 0;
+    if (committed + r.amountPence > pay.amountPence)
+      throw new ConflictError(
+        `Trying again would refund more than this card paid (${pounds(committed)} of ${pounds(pay.amountPence)} is already refunded or on its way). Please return the rest another way.`,
+      );
+    // Hand it to the sender as a fresh attempt (new idempotency key, #24). Doing this here, under
+    // the locks, means a second click sees it isn't 'failed' any more.
+    await tx.update(cardRefunds).set({ status: 'requested' }).where(eq(cardRefunds.id, id));
+    await recordAudit(tx, { actor, action: 'refund.card_retry', entityType: 'card_refund', entityId: id });
+  });
+  return submitPendingRefunds(db, { ids: [id] });
 }
 
 /** Owner view of card refunds: failed ones (to retry) and the most recent. */
 export async function ownerCardRefunds(db: Db, actor: Actor) {
   assertAuthorized(actor, 'refunds.manage');
   const rows = await db
-    .select({ r: cardRefunds, invoiceId: payments.invoiceId })
+    .select({ r: cardRefunds, invoiceId: payments.invoiceId, creditState: creditNotes.refundState })
     .from(cardRefunds)
     .innerJoin(payments, eq(payments.id, cardRefunds.paymentId))
+    .leftJoin(creditNotes, eq(creditNotes.id, cardRefunds.creditNoteId))
     .orderBy(sql`${cardRefunds.createdAt} desc`)
     .limit(50);
-  return { failed: rows.filter((x) => x.r.status === 'failed'), recent: rows.filter((x) => x.r.status !== 'failed') };
+  // A failed refund whose credit note was settled another way is abandoned: nothing to retry.
+  const retryable = (x: (typeof rows)[number]) =>
+    x.r.status === 'failed' && (!x.r.creditNoteId || x.creditState === 'awaiting_refund');
+  return {
+    failed: rows.filter(retryable).map(({ r, invoiceId }) => ({ r, invoiceId })),
+    recent: rows.filter((x) => !retryable(x)).map(({ r, invoiceId }) => ({ r, invoiceId })),
+  };
 }
