@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, latestEmail, navTo, signIn, signOut } from './helpers';
+import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, latestEmail, navTo, showDate, signIn, signOut } from './helpers';
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '../../src/domain/booking/wording';
 
 test.describe.configure({ mode: 'serial' });
@@ -32,8 +32,9 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   const first = days.nth(offset + 5);
   const second = days.nth(offset + 6);
   bookedIso = (await first.getAttribute('value'))!;
-  await first.check();
-  await second.check();
+  const secondIso = (await second.getAttribute('value'))!;
+  await (await showDate(page, bookedIso)).check();
+  await (await showDate(page, secondIso)).check();
   await page.getByRole('button', { name: 'Check price and availability' }).click();
 
   // The request form says plainly that a request does not secure the booking (D76).

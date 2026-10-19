@@ -86,6 +86,8 @@
   --target-min: 44px;
   /* Height of the mobile bottom tab bar (AppShell), shared by the bar and the scroll padding. */
   --tabbar-h: 64px;
+  /* Booking page sticky submit bar; StickySubmit overwrites this with its measured height. */
+  --sticky-submit-h: 80px;
 }
 
 *,
@@ -193,5 +195,16 @@ main:has([data-app-shell]) {
   }
   body:has([data-tabbar]) > footer {
     padding-bottom: calc(var(--space-5) + var(--tabbar-h) + env(safe-area-inset-bottom));
+  }
+  /* Booking page: the sticky submit bar sits on top of the tab bar, so clear both. */
+  html:has([data-tabbar]):has([data-sticky-submit]) {
+    scroll-padding-bottom: calc(
+      var(--tabbar-h) + var(--sticky-submit-h) + env(safe-area-inset-bottom) + var(--space-2)
+    );
+  }
+}
+@media (min-width: 900px) {
+  html:has([data-sticky-submit]) {
+    scroll-padding-bottom: calc(var(--sticky-submit-h) + var(--space-2));
   }
 }

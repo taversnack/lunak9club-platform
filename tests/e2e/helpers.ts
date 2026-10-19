@@ -96,3 +96,12 @@ export async function setVaccinationExpiry(dogName: string, requirementKey: stri
     await c.end();
   }
 }
+
+/** The booking calendar shows two weeks at a time: page forward until the date's checkbox is visible. */
+export async function showDate(page: Page, iso: string) {
+  const box = page.locator(`input[name="date"][value="${iso}"]`);
+  for (let i = 0; i < 12 && !(await box.isVisible()); i++) {
+    await page.getByRole('button', { name: 'Next 2 weeks' }).click();
+  }
+  return box;
+}

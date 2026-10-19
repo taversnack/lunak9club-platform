@@ -7,6 +7,7 @@ import {
   latestEmail,
   setVaccinationExpiry,
   signIn,
+  showDate,
   signOut,
 } from './helpers';
 
@@ -21,7 +22,7 @@ async function axe(page: Page) {
 async function request(page: Page, dog: string, iso: string) {
   await page.goto('/account/book');
   await page.getByRole('checkbox', { name: dog, exact: true }).check();
-  await page.locator(`input[name="date"][value="${iso}"]`).check();
+  await (await showDate(page, iso)).check();
   await page.getByRole('button', { name: 'Check price and availability' }).click();
   await expect(page.getByRole('heading', { name: 'Check your booking request' })).toBeVisible();
 }

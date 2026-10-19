@@ -1,0 +1,87 @@
+.pagerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  flex-wrap: wrap;
+}
+.pagerLabel {
+  margin: 0;
+  font-weight: var(--weight-bold);
+}
+.days {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.dayCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: pointer;
+  min-height: var(--target-min);
+}
+.dayCard:has(input:checked) {
+  border-color: var(--color-brand-navy);
+  background: var(--color-surface-muted);
+  box-shadow: inset 0 0 0 1px var(--color-brand-navy);
+}
+.dayCard:has(input:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.dayCard:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+.dayTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dayTop input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--color-brand-navy);
+}
+.left {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin: 0 calc(-1 * var(--space-4));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -4px 16px rgb(0 0 0 / 8%);
+}
+.stickyCount {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+@media (max-width: 899px) {
+  /* Sit above the bottom tab bar. */
+  .sticky {
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 900px) {
+  .sticky {
+    margin: 0;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+  }
+}
