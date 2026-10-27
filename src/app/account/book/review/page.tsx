@@ -7,6 +7,7 @@ import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { previewMyBookings } from '@/server/services/bookings';
 import { ValidationError } from '@/server/errors';
+import { FocusOnMount } from '@/ui/focus-on-mount';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
@@ -40,13 +41,15 @@ export default async function ReviewPage({
       return (
         <Stack>
           <h1>Check your booking</h1>
-          <Alert tone="danger" title="This can’t be booked as it is">
-            <ul>
-              {Object.values(e.fields).map((m) => (
-                <li key={m}>{m}</li>
-              ))}
-            </ul>
-          </Alert>
+          <FocusOnMount>
+            <Alert tone="danger" title="This can’t be booked as it is">
+              <ul>
+                {Object.values(e.fields).map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+            </Alert>
+          </FocusOnMount>
           <p>
             <Link href="/account/book">Go back and change your choices</Link>
           </p>

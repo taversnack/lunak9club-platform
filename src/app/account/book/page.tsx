@@ -8,6 +8,7 @@ import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
 import b from './book.module.css';
 import { DatePager, StickySubmit } from './date-pager';
+import { FocusOnMount } from '@/ui/focus-on-mount';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
@@ -52,7 +53,11 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
         Members: extra days are booked here and charged at your membership day rate.{' '}
         <Link href="/account/faq#faq-extra">How extra days work</Link>
       </p>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? (
+        <FocusOnMount>
+          <Alert tone="danger">{error}</Alert>
+        </FocusOnMount>
+      ) : null}
       {bookable.length === 0 ? (
         dogs.length === 0 ? (
           <Alert tone="info" title="Add your dog to start booking">

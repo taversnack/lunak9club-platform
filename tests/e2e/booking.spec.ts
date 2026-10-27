@@ -187,3 +187,13 @@ test('customers can’t reach Owner booking pages or exports', async ({ page }) 
   expect(r.status()).toBe(404);
   expect(bookedDateLabel).not.toBe('');
 });
+
+test('a booking validation error is focused when it arrives, so keyboard users land on it', async ({ page }) => {
+  await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+  await expect(page).toHaveURL(/\/account/);
+  // Reviewing with nothing chosen is refused with the validation alert.
+  await page.goto('/account/book/review');
+  const alert = page.getByRole('main').getByRole('alert');
+  await expect(alert).toContainText('This can’t be booked as it is');
+  await expect(page.locator('[data-focus-on-mount]')).toBeFocused();
+});
