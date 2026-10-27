@@ -13,25 +13,24 @@ import {
   schedulePriceBook,
 } from '@/server/services/pricing';
 import {
-  approveMembership,
   declineMembership,
   leaveMembership,
   materialiseMemberships,
   myMemberships,
   ownerEndMembership,
-  requestMembership,
   withdrawMembershipRequest,
 } from '@/server/services/memberships';
+import { ownerSetMembershipDays } from '@/server/services/membership-workflow';
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
-import { changeEffectiveDate } from '@/domain/membership/rules';
+import { changeEffectiveDate, firstUninvoicedMonthStart } from '@/domain/membership/rules';
 import { addDays, londonDate } from '@/domain/time';
 import { BANK_HOLIDAYS, weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
-import { approvedDog, readyCustomer, releaseMemberDays } from '../support/onboard';
+import { approvedDog, readyCustomer, clearDayLimits, releaseMemberDays } from '../support/onboard';
 
 const db = () => getDb();
 const today = londonDate(new Date());
@@ -59,6 +58,7 @@ const mail = new MemoryEmailProvider();
 
 beforeAll(async () => {
   setEmailProvider(mail);
+  await clearDayLimits(db());
   owner = await makeUser(db(), 'owner', 'Olivia Owner');
   cara = await makeUser(db(), 'customer', 'Cara Member');
   dan = await makeUser(db(), 'customer', 'Dan Adhoc');
@@ -211,41 +211,47 @@ describe('customer-specific rates', () => {
   });
 });
 
+/** A membership request made the old way (before D86), for the legacy list. */
+async function legacyRequest(user: TestUser, dogId: string, weekdays: number[]) {
+  const [c] = await db().select().from(customers).where(eq(customers.userId, user.userId));
+  const [row] = await db()
+    .insert(memberships)
+    .values({
+      customerId: c!.id,
+      dogId,
+      weekdays,
+      session: 'am',
+      status: 'requested',
+      startsOn: nextMonday(),
+      requestedBy: user.userId,
+    })
+    .returning();
+  return row!;
+}
+
 describe('memberships', () => {
   let membershipId: string;
 
-  it('customer requests a membership; weekends and past dates are refused', async () => {
+  it('Owner sets a dog’s days (D89): closed weekdays and past starts are refused', async () => {
     await expect(
-      requestMembership(db(), cara, { dogId: caraDog, weekdays: [6], session: 'full', startsOn: nextMonday() }),
+      ownerSetMembershipDays(db(), owner, caraDog, { weekdays: [6], session: 'full', startsOn: nextMonday() }),
     ).rejects.toMatchObject({ fields: { weekdays: expect.stringMatching(/not open/) } });
     await expect(
-      requestMembership(db(), cara, { dogId: caraDog, weekdays: [1], session: 'full', startsOn: today }),
+      ownerSetMembershipDays(db(), owner, caraDog, { weekdays: [1], session: 'full', startsOn: today }),
     ).rejects.toMatchObject({ fields: { startsOn: expect.any(String) } });
     await expect(
-      requestMembership(db(), cara, { dogId: danDog, weekdays: [1], session: 'full', startsOn: nextMonday() }),
-    ).rejects.toBeInstanceOf(NotFoundError);
-    const r = await requestMembership(db(), cara, {
-      dogId: caraDog,
+      ownerSetMembershipDays(db(), cara, caraDog, { weekdays: [1], session: 'full', startsOn: nextMonday() }),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('books the days ahead at the member rate, skipping closures, and emails the customer', async () => {
+    const result = await ownerSetMembershipDays(db(), owner, caraDog, {
       weekdays: [1, 2, 3, 4],
       session: 'full',
       taxi: 'on',
       startsOn: nextMonday(),
     });
-    membershipId = r.id;
-    await expect(
-      requestMembership(db(), cara, { dogId: caraDog, weekdays: [5], session: 'full', startsOn: nextMonday() }),
-    ).rejects.toBeInstanceOf(ConflictError);
-    expect(mail.sent.some((m) => m.template === 'owner.membership-request')).toBe(true);
-    const mine = await myMemberships(db(), cara);
-    expect(mine.memberships[0]).toMatchObject({ status: 'requested', band: 'high', dayPrice: 4500 });
-  });
-
-  it('Owner approval books the days ahead at the member rate, skipping closures', async () => {
-    const [m] = await db().select().from(memberships).where(eq(memberships.id, membershipId));
-    await expect(approveMembership(db(), cara, membershipId, { version: m!.version })).rejects.toBeInstanceOf(
-      AuthorizationError,
-    );
-    const result = await approveMembership(db(), owner, membershipId, { version: m!.version });
+    membershipId = result.membershipId;
     expect(result.booked).toBeGreaterThan(20);
     const rows = await db()
       .select()
@@ -257,7 +263,9 @@ describe('memberships', () => {
     const snap = await snapshotFor(rows[0]!.id);
     expect(snap).toMatchObject({ totalPence: 4500, rateCode: 'member_high_full' });
     expect(rows.some((r) => ['2026-12-25', '2026-12-28'].includes(r.serviceDate))).toBe(false);
-    expect(mail.sent.some((x) => x.template === 'membership.approved')).toBe(true);
+    expect(mail.sent.some((x) => x.template === 'membership.days-changed')).toBe(true);
+    const mine = await myMemberships(db(), cara);
+    expect(mine.memberships.find((m) => m.id === membershipId)).toMatchObject({ band: 'high', dayPrice: 4500 });
   });
 
   it('booking ahead again is idempotent', async () => {
@@ -282,55 +290,61 @@ describe('memberships', () => {
     expect(other.lines[0]!.price!.rateCode).toBe('ad_hoc_full');
   });
 
-  it('full days are waitlisted and reported instead of overbooking', async () => {
-    const r = await requestMembership(db(), cara, {
-      dogId: caraDog2,
-      weekdays: [5],
-      session: 'full',
-      startsOn: nextMonday(),
-    });
+  it('the Owner can’t set days on a full day (space check)', async () => {
     const fri = firstFridayAfterStart();
     await db().execute(
       sql`insert into service_days (service_date, session_capacity) values (${fri}, 0) on conflict (service_date) do update set session_capacity = 0`,
     );
-    const [m] = await db().select().from(memberships).where(eq(memberships.id, r.id));
-    const res = await approveMembership(db(), owner, r.id, { version: m!.version });
+    await expect(
+      ownerSetMembershipDays(db(), owner, caraDog2, { weekdays: [5], session: 'full', startsOn: nextMonday() }),
+    ).rejects.toMatchObject({ fields: { weekdays: expect.stringMatching(/no space/) } });
+  });
+
+  it('days that fill up later are waitlisted and reported instead of overbooking', async () => {
+    const fri = firstFridayAfterStart();
+    const [c] = await db().select().from(customers).where(eq(customers.userId, cara.userId));
+    const [m] = await db()
+      .insert(memberships)
+      .values({
+        customerId: c!.id,
+        dogId: caraDog2,
+        weekdays: [5],
+        session: 'full',
+        status: 'active',
+        startsOn: nextMonday(),
+        requestedBy: cara.userId,
+      })
+      .returning();
+    const res = await materialiseMemberships(db(), owner, { membershipId: m!.id });
     expect(res.waitlisted).toBeGreaterThanOrEqual(1);
-    expect(res.clashes.some((c) => c.date === fri && /waitlisted/.test(c.reason))).toBe(true);
+    expect(res.clashes.some((x) => x.date === fri && /waitlisted/.test(x.reason))).toBe(true);
     const [row] = await db()
       .select()
       .from(bookingDogs)
-      .where(and(eq(bookingDogs.membershipId, r.id), eq(bookingDogs.serviceDate, fri)));
+      .where(and(eq(bookingDogs.membershipId, m!.id), eq(bookingDogs.serviceDate, fri)));
     expect(row!.status).toBe('waitlisted');
+    // Give the day its normal capacity back so later test files aren't affected.
+    await db().execute(sql`update service_days set session_capacity = null where service_date = ${fri}`);
   });
 
-  it('a change of days starts on the next allowed 1st and replaces the old days after that', async () => {
-    const [current] = await db().select().from(memberships).where(eq(memberships.id, membershipId));
-    const change = await requestMembership(
-      db(),
-      cara,
-      { dogId: caraDog, weekdays: [1, 2], session: 'full', startsOn: today },
-      { changeOf: membershipId },
-    );
-    const effective = changeEffectiveDate(today);
-    expect(change.startsOn).toBe(effective);
-    const [m] = await db().select().from(memberships).where(eq(memberships.id, change.id));
-    await approveMembership(db(), owner, change.id, { version: m!.version });
+  it('an Owner change starts from the first month not yet invoiced and replaces later days (D89)', async () => {
+    const r = await ownerSetMembershipDays(db(), owner, caraDog, { weekdays: [1, 2], session: 'full' });
+    const effective = firstUninvoicedMonthStart(today, []);
+    expect(r.startsOn).toBe(effective);
     const [old] = await db().select().from(memberships).where(eq(memberships.id, membershipId));
-    expect(old!.endsOn).toBe(addDays(effective, -1));
+    expect(old!.endsOn).toBe(addDays(effective, -1) < old!.startsOn ? old!.startsOn : addDays(effective, -1));
     const oldAfter = await db()
       .select()
       .from(bookingDogs)
       .where(and(eq(bookingDogs.membershipId, membershipId), sql`${bookingDogs.serviceDate} >= ${effective}`));
-    expect(oldAfter.every((r) => r.status === 'cancelled' && r.lateCancellation === false)).toBe(true);
-    const newDays = await db().select().from(bookingDogs).where(eq(bookingDogs.membershipId, change.id));
-    expect(newDays.every((r) => r.serviceDate >= effective && [1, 2].includes(isoWeekday(r.serviceDate)))).toBe(true);
+    expect(oldAfter.every((x) => x.status === 'cancelled' && x.lateCancellation === false)).toBe(true);
+    const newDays = await db().select().from(bookingDogs).where(eq(bookingDogs.membershipId, r.membershipId));
+    expect(newDays.every((x) => x.serviceDate >= effective && [1, 2].includes(isoWeekday(x.serviceDate)))).toBe(true);
     if (newDays.length)
       expect(await snapshotFor(newDays[0]!.id)).toMatchObject({ totalPence: 4800, rateCode: 'member_low_full' });
-    expect(current!.status).toBe('active');
   });
 
-  it('leaving ends the membership before the next allowed 1st and frees later days', async () => {
+  it('leaving still follows the 20th rule (D48) and frees later days', async () => {
     const [active] = await db()
       .select()
       .from(memberships)
@@ -345,29 +359,19 @@ describe('memberships', () => {
       .select()
       .from(bookingDogs)
       .where(and(eq(bookingDogs.membershipId, active!.id), sql`${bookingDogs.serviceDate} > ${endsOn}`));
-    expect(later.every((r) => r.status === 'cancelled')).toBe(true);
+    expect(later.every((x) => x.status === 'cancelled')).toBe(true);
     await expect(leaveMembership(db(), dan, active!.id)).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('Owner can decline with a reason, and customers can withdraw requests', async () => {
-    const r = await requestMembership(db(), dan, {
-      dogId: danDog,
-      weekdays: [3],
-      session: 'am',
-      startsOn: nextMonday(),
-    });
-    const [m] = await db().select().from(memberships).where(eq(memberships.id, r.id));
-    await expect(declineMembership(db(), owner, r.id, { version: m!.version })).rejects.toBeInstanceOf(ValidationError);
-    await declineMembership(db(), owner, r.id, { version: m!.version, reason: 'Wednesdays are full' });
-    const r2 = await requestMembership(db(), dan, {
-      dogId: danDog,
-      weekdays: [2],
-      session: 'am',
-      startsOn: nextMonday(),
-    });
+  it('legacy requests: the Owner declines with a reason, and customers can withdraw', async () => {
+    const r = await legacyRequest(dan, danDog, [3]);
+    await expect(declineMembership(db(), owner, r.id, { version: r.version })).rejects.toBeInstanceOf(ValidationError);
+    await declineMembership(db(), owner, r.id, { version: r.version, reason: 'Wednesdays are full' });
+    const r2 = await legacyRequest(dan, danDog, [2]);
     await withdrawMembershipRequest(db(), dan, r2.id);
     const [w] = await db().select().from(memberships).where(eq(memberships.id, r2.id));
     expect(w!.status).toBe('withdrawn');
+    await expect(withdrawMembershipRequest(db(), dan, r2.id)).rejects.toBeInstanceOf(ConflictError);
   });
 
   it('Owner can end a membership on a chosen day', async () => {
@@ -381,6 +385,6 @@ describe('memberships', () => {
       .select()
       .from(bookingDogs)
       .where(and(eq(bookingDogs.membershipId, active!.id), sql`${bookingDogs.serviceDate} > ${last}`));
-    expect(after.every((r) => r.status === 'cancelled')).toBe(true);
+    expect(after.every((x) => x.status === 'cancelled')).toBe(true);
   });
 });

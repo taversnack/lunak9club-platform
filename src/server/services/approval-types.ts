@@ -14,3 +14,4 @@ import 'server-only';
  * Add a line like:  import './booking-requests';
  */
 import './booking-requests';
+import './membership-approvals';

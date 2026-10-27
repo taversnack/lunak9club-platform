@@ -7,18 +7,18 @@ import type { Db } from '@/infra/db/client';
 import { bookingDogs, bookings, customers, dogs, memberships, users } from '@/infra/db/schema';
 import { checkBookableDate, fits, SESSION_LABELS, type Session } from '@/domain/booking/rules';
 import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
-import { changeEffectiveDate, membershipDates, validWeekdays } from '@/domain/membership/rules';
+import { changeEffectiveDate, membershipDates } from '@/domain/membership/rules';
 import { bandFor } from '@/domain/pricing/engine';
 import { addDays, formatUkDate, londonDate, type IsoDate } from '@/domain/time';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
-import { checkbox, idOrNotFound, isoDate, optionalText, parseInput, requiredText } from '../validation';
+import { idOrNotFound, isoDate, optionalText, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
 import { evaluateDogs } from './compliance-facts';
 import { closuresBetween, consume, loadSettings, lockDays } from './booking-shared';
 import { currentPrices, loadPricingContext, priceWith, writeSnapshot } from './pricing';
-import { appUrl, ownerEmails, sendSafely } from '../notify';
+import { appUrl, sendSafely } from '../notify';
 
 export const HORIZON_DAYS = 60;
 const WEEKDAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -28,16 +28,8 @@ export const describeWeekdays = (w: readonly number[]) =>
     .map((d) => WEEKDAY_NAMES[d])
     .join(', ');
 
-const overlaps = (aFrom: IsoDate, aTo: IsoDate | null, bFrom: IsoDate, bTo: IsoDate | null) =>
+export const overlaps = (aFrom: IsoDate, aTo: IsoDate | null, bFrom: IsoDate, bTo: IsoDate | null) =>
   (aTo === null || aTo >= bFrom) && (bTo === null || bTo >= aFrom);
-
-export const MembershipRequestInput = z.object({
-  dogId: z.string(),
-  weekdays: z.array(z.coerce.number().int()).min(1, 'Choose at least one day'),
-  session: z.enum(['full', 'am', 'pm'], { message: 'Choose full day, morning or afternoon' }),
-  taxi: checkbox,
-  startsOn: isoDate('the start date'),
-});
 
 /** The customer's memberships with their band and price. */
 export async function myMemberships(db: Db, actor: Actor, now = new Date()) {
@@ -69,101 +61,6 @@ export async function myMemberships(db: Db, actor: Actor, now = new Date()) {
   };
 }
 
-/** Customer asks for a membership (or a change of days, which starts from the next allowed 1st). */
-export async function requestMembership(
-  db: Db,
-  actor: Actor,
-  input: unknown,
-  opts: { changeOf?: string } = {},
-  now = new Date(),
-) {
-  const me = asUser(actor);
-  const customer = await getMyCustomer(db, me);
-  assertAuthorized(me, 'memberships.self.manage', { ownerUserId: customer.userId });
-  const d = parseInput(MembershipRequestInput, input);
-  const settings = await loadSettings(db);
-  const today = londonDate(now);
-  const weekdays = [...new Set(d.weekdays)].sort();
-  const fields: Record<string, string> = {};
-  const wd = validWeekdays(d.weekdays, settings.openWeekdays);
-  if (wd) fields.weekdays = wd;
-
-  const dogId = idOrNotFound(d.dogId, 'Dog');
-  const [dog] = await db
-    .select()
-    .from(dogs)
-    .where(and(eq(dogs.id, dogId), eq(dogs.customerId, customer.id), isNull(dogs.archivedAt)));
-  if (!dog) throw new NotFoundError('Dog');
-  const e = (await evaluateDogs(db, [dog.id], now)).get(dog.id)!;
-  if (!e.canBook) fields.dogId = `${dog.name} needs to be approved before joining: ${e.bookingBlockers[0] ?? ''}`;
-
-  let replacesId: string | null = null;
-  let startsOn = d.startsOn;
-  if (opts.changeOf) {
-    const [current] = await db
-      .select()
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.id, idOrNotFound(opts.changeOf, 'Membership')),
-          eq(memberships.customerId, customer.id),
-          eq(memberships.status, 'active'),
-        ),
-      );
-    if (!current) throw new NotFoundError('Membership');
-    replacesId = current.id;
-    startsOn = changeEffectiveDate(today);
-  } else if (startsOn <= today) fields.startsOn = 'Choose tomorrow or later';
-  else if (startsOn > addDays(today, settings.maxAdvanceDays))
-    fields.startsOn = `Choose a date within ${settings.maxAdvanceDays} days`;
-  if (Object.keys(fields).length) throw new ValidationError('Please check the highlighted fields.', fields);
-
-  const existing = await db
-    .select()
-    .from(memberships)
-    .where(and(eq(memberships.dogId, dog.id), inArray(memberships.status, ['requested', 'active'])));
-  for (const m of existing) {
-    if (m.status === 'requested')
-      throw new ConflictError(`There’s already a membership request for ${dog.name} waiting for Luna’s K9 Club.`);
-    if (m.id !== replacesId && overlaps(m.startsOn, m.endsOn, startsOn, null))
-      throw new ConflictError(`${dog.name} already has a membership. Ask to change its days instead.`);
-  }
-  const id = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(memberships)
-      .values({
-        customerId: customer.id,
-        dogId: dog.id,
-        weekdays,
-        session: d.session,
-        taxi: d.taxi,
-        status: 'requested',
-        startsOn,
-        replacesId,
-        requestedBy: me.userId,
-      })
-      .returning({ id: memberships.id });
-    await recordAudit(tx, {
-      actor: me,
-      action: replacesId ? 'membership.change_requested' : 'membership.requested',
-      entityType: 'membership',
-      entityId: row!.id,
-      metadata: { days: weekdays.length },
-    });
-    return row!.id;
-  });
-  for (const to of await ownerEmails(db)) {
-    await sendSafely({
-      to,
-      template: 'owner.membership-request',
-      subject: 'Luna’s K9 Club: new membership request',
-      text: `A customer has asked for a membership (${describeWeekdays(weekdays)}). Review it here:\n${appUrl('/admin/memberships')}`,
-      html: `<p>A customer has asked for a membership (${describeWeekdays(weekdays)}).</p><p><a href="${appUrl('/admin/memberships')}">Review it</a></p>`,
-    });
-  }
-  return { id, startsOn };
-}
-
 async function loadMine(db: Db, actor: Actor, rawId: string) {
   const me = asUser(actor);
   const customer = await getMyCustomer(db, me);
@@ -176,6 +73,7 @@ async function loadMine(db: Db, actor: Actor, rawId: string) {
   return { me, m };
 }
 
+/** Legacy (D47 requests made before D86): the customer can still withdraw one that is waiting. */
 export async function withdrawMembershipRequest(db: Db, actor: Actor, rawId: string) {
   const { me, m } = await loadMine(db, actor, rawId);
   if (m.status !== 'requested') throw new ConflictError('Only requests that are still waiting can be withdrawn.');
@@ -189,7 +87,7 @@ export async function withdrawMembershipRequest(db: Db, actor: Actor, rawId: str
 }
 
 /** Cancel the membership's booked days after `lastDay` (free of charge, D48). */
-async function cancelDaysAfter(
+export async function cancelDaysAfter(
   tx: Parameters<Parameters<Db['transaction']>[0]>[0],
   membershipId: string,
   lastDay: IsoDate,
@@ -255,7 +153,7 @@ export async function ownerMemberships(db: Db, actor: Actor) {
 
 export const DecisionInput = z.object({ version: z.coerce.number().int().positive(), reason: optionalText(300) });
 
-/** Owner approves: membership becomes active, any replaced membership ends, days are booked ahead. */
+/** Owner approves a legacy request (made before D86): membership becomes active, any replaced membership ends, days are booked ahead. */
 export async function approveMembership(db: Db, actor: Actor, rawId: string, input: unknown, now = new Date()) {
   assertAuthorized(actor, 'memberships.manage');
   const d = parseInput(DecisionInput, input);

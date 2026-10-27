@@ -12,7 +12,7 @@ import {
   payments,
   refundRequests,
 } from '@/infra/db/schema';
-import { requestMembership, approveMembership } from '@/server/services/memberships';
+import { ownerSetMembershipDays } from '@/server/services/membership-workflow';
 import { cancelMyBooking } from '@/server/services/bookings';
 import {
   approveInvoice,
@@ -38,7 +38,7 @@ import { addMonths, formatDocumentNumber, monthOf, monthRange } from '@/domain/b
 import { addDays, londonDate, londonInstant } from '@/domain/time';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
-import { approvedDog, readyCustomer, releaseMemberDays } from '../support/onboard';
+import { approvedDog, readyCustomer, clearDayLimits, releaseMemberDays } from '../support/onboard';
 
 const db = () => getDb();
 const mail = new MemoryEmailProvider();
@@ -99,6 +99,7 @@ async function draftFor(customerUserId: string, month: string) {
 
 beforeAll(async () => {
   setEmailProvider(mail);
+  await clearDayLimits(db());
   owner = await makeUser(db(), 'owner', 'Olive Owner');
   mia = await makeUser(db(), 'customer', 'Mia Member');
   noah = await makeUser(db(), 'customer', 'Noah Other');
@@ -106,16 +107,11 @@ beforeAll(async () => {
   await readyCustomer(db(), noah);
   miaDog = await approvedDog(db(), owner, mia, 'Pepper');
   // Mon, Wed and Fri full days from tomorrow: 3 days a week → £48 a day (D3).
-  const r = await requestMembership(db(), mia, {
-    dogId: miaDog,
+  await ownerSetMembershipDays(db(), owner, miaDog, {
     weekdays: [1, 3, 5],
     session: 'full',
     startsOn: addDays(today, 1),
   });
-  const [m] = await db()
-    .execute<{ version: number }>(sql`select version from memberships where id = ${r.id}`)
-    .then((x) => x.rows);
-  await approveMembership(db(), owner, r.id, { version: m!.version });
 });
 afterAll(async () => {
   await releaseMemberDays(db());
