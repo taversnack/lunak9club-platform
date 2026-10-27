@@ -189,7 +189,7 @@ export async function approveMembership(db: Db, actor: Actor, rawId: string, inp
     .where(eq(memberships.id, id));
   if (row) {
     await sendSafely(
-      membershipConfirmedMessage(row.email, row.name.split(' ')[0], {
+      membershipConfirmedMessage(row.email, row.name.split(' ')[0] ?? row.name, {
         dogName: row.dogName,
         pattern: `${describeWeekdays(row.m.weekdays)}, ${SESSION_LABELS[row.m.session as Session]}`,
         startsOn: formatUkDate(row.m.startsOn),
