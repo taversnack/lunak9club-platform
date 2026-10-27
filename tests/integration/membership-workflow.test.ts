@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { runTick } from '@/server/services/jobs';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
@@ -290,6 +290,43 @@ describe('Owner changes days (D89)', () => {
     await expect(
       ownerSetMembershipDays(db(), cust, custDog, { weekdays: [1], session: 'full' }),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+});
+
+describe('setting days twice with the same start date (Tester, PR #45)', () => {
+  it('changes the not-yet-started membership in place: no “ended” row that never ran', async () => {
+    const u = await makeUser(db(), 'customer', 'Sam Same');
+    await readyCustomer(db(), u);
+    const dog = await approvedDog(db(), owner, u, 'Echo');
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [1], session: 'full', startsOn: addDays(today, 1) });
+    // A change starts from the first month not yet invoiced; twice in a row gives the same date.
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [3], session: 'full' });
+    const before = await db().select().from(memberships).where(eq(memberships.dogId, dog));
+    const change = before.find((m) => m.status === 'active' && m.endsOn === null)!;
+    expect(change.startsOn > today).toBe(true);
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 4], session: 'full' });
+    const after = await db().select().from(memberships).where(eq(memberships.dogId, dog));
+    expect(after).toHaveLength(before.length);
+    expect(after.find((m) => m.id === change.id)).toMatchObject({
+      status: 'active',
+      startsOn: change.startsOn,
+      endsOn: null,
+      weekdays: [2, 4],
+    });
+    expect(after.some((m) => m.status === 'ended' && m.endsOn === m.startsOn && m.startsOn === change.startsOn)).toBe(
+      false,
+    );
+    const live = await db()
+      .select({ date: bookingDogs.serviceDate })
+      .from(bookingDogs)
+      .where(
+        and(
+          eq(bookingDogs.dogId, dog),
+          eq(bookingDogs.membershipId, change.id),
+          inArray(bookingDogs.status, ['confirmed', 'waitlisted']),
+        ),
+      );
+    expect(live.every((b) => [2, 4].includes(isoWeekday(b.date)))).toBe(true);
   });
 });
 

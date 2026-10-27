@@ -122,9 +122,28 @@ export async function setMembershipDaysTx(
     )
     .for('update');
   let replacedId: string | null = null;
+  const weekdays = [...new Set(p.weekdays)].sort();
+  // Same start date as a membership that hasn't started: change it in place rather than leaving
+  // an "ended" row that never ran (Tester, PR #45). Its booked days are cancelled and rebooked.
+  const sameStart = current.find((m) => m.startsOn === p.startsOn && m.startsOn > londonDate(p.now));
   for (const m of current) {
     replacedId = m.id;
-    if (m.startsOn >= p.startsOn) {
+    if (m === sameStart) {
+      await tx
+        .update(memberships)
+        .set({
+          weekdays,
+          session: p.session,
+          taxi: p.taxi,
+          requestedBy: p.requestedBy,
+          requestedAt: p.now,
+          decidedBy: by,
+          decidedAt: p.now,
+          version: m.version + 1,
+        })
+        .where(eq(memberships.id, m.id));
+      await cancelDaysAfter(tx, m.id, addDays(m.startsOn, -1), by, p.now);
+    } else if (m.startsOn >= p.startsOn) {
       // Not started by the new start date: it never runs.
       await tx
         .update(memberships)
@@ -140,7 +159,16 @@ export async function setMembershipDaysTx(
       await cancelDaysAfter(tx, m.id, lastDay, by, p.now);
     }
   }
-  const weekdays = [...new Set(p.weekdays)].sort();
+  if (sameStart) {
+    await recordAudit(tx, {
+      actor,
+      action: 'membership.days_changed',
+      entityType: 'membership',
+      entityId: sameStart.id,
+      metadata: { days: weekdays.length, source: p.source, startsOn: p.startsOn, inPlace: true },
+    });
+    return { id: sameStart.id, replacedId: sameStart.id };
+  }
   const [row] = await tx
     .insert(memberships)
     .values({
