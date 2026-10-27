@@ -328,17 +328,33 @@ describe('memberships', () => {
   });
 
   it('an Owner change starts from the first month not yet invoiced and replaces later days (D89)', async () => {
+    const [prev] = await db().select().from(memberships).where(eq(memberships.id, membershipId));
     const r = await ownerSetMembershipDays(db(), owner, caraDog, { weekdays: [1, 2], session: 'full' });
     const effective = firstUninvoicedMonthStart(today, []);
     expect(r.startsOn).toBe(effective);
     const [old] = await db().select().from(memberships).where(eq(memberships.id, membershipId));
-    expect(old!.endsOn).toBe(addDays(effective, -1) < old!.startsOn ? old!.startsOn : addDays(effective, -1));
+    if (prev!.startsOn > today && prev!.startsOn >= effective) {
+      // It hadn't started, so it's changed in place: no "ended" row that never ran.
+      expect(r.membershipId).toBe(membershipId);
+      expect(old).toMatchObject({ status: 'active', startsOn: effective, endsOn: null, weekdays: [1, 2] });
+    } else {
+      expect(old!.endsOn).toBe(addDays(effective, -1));
+    }
     const oldAfter = await db()
       .select()
       .from(bookingDogs)
       .where(and(eq(bookingDogs.membershipId, membershipId), sql`${bookingDogs.serviceDate} >= ${effective}`));
-    expect(oldAfter.every((x) => x.status === 'cancelled' && x.lateCancellation === false)).toBe(true);
-    const newDays = await db().select().from(bookingDogs).where(eq(bookingDogs.membershipId, r.membershipId));
+    // In place, the same id also holds the newly booked days; the old ones are cancelled free.
+    expect(
+      oldAfter
+        .filter((x) => r.membershipId !== membershipId || ![1, 2].includes(isoWeekday(x.serviceDate)))
+        .every((x) => x.status === 'cancelled' && x.lateCancellation === false),
+    ).toBe(true);
+    // Live days only: with the same start date the membership is changed in place, so its earlier
+    // (now cancelled) days share its id.
+    const newDays = (await db().select().from(bookingDogs).where(eq(bookingDogs.membershipId, r.membershipId))).filter(
+      (x) => x.status !== 'cancelled',
+    );
     expect(newDays.every((x) => x.serviceDate >= effective && [1, 2].includes(isoWeekday(x.serviceDate)))).toBe(true);
     if (newDays.length)
       expect(await snapshotFor(newDays[0]!.id)).toMatchObject({ totalPence: 4800, rateCode: 'member_low_full' });

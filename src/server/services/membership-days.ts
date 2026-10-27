@@ -123,9 +123,11 @@ export async function setMembershipDaysTx(
     .for('update');
   let replacedId: string | null = null;
   const weekdays = [...new Set(p.weekdays)].sort();
-  // Same start date as a membership that hasn't started: change it in place rather than leaving
-  // an "ended" row that never ran (Tester, PR #45). Its booked days are cancelled and rebooked.
-  const sameStart = current.find((m) => m.startsOn === p.startsOn && m.startsOn > londonDate(p.now));
+  // A membership that hasn't started by the new start date never runs: change it in place (new
+  // days and start date) rather than leaving an "ended" row covering its start date, which pricing
+  // and the monthly confirmation would still count (Tester, PR #45). Its booked days are cancelled
+  // and the caller rebooks.
+  const sameStart = current.find((m) => m.startsOn >= p.startsOn && m.startsOn > londonDate(p.now));
   for (const m of current) {
     replacedId = m.id;
     if (m === sameStart) {
@@ -133,6 +135,7 @@ export async function setMembershipDaysTx(
         .update(memberships)
         .set({
           weekdays,
+          startsOn: p.startsOn,
           session: p.session,
           taxi: p.taxi,
           requestedBy: p.requestedBy,
