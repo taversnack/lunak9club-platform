@@ -153,7 +153,9 @@ a:hover {
   background: var(--color-surface);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-sm);
-  z-index: 10;
+  /* Above the sticky headers (public and AppShell, z-index 30); below the route loading bar (1000). */
+  z-index: 100;
+  box-shadow: var(--shadow-1);
 }
 .skip-link:focus {
   top: var(--space-4);
@@ -187,6 +189,14 @@ body:has([data-app-shell]) .site-header {
 main:has(> [data-app-shell]),
 main:has([data-app-shell]) {
   padding-top: 0;
+}
+/* Let the shell fill the space between header and footer, so the admin sidebar can use all of it. */
+main:has(> [data-app-shell]) {
+  display: flex;
+  flex-direction: column;
+}
+main:has([data-sidebar]) {
+  padding-bottom: 0;
 }
 @media (max-width: 899px) {
   /* WCAG 2.4.11: keep focused controls clear of the fixed tab bar when the browser scrolls them into view. */

@@ -16,7 +16,6 @@ import {
   bookingDogs,
   complianceRequirements,
   complianceSubmissions,
-  memberships,
   notificationLog,
 } from '@/infra/db/schema';
 import { createMyDog, saveMyDogVet, submitMyOnboardingForm } from '@/server/services/dogs';
@@ -31,7 +30,7 @@ import {
   removeClosure,
   setDayCapacity,
 } from '@/server/services/owner-bookings';
-import { approveMembership, requestMembership } from '@/server/services/memberships';
+import { ownerSetMembershipDays } from '@/server/services/membership-workflow';
 import { recordAssessment, reviewSubmission, updateRequirement } from '@/server/services/owner-review';
 import { sendVaccinationReminders } from '@/server/services/reminders';
 import { ConflictError, ValidationError } from '@/server/errors';
@@ -41,7 +40,7 @@ import { firstOpenWeekday, weekdayPicker } from '../support/dates';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { payOpenCheckouts } from '../support/payments';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
-import { approvedDog, approveVaccinations, readyCustomer, releaseMemberDays } from '../support/onboard';
+import { approvedDog, approveVaccinations, readyCustomer, releaseMemberDays, clearDayLimits } from '../support/onboard';
 
 const db = () => getDb();
 const mail = new MemoryEmailProvider();
@@ -400,19 +399,20 @@ describe('Give place (D82, D73)', () => {
 });
 
 describe('membership book-ahead (D47, D73, D74)', () => {
+  // Earlier tests in this file leave small day limits; membership days can't be set onto a full day (D90).
+  beforeAll(() => clearDayLimits(db()));
   it('skips days inside the first-course wait and books from day 14', async () => {
     const dog = await approvedDog(db(), owner, cass, 'Member Moss');
-    const r = await requestMembership(db(), cass, {
-      dogId: dog,
+    const done = addDays(today, -1);
+    await setPrimary(dog, done);
+    const clear = addDays(done, 14);
+    // Membership days are set by the Owner (D89) and booked ahead straight away.
+    const res = await ownerSetMembershipDays(db(), owner, dog, {
       weekdays: [1, 2, 3, 4, 5],
       session: 'full',
       startsOn: nextMonday(),
     });
-    const done = addDays(today, -1);
-    await setPrimary(dog, done);
-    const clear = addDays(done, 14);
-    const [m] = await db().select().from(memberships).where(eq(memberships.id, r.id));
-    const res = await approveMembership(db(), owner, r.id, { version: m!.version });
+    const r = { id: res.membershipId };
     const blocked = res.clashes.filter((c) => c.dogId === dog && /at least 14 days/.test(c.reason));
     expect(blocked.length).toBeGreaterThan(0);
     expect(blocked.every((c) => c.date < clear)).toBe(true);
@@ -423,15 +423,13 @@ describe('membership book-ahead (D47, D73, D74)', () => {
 
   it('books nothing while leptospirosis is waiting for review', async () => {
     const dog = await approvedDog(db(), owner, cass, 'Member Mint');
-    const r = await requestMembership(db(), cass, {
-      dogId: dog,
+    await setState(dog, LEPTO, 'pending_review');
+    const res = await ownerSetMembershipDays(db(), owner, dog, {
       weekdays: [1, 2, 3, 4, 5],
       session: 'full',
       startsOn: nextMonday(),
     });
-    await setState(dog, LEPTO, 'pending_review');
-    const [m] = await db().select().from(memberships).where(eq(memberships.id, r.id));
-    const res = await approveMembership(db(), owner, r.id, { version: m!.version });
+    const r = { id: res.membershipId };
     expect(res.clashes.filter((c) => c.dogId === dog).length).toBeGreaterThan(0);
     const rows = await db().select().from(bookingDogs).where(eq(bookingDogs.membershipId, r.id));
     expect(rows).toHaveLength(0);

@@ -16,6 +16,7 @@ import {
   sendPaymentReminders,
 } from './billing';
 import { materialiseMemberships } from './memberships';
+import { notifyUnconfirmedDays } from './membership-workflow';
 import { reconcileOpenCheckouts, releaseExpiredCheckouts } from './payments';
 import { submitPendingRefunds } from './card-refunds';
 import { sendBookingReminders, sendVaccinationReminders } from './reminders';
@@ -137,6 +138,8 @@ async function step<T extends object>(
  * - 03:00 daily: retention schedule (D64)
  * - 08:00 daily: vaccination reminders (D66); 17:00 daily: tomorrow's booking reminders (D67)
  * - every tick: close booking requests whose cut-off (23:59 the day before) has passed (D79)
+ * - from the day after the confirm-by day (the 2nd), 08:00: one Owner email about members who haven't
+ *   confirmed this month's days; their days are kept (D88)
  * - every tick: send approved invoices whose send time has come (28th 09:00, D24) and
  *   payment reminders that are due (15:30 on day 4, D25)
  */
@@ -192,6 +195,10 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
     out.push(await once(db, 'vaccination-reminders', today, () => sendVaccinationReminders(db, actor, now), now));
   if (time >= '17:00')
     out.push(await once(db, 'booking-reminders', today, () => sendBookingReminders(db, actor, now), now));
+  if (Number(today.slice(8, 10)) > bs.confirmByDay && time >= '08:00')
+    out.push(
+      await once(db, 'membership-unconfirmed', monthOf(today), () => notifyUnconfirmedDays(db, actor, now), now),
+    );
   // Every-tick steps: each runs even if an earlier one fails (M2).
   const failed: string[] = [];
   const requests = await step(db, 'expire-requests', now, failed, () => expireBookingRequests(db, actor, now));

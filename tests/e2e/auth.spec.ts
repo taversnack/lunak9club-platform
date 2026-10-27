@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { DEMO_CUSTOMER, DEMO_OWNER, latestLink, signIn, signOut, uniqueEmail } from './helpers';
 
 test('customer registers, confirms email and reaches their account', async ({ page }, info) => {
@@ -44,10 +44,57 @@ test('customers cannot open the owner area', async ({ page }) => {
   await expect(page.getByRole('heading', { name: "You don't have access to this page" })).toBeVisible();
 });
 
-test('anonymous visitors are sent to sign in', async ({ page }) => {
-  for (const path of ['/admin', '/account', '/dashboard']) {
+test('anonymous visitors are sent to sign in, remembering the page they asked for', async ({ page }) => {
+  for (const path of ['/admin', '/account']) {
     await page.goto(path);
-    await expect(page).toHaveURL(/\/sign-in$/);
+    await expect(page).toHaveURL(`/sign-in?callbackUrl=${encodeURIComponent(path)}`);
+  }
+  await page.goto('/dashboard'); // the default after sign-in anyway
+  await expect(page).toHaveURL(/\/sign-in$/);
+});
+
+async function signInHere(page: Page, email: string, password: string) {
+  await page.getByLabel('Email address').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+}
+
+test('a signed-out customer deep-linking to an account page lands back on it after sign-in', async ({ page }) => {
+  const target = '/account/bookings?payment=expired';
+  await page.goto(target);
+  await expect(page).toHaveURL(`/sign-in?callbackUrl=${encodeURIComponent(target)}`);
+  await signInHere(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+  await expect(page).toHaveURL(target);
+  await expect(page.getByText('That payment link has ended')).toBeVisible();
+});
+
+test('a signed-out Owner deep-linking to an admin page lands back on it after sign-in', async ({ page }) => {
+  const target = '/admin/customers?q=casey';
+  await page.goto(target);
+  await expect(page).toHaveURL(`/sign-in?callbackUrl=${encodeURIComponent(target)}`);
+  await signInHere(page, DEMO_OWNER.email, DEMO_OWNER.password);
+  await expect(page).toHaveURL(target);
+  // The Owner nav is in the sidebar on desktop and inside the closed Menu drawer at 390px, so check the page.
+  await expect(page.getByRole('heading', { level: 1, name: 'Customers' })).toBeVisible();
+  await expect(page.locator('#q')).toHaveValue('casey'); // the query came back too
+});
+
+test('a customer who follows an admin link and signs in gets no-access, not a sign-in loop', async ({ page }) => {
+  await page.goto('/admin/customers');
+  await signInHere(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+  await expect(page).toHaveURL(/\/access-denied$/);
+  await expect(page.getByRole('heading', { name: /You don.t have access to this page/ })).toBeVisible();
+  // Signed in now, so /admin goes straight to no-access, never back to sign-in.
+  await page.goto('/admin');
+  await expect(page).toHaveURL(/\/access-denied$/);
+});
+
+test('a return-to header sent by the client is ignored, even on paths that look like files', async ({ page }) => {
+  // The proxy sets this header for the guards; a value the browser sends must never be used.
+  await page.context().setExtraHTTPHeaders({ 'x-lunak9-return-to': '/admin/settings' });
+  for (const path of ['/account/dogs/x.json', '/admin/customers/x.json', '/account/bookings']) {
+    await page.goto(path);
+    await expect(page).toHaveURL((u) => u.pathname === '/sign-in' && u.searchParams.get('callbackUrl') === path);
   }
 });
 
@@ -60,7 +107,7 @@ test('owner signs in to the owner dashboard and sees recent activity', async ({ 
   await expect(page.getByRole('table')).not.toContainText('auth.signed_in');
   await signOut(page);
   await page.goto('/admin');
-  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page).toHaveURL(`/sign-in?callbackUrl=${encodeURIComponent('/admin')}`);
 });
 
 test('wrong password shows a generic error', async ({ page }) => {

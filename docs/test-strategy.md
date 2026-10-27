@@ -104,3 +104,15 @@
 | First course: day 13 blocked, day 14 allowed, no date no block – at customer booking, Owner booking and check-in; latest approved date wins | `vaccination-attendance.test.ts`, `vaccination-compliance.test.ts` |
 | First-course question: must be answered, yes needs a past date, stored per vaccination, Owner keeps/corrects/clears it; UI question and error | `vaccination-compliance.test.ts › first-course question`, `onboarding.spec.ts` |
 | Reminders 60/30/14/7: 60-day sent once, catch-up sends only the nearest, then 30; migrated rows and default; migration UPDATE keeps Owner-edited rows; settings accept 60,30,14,7 and refuse making licence vaccinations optional | `vaccination-attendance.test.ts`, `vaccination-compliance.test.ts › reminders` |
+
+## Membership workflow (D86–D91) → tests
+
+| Criterion | Test |
+|---|---|
+| Owner creates an account; invite is 7-day, single use, resend replaces it; finish signup sets a password | `tests/integration/membership-workflow.test.ts` (Owner creates a customer) |
+| Customer days go to approval; one pending request per dog; the decline note never appears in email | same file (membership.days approvals) |
+| Move one day: same month only; approved move swaps the date | same file (move_once) |
+| Owner changes days without approval; customer emailed, no sensitive data; customers can't | same file (Owner changes days) |
+| Monthly confirmation is idempotent; the job only counts, keeps days, names nobody | same file (monthly confirmation) |
+| Owner change starts from the first month not invoiced; full day blocks | `tests/integration/pricing-memberships.test.ts` |
+| Customer chooses days → Owner approves in Approvals → days at member rate | `tests/e2e/membership.spec.ts` |

@@ -148,6 +148,13 @@
       "when": 1792409811375,
       "tag": "0022_holiday_closures_2029_2031",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792414474946,
+      "tag": "0023_membership_workflow",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,7 @@ const groups: NavGroup[] = [
       { href: '/account/dogs/new', label: 'Add a dog' },
       { href: '/account/profile', label: 'Your details' },
       { href: '/account/contacts', label: 'Contacts' },
+      { href: '/account/faq', label: 'Questions' },
       { href: '/account/terms', label: 'Terms' },
       { href: '/account/data', label: 'Your data' },
     ],

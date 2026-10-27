@@ -1,78 +1,303 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Alert, Card, Muted, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, Checkbox, RadioGroup, SelectField, SubmitButton, TextField } from '@/ui/form';
+import { DayPicker, SESSION_OPTIONS } from '@/ui/day-picker';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
-import { myMemberships, describeWeekdays } from '@/server/services/memberships';
-import { myBookableDogs } from '@/server/services/bookings';
+import { describeWeekdays, myMemberships } from '@/server/services/memberships';
+import { myMembershipDays, myMonthConfirmations } from '@/server/services/membership-workflow';
+import { myApprovalRequests } from '@/server/services/approvals';
 import { loadSettings } from '@/server/services/booking-shared';
 import { formatPounds, SESSION_LABELS, type Session } from '@/domain/booking/rules';
 import { addDays, formatUkDate, londonDate } from '@/domain/time';
-import { leaveMembershipAction, requestMembershipAction, withdrawMembershipAction } from '../actions';
+import { changeEffectiveDate } from '@/domain/membership/rules';
+import {
+  confirmMonthAction,
+  confirmOfferAction,
+  leaveMembershipAction,
+  requestMembershipDaysAction,
+  withdrawMembershipAction,
+} from '../actions';
 
 export const metadata: Metadata = { title: 'Membership' };
 export const dynamic = 'force-dynamic';
 
-const DAYS = [
-  { value: '1', label: 'Monday' },
-  { value: '2', label: 'Tuesday' },
-  { value: '3', label: 'Wednesday' },
-  { value: '4', label: 'Thursday' },
-  { value: '5', label: 'Friday' },
-  { value: '6', label: 'Saturday' },
-  { value: '7', label: 'Sunday' },
-];
-const STATUS: Record<string, { tone: 'info' | 'success' | 'warning' | 'danger'; text: string }> = {
-  requested: { tone: 'info', text: 'Waiting for Luna’s K9 Club' },
-  active: { tone: 'success', text: 'Active' },
-  declined: { tone: 'danger', text: 'Not accepted' },
-  ended: { tone: 'info', text: 'Ended' },
+const OUTCOME: Record<string, { tone: 'info' | 'success' | 'warning' | 'danger'; text: string }> = {
+  pending: { tone: 'info', text: 'Waiting for Luna’s K9 Club' },
+  approved: { tone: 'success', text: 'Approved' },
+  rejected: { tone: 'danger', text: 'Not approved' },
   withdrawn: { tone: 'info', text: 'Withdrawn' },
+  expired: { tone: 'info', text: 'No longer open' },
 };
 
-function DayPicker({ open }: { open: readonly number[] }) {
-  return (
-    <fieldset className={s.fieldset}>
-      <legend className={s.label}>Which days each week?</legend>
-      <div className={s.choices}>
-        {DAYS.filter((d) => open.includes(Number(d.value))).map((d) => (
-          <label key={d.value} className={s.choice}>
-            <input type="checkbox" name="weekdays" value={d.value} />
-            <span>{d.label}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
-const sessionOptions = [
-  { value: 'full', label: 'Full day' },
-  { value: 'am', label: 'Morning' },
-  { value: 'pm', label: 'Afternoon' },
-];
+const plan = (weekdays: number[], session: string, taxi: boolean) =>
+  `${describeWeekdays(weekdays)} · ${SESSION_LABELS[session as Session]}${taxi ? ' · taxi' : ''}`;
 
 export default async function MembershipPage() {
   const actor = await requirePermission('account.access');
   const db = getDb();
-  const [{ book, memberships, changeFrom }, dogs, settings] = await Promise.all([
+  const [days, months, requests, legacy, settings] = await Promise.all([
+    myMembershipDays(db, actor),
+    myMonthConfirmations(db, actor),
+    myApprovalRequests(db, actor, { status: 'all' }),
     myMemberships(db, actor),
-    myBookableDogs(db, actor),
     loadSettings(db),
   ]);
-  const tomorrow = addDays(londonDate(new Date()), 1);
-  const eligible = dogs.filter(
-    (d) => d.canBook && !memberships.some((m) => m.dogId === d.id && ['requested', 'active'].includes(m.status)),
-  );
+  const { book } = legacy;
+  const today = londonDate(new Date());
+  const tomorrow = addDays(today, 1);
+  const leaveFrom = changeEffectiveDate(today);
+  const memberRequests = requests.filter((r) => r.type.startsWith('membership.')).slice(0, 20);
+  const pendingFor = (dogId: string) =>
+    memberRequests.find((r) => r.status === 'pending' && r.subjectKey === `dog:${dogId}`);
+  const dogsFree = days.dogs.filter((d) => !d.membership);
+  const legacyRequests = legacy.memberships.filter((m) => m.status === 'requested');
+
   return (
     <Stack>
       <h1>Membership</h1>
-      {memberships.some((m) => m.status === 'requested') ? (
-        <Alert tone="info" title="Request received">
-          Thanks – we’ll review your membership request and email you.
-        </Alert>
+      <p>
+        Questions about cancelling, changing or adding days? See <Link href="/account/faq">membership questions</Link>.
+      </p>
+
+      {months.length ? (
+        <Card aria-labelledby="confirm">
+          <h2 id="confirm">Confirm your days</h2>
+          <ul className={s.list}>
+            {months.map((m) => (
+              <li key={m.month} className={s.listItem}>
+                <div>
+                  <strong>{m.monthText}</strong>
+                  <div className={s.hint}>
+                    {m.confirmedAt
+                      ? `Confirmed${m.byOwner ? ' by Luna’s K9 Club' : ''}${m.late ? `, after ${formatUkDate(m.by)}` : ''}.`
+                      : `Please confirm by ${formatUkDate(m.by)}. If you don’t, your days stay as they are.`}
+                  </div>
+                </div>
+                {m.confirmedAt ? (
+                  <StatusBadge tone={m.late ? 'warning' : 'success'}>
+                    {m.late ? 'Confirmed late' : 'Confirmed'}
+                  </StatusBadge>
+                ) : (
+                  <ActionForm action={confirmMonthAction}>
+                    <input type="hidden" name="month" value={m.month} />
+                    <SubmitButton>
+                      Confirm days <span className="visually-hidden">for {m.monthText}</span>
+                    </SubmitButton>
+                  </ActionForm>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className={s.hint}>
+            Your booked days are in <Link href="/account/bookings">Your bookings</Link>, where you can also move a day.
+          </p>
+        </Card>
       ) : null}
+
+      {days.offers.length ? (
+        <Card aria-labelledby="offers">
+          <h2 id="offers">Days we’ve set up for you</h2>
+          <p>Please check these days. Confirm them, or ask for different days – any change comes to us to approve.</p>
+          {dogsFree.length === 0 ? (
+            <Alert tone="info">
+              Add your dog first (<Link href="/account/dogs/new">add a dog</Link>), then come back here to confirm.
+            </Alert>
+          ) : null}
+          <ul className={s.list}>
+            {days.offers.map((o) => (
+              <li key={o.id} className={s.listItem} style={{ display: 'block' }}>
+                <p>
+                  <strong>{o.dogName}</strong>: {plan(o.weekdays, o.session, o.taxi)}, from {formatUkDate(o.startsOn)}
+                </p>
+                {dogsFree.length ? (
+                  <Stack>
+                    <ActionForm action={confirmOfferAction}>
+                      <input type="hidden" name="offerId" value={o.id} />
+                      <SelectField
+                        name="dogId"
+                        label={`Which of your dogs is ${o.dogName}?`}
+                        options={dogsFree.map((d) => ({ value: d.id, label: d.name }))}
+                        defaultValue={dogsFree.find((d) => d.name.toLowerCase() === o.dogName.toLowerCase())?.id}
+                      />
+                      <div>
+                        <SubmitButton>
+                          Confirm these days <span className="visually-hidden">for {o.dogName}</span>
+                        </SubmitButton>
+                      </div>
+                    </ActionForm>
+                    <details>
+                      <summary>Ask for different days for {o.dogName}</summary>
+                      <ActionForm action={requestMembershipDaysAction}>
+                        <input type="hidden" name="offerId" value={o.id} />
+                        <SelectField
+                          name="dogId"
+                          label="Dog"
+                          options={dogsFree.map((d) => ({ value: d.id, label: d.name }))}
+                          defaultValue={dogsFree.find((d) => d.name.toLowerCase() === o.dogName.toLowerCase())?.id}
+                        />
+                        <DayPicker open={settings.openWeekdays} checked={o.weekdays} />
+                        <RadioGroup name="session" label="Session" options={SESSION_OPTIONS} defaultValue={o.session} />
+                        <Checkbox name="taxi" label="Use the dog taxi (included)" defaultChecked={o.taxi} />
+                        <TextField
+                          name="startsOn"
+                          label="First day"
+                          type="date"
+                          required
+                          defaultValue={o.startsOn > today ? o.startsOn : tomorrow}
+                          min={tomorrow}
+                        />
+                        <div>
+                          <SubmitButton variant="secondary">Send for approval</SubmitButton>
+                        </div>
+                      </ActionForm>
+                    </details>
+                  </Stack>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      <Card aria-labelledby="yours">
+        <h2 id="yours">Your dogs’ regular days</h2>
+        {days.dogs.length === 0 ? (
+          <Muted>
+            No dogs yet. <Link href="/account/dogs/new">Add a dog</Link>.
+          </Muted>
+        ) : null}
+        <ul className={s.list}>
+          {days.dogs.map((d) => {
+            const pending = pendingFor(d.id);
+            const m = d.membership;
+            return (
+              <li key={d.id} className={s.listItem} style={{ display: 'block' }}>
+                <div className={s.row}>
+                  <div>
+                    <strong>{d.name}</strong>
+                    <div className={s.hint}>
+                      {m
+                        ? `${plan(m.weekdays, m.session, m.taxi)} · from ${formatUkDate(m.startsOn)}${m.endsOn ? ` to ${formatUkDate(m.endsOn)}` : ''}`
+                        : 'No regular days yet'}
+                    </div>
+                  </div>
+                  {pending ? <StatusBadge tone="info">Change waiting for approval</StatusBadge> : null}
+                </div>
+                {pending ? (
+                  <Stack>
+                    <p className={s.hint}>{pending.summary}</p>
+                    <p>
+                      <Link href={`/account/requests/${pending.id}/withdraw`}>
+                        Withdraw request <span className="visually-hidden">for {d.name}</span>
+                      </Link>{' '}
+                      · <Link href="/account/requests">Your requests</Link>
+                    </p>
+                  </Stack>
+                ) : (
+                  <details>
+                    <summary>{m ? `Change ${d.name}’s days for all future months` : `Choose ${d.name}’s days`}</summary>
+                    <ActionForm action={requestMembershipDaysAction}>
+                      <input type="hidden" name="dogId" value={d.id} />
+                      {m ? (
+                        <p>
+                          New days start on {formatUkDate(days.changeFrom)} (the first month we haven’t invoiced yet).
+                          To move one day only, use <Link href="/account/bookings">Your bookings</Link>.
+                        </p>
+                      ) : null}
+                      <DayPicker open={settings.openWeekdays} checked={m?.weekdays ?? []} />
+                      <RadioGroup
+                        name="session"
+                        label="Session"
+                        options={SESSION_OPTIONS}
+                        defaultValue={m?.session ?? 'full'}
+                      />
+                      <Checkbox name="taxi" label="Use the dog taxi (included)" defaultChecked={m?.taxi ?? false} />
+                      {m ? null : (
+                        <TextField
+                          name="startsOn"
+                          label="First day"
+                          type="date"
+                          required
+                          defaultValue={tomorrow}
+                          min={tomorrow}
+                        />
+                      )}
+                      <div>
+                        <SubmitButton variant="secondary">Send for approval</SubmitButton>
+                      </div>
+                    </ActionForm>
+                  </details>
+                )}
+                {m && !m.endsOn ? (
+                  <details>
+                    <summary>End {d.name}’s membership</summary>
+                    <ActionForm action={leaveMembershipAction}>
+                      <p>
+                        Leaving takes effect from {formatUkDate(leaveFrom)} (the 1st of next month if you tell us by the
+                        20th).
+                      </p>
+                      <input type="hidden" name="id" value={m.id} />
+                      <Checkbox
+                        name="confirm"
+                        label={`End ${d.name}’s membership (last day ${formatUkDate(addDays(leaveFrom, -1))})`}
+                      />
+                      <div>
+                        <SubmitButton variant="danger">End membership</SubmitButton>
+                      </div>
+                    </ActionForm>
+                  </details>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+
+      {memberRequests.some((r) => r.status !== 'pending') ? (
+        <Card aria-labelledby="decisions">
+          <h2 id="decisions">Your recent requests</h2>
+          <ul className={s.list}>
+            {memberRequests
+              .filter((r) => r.status !== 'pending')
+              .map((r) => (
+                <li key={r.id} className={s.listItem}>
+                  <div>
+                    {r.summary}
+                    {/* The Owner's note shows here only, never in emails. */}
+                    {r.reason ? <div className={s.hint}>Note from Luna’s K9 Club: {r.reason}</div> : null}
+                  </div>
+                  <StatusBadge tone={OUTCOME[r.status]!.tone}>{OUTCOME[r.status]!.text}</StatusBadge>
+                </li>
+              ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {legacyRequests.length ? (
+        <Card aria-labelledby="older">
+          <h2 id="older">Earlier membership requests</h2>
+          <ul className={s.list}>
+            {legacyRequests.map((m) => (
+              <li key={m.id} className={s.listItem}>
+                <div>
+                  <strong>{m.dogName}</strong> · {plan(m.weekdays, m.session, m.taxi)}
+                  <div className={s.hint}>Waiting for Luna’s K9 Club</div>
+                </div>
+                <ActionForm action={withdrawMembershipAction}>
+                  <input type="hidden" name="id" value={m.id} />
+                  <SubmitButton variant="secondary">
+                    Withdraw request <span className="visually-hidden">for {m.dogName}</span>
+                  </SubmitButton>
+                </ActionForm>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
       {book ? (
         <Card aria-labelledby="prices">
           <h2 id="prices">Prices per dog per day</h2>
@@ -110,97 +335,6 @@ export default async function MembershipPage() {
           </p>
         </Card>
       ) : null}
-
-      <Card aria-labelledby="yours">
-        <h2 id="yours">Your memberships</h2>
-        {memberships.length === 0 ? <Muted>No memberships yet.</Muted> : null}
-        <ul className={s.list}>
-          {memberships.map((m) => (
-            <li key={m.id} className={s.listItem} style={{ display: 'block' }}>
-              <div className={s.row}>
-                <div>
-                  <strong>{m.dogName}</strong> · {describeWeekdays(m.weekdays)} · {SESSION_LABELS[m.session as Session]}
-                  {m.taxi ? ' · taxi' : ''}
-                  <div className={s.hint}>
-                    From {formatUkDate(m.startsOn)}
-                    {m.endsOn ? ` to ${formatUkDate(m.endsOn)}` : ''}
-                    {m.dayPrice && m.status !== 'declined'
-                      ? ` · ${formatPounds(m.session === 'full' ? m.dayPrice : Math.floor((m.dayPrice * 50 + 50) / 100))} a day`
-                      : ''}
-                  </div>
-                  {m.declineReason ? <div className={s.hint}>Reason: {m.declineReason}</div> : null}
-                </div>
-                <StatusBadge tone={STATUS[m.status]!.tone}>{STATUS[m.status]!.text}</StatusBadge>
-              </div>
-              {m.status === 'requested' ? (
-                <ActionForm action={withdrawMembershipAction}>
-                  <input type="hidden" name="id" value={m.id} />
-                  <SubmitButton variant="secondary">
-                    Withdraw request <span className="visually-hidden">for {m.dogName}</span>
-                  </SubmitButton>
-                </ActionForm>
-              ) : null}
-              {m.status === 'active' && !m.endsOn ? (
-                <details>
-                  <summary>Change days or leave</summary>
-                  <Stack>
-                    <p>
-                      Changes and leaving take effect from {formatUkDate(changeFrom)} (the 1st of next month if you ask
-                      by the 20th).
-                    </p>
-                    <ActionForm action={requestMembershipAction}>
-                      <input type="hidden" name="changeOf" value={m.id} />
-                      <input type="hidden" name="dogId" value={m.dogId} />
-                      <input type="hidden" name="startsOn" value={changeFrom} />
-                      <DayPicker open={settings.openWeekdays} />
-                      <RadioGroup name="session" label="Session" options={sessionOptions} defaultValue={m.session} />
-                      <Checkbox name="taxi" label="Use the dog taxi" defaultChecked={m.taxi} />
-                      <div>
-                        <SubmitButton variant="secondary">Ask to change days</SubmitButton>
-                      </div>
-                    </ActionForm>
-                    <ActionForm action={leaveMembershipAction}>
-                      <input type="hidden" name="id" value={m.id} />
-                      <Checkbox
-                        name="confirm"
-                        label={`End ${m.dogName}’s membership (last day ${formatUkDate(addDays(changeFrom, -1))})`}
-                      />
-                      <div>
-                        <SubmitButton variant="danger">End membership</SubmitButton>
-                      </div>
-                    </ActionForm>
-                  </Stack>
-                </details>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </Card>
-
-      <Card aria-labelledby="join">
-        <h2 id="join">Become a member</h2>
-        {eligible.length === 0 ? (
-          <Alert tone="info">
-            Memberships are available once your dog is approved, and each dog can have one membership.
-          </Alert>
-        ) : (
-          <ActionForm action={requestMembershipAction}>
-            <SelectField
-              name="dogId"
-              label="Dog"
-              options={eligible.map((d) => ({ value: d.id, label: d.name }))}
-              defaultValue={eligible.length === 1 ? eligible[0]!.id : undefined}
-            />
-            <DayPicker open={settings.openWeekdays} />
-            <RadioGroup name="session" label="Session" options={sessionOptions} defaultValue="full" />
-            <Checkbox name="taxi" label="Use the dog taxi (included)" />
-            <TextField name="startsOn" label="Start date" type="date" required defaultValue={tomorrow} min={tomorrow} />
-            <div>
-              <SubmitButton>Ask to join</SubmitButton>
-            </div>
-          </ActionForm>
-        )}
-      </Card>
     </Stack>
   );
 }

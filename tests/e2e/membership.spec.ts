@@ -15,7 +15,7 @@ async function axe(page: Page) {
 const who = (project: string) =>
   project === 'mobile' ? { user: DEMO_CUSTOMER_2, dog: 'Rex' } : { user: DEMO_CUSTOMER, dog: 'Biscuit' };
 
-test('customer sees prices and asks for a 2-day membership', async ({ page }, info) => {
+test('customer sees prices and chooses 2 membership days for approval', async ({ page }, info) => {
   const { user, dog } = who(info.project.name);
   await signIn(page, user.email, user.password);
   await expect(page).toHaveURL(/\/account$/);
@@ -28,13 +28,17 @@ test('customer sees prices and asks for a 2-day membership', async ({ page }, in
   await expect(prices).toContainText('£22.50');
   await axe(page);
 
-  const join = page.getByRole('region', { name: 'Become a member' });
-  await join.getByLabel('Dog', { exact: true }).selectOption({ label: dog });
-  await join.getByRole('checkbox', { name: 'Monday' }).check();
-  await join.getByRole('checkbox', { name: 'Wednesday' }).check();
-  await join.getByRole('button', { name: 'Ask to join' }).click();
-  await expect(page.getByText('we’ll review your membership request').first()).toBeVisible();
-  await expect(page.getByText('Waiting for Luna’s K9 Club').first()).toBeVisible();
+  const yours = page.getByRole('region', { name: 'Your dogs’ regular days' });
+  await yours.getByText(`Choose ${dog}’s days`).click();
+  await yours.getByRole('checkbox', { name: 'Monday' }).check();
+  await yours.getByRole('checkbox', { name: 'Wednesday' }).check();
+  await yours.getByRole('button', { name: 'Send for approval' }).click();
+  await expect(page.getByText('Change waiting for approval').first()).toBeVisible();
+  await expect(yours.getByRole('link', { name: `Withdraw request for ${dog}` })).toHaveAttribute(
+    'href',
+    /^\/account\/requests\/[0-9a-f-]+\/withdraw$/,
+  );
+  await axe(page);
   await signOut(page);
 });
 
@@ -42,10 +46,12 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   const { user, dog } = who(info.project.name);
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await navTo(page, 'Owner', 'Memberships');
+  await page.goto('/admin/approvals');
   await axe(page);
-  await page.getByRole('button', { name: `Approve ${dog}` }).click();
-  await expect(page.getByText(/Approved\. \d+ days booked/)).toBeVisible();
+  await page.getByRole('button', { name: new RegExp(`^Approve ${dog}:`) }).click();
+  await expect(page).toHaveURL(/approved=1/);
+  await page.goto('/admin/memberships');
+  await axe(page);
   await page.goto('/admin/settings/pricing');
   await expect(page.getByText('In use')).toBeVisible();
   await axe(page);
@@ -58,7 +64,7 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   await expect(row).toContainText(dog);
   await expect(row).toContainText('£48.00');
   await page.goto('/account/membership');
-  await expect(page.getByText('Active').first()).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Your dogs’ regular days' })).toContainText('Monday');
   await axe(page);
 });
 

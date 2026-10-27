@@ -19,6 +19,36 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
     });
   }
 
+  // 404 and access-denied for each audience (the big decorative "404" must pass contrast too).
+  test('404, signed out (access-denied is in the public list above)', async ({ page }) => {
+    await page.goto('/no-such-page');
+    await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
+    await scan(page);
+  });
+
+  test('404 and access-denied, customer', async ({ page }) => {
+    await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+    await expect(page).toHaveURL(/\/account$/);
+    for (const path of ['/no-such-page', '/account/no-such-page']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
+      await scan(page);
+    }
+    await page.goto('/admin');
+    await expect(page).toHaveURL(/\/access-denied/);
+    await scan(page);
+  });
+
+  test('404, owner', async ({ page }) => {
+    await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
+    await expect(page).toHaveURL(/\/admin$/);
+    for (const path of ['/no-such-page', '/admin/no-such-page']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
+      await scan(page);
+    }
+  });
+
   test('register with validation errors shown', async ({ page }) => {
     await page.goto('/register');
     await page.getByRole('button', { name: 'Create account' }).click();
@@ -46,6 +76,8 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
       '/account/terms',
       '/account/dogs/new',
       '/account/invoices',
+      '/account/membership',
+      '/account/faq',
       '/account/book',
       '/account/bookings',
       '/account/requests',
@@ -61,6 +93,9 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
     for (const path of [
       '/admin/reviews',
       '/admin/customers',
+      '/admin/customers/new',
+      '/admin/memberships',
+      '/admin/approvals',
       '/admin/settings/requirements',
       '/admin/settings/terms',
       '/admin/invoices',
@@ -73,6 +108,11 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
       await page.goto(path);
       await scan(page);
     }
+  });
+
+  test('finish-signup with a bad link', async ({ page }) => {
+    await page.goto('/finish-signup?token=not-a-real-token-value');
+    await scan(page);
   });
 
   test('skip link moves focus to main content', async ({ page }) => {
