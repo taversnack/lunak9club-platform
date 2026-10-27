@@ -193,7 +193,8 @@ describe('pay at booking (D6)', () => {
     const [a] = await attemptsFor(pia.userId);
     // Quinn takes the place once Pia's hold has lapsed (simulated by a confirmed row).
     await db().execute(
-      sql`update booking_dogs set offer_expires_at = now() - interval '1 minute' where booking_id = ${a!.bookingId}`,
+      // The app's clock, not Postgres now(): they differ when TEST_NOW pins the date.
+      sql`update booking_dogs set offer_expires_at = ${new Date(Date.now() - 60_000)} where booking_id = ${a!.bookingId}`,
     );
     await requestAndApprove(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'full', taxi: false }, owner);
     await payLatest(quinn.userId);
@@ -458,8 +459,10 @@ describe('automatic refunds (D20, D58)', () => {
       (await db().select().from(auditEvents).where(eq(auditEvents.entityId, r!.id))).map((e) => e.action).sort();
     const before = await audits();
 
-    // Interrupted long enough ago for the safety net; three ticks arrive at once.
-    await db().execute(sql`update card_refunds set updated_at = now() - interval '11 minutes' where id = ${r!.id}`);
+    // Interrupted long enough ago for the safety net (by the app's clock); three ticks arrive at once.
+    await db().execute(
+      sql`update card_refunds set updated_at = ${new Date(Date.now() - 11 * 60_000)} where id = ${r!.id}`,
+    );
     stripe.delayMs = 200;
     const calls = stripe.refundCalls;
     await Promise.all([submitPendingRefunds(db()), submitPendingRefunds(db()), submitPendingRefunds(db())]);
