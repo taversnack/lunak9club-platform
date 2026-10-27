@@ -110,6 +110,10 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Booking requests and approvals (D76–D85) built on `dev2/booking-approval` with migration 0016 (draft PR). Developer 1 regenerates their next migration as 0017.
 - Dog register fields (D68–D72) built on `dev2/dog-register-fields` (draft PR). **Developer 1’s migration must be regenerated as 0015 after 0014 lands** (see `drizzle/NOTES.md`); Developer 1 uses decision IDs from D73.
 
+- **Membership workflow (Developer 1, branch dev1/membership-workflow, 13 Oct 2026, local only):** Owner-created accounts with 7-day invites (D86), per-dog offers and `membership.days` approvals (D87), monthly confirmation and job (D88), Owner day changes (D89), `membership.move_once` (D90), portal-only decision notes (D91). Migration 0017. Built on Developer 2's approval requests (merged from dev2/booking-approval 58c6d2d; its migration 0016 isn't committed yet).
+  - 13 Oct 2026 update: merged Developer 2's real 0016_booking_approvals and regenerated 0017 on top. Earlier gaps in the approvals interface are closed: customers withdraw any request (including membership.days and membership.move_once) from Your requests (`/account/requests`), and a failed approval attempt (e.g. a day now full) shows its reason to the Owner (`last_error`). The stopgap withdraw action was removed.
+  - The `offered` booking status no longer exists (Developer 2, D84); membership clash checks now count `requested` days instead.
+
 ## Decisions
 - See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed), D71 (web-form consent as written consent).
 

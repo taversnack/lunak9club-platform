@@ -186,6 +186,14 @@ main:has(> [data-app-shell]),
 main:has([data-app-shell]) {
   padding-top: 0;
 }
+/* Let the shell fill the space between header and footer, so the admin sidebar can use all of it. */
+main:has(> [data-app-shell]) {
+  display: flex;
+  flex-direction: column;
+}
+main:has([data-sidebar]) {
+  padding-bottom: 0;
+}
 @media (max-width: 899px) {
   /* WCAG 2.4.11: keep focused controls clear of the fixed tab bar when the browser scrolls them into view. */
   html:has([data-tabbar]) {
