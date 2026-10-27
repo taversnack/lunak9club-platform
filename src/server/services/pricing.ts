@@ -51,6 +51,7 @@ export async function loadPricingContext(
         startsOn: memberships.startsOn,
         endsOn: memberships.endsOn,
         weekdays: memberships.weekdays,
+        status: memberships.status,
       })
       .from(memberships)
       .where(
@@ -65,7 +66,10 @@ export async function loadPricingContext(
   const map = new Map<string, { from: IsoDate; to: IsoDate | null; daysPerWeek: number }[]>();
   for (const m of ms) {
     const list = map.get(m.dogId) ?? [];
-    list.push({ from: m.startsOn, to: m.endsOn, daysPerWeek: m.weekdays.length });
+    const entry = { from: m.startsOn, to: m.endsOn, daysPerWeek: m.weekdays.length };
+    // A membership replaced before it began is kept as 'ended' on its start day; the active one wins that day.
+    if (m.status === 'active') list.unshift(entry);
+    else list.push(entry);
     map.set(m.dogId, list);
   }
   return { books, rates, memberships: map };
