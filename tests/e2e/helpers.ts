@@ -54,6 +54,7 @@ export async function latestLink(to: string, template: string): Promise<string> 
 export async function signIn(page: Page, email: string, password: string) {
   await page.goto('/sign-in');
   await page.getByLabel('Email address').fill(email);
+  await page.getByRole('button', { name: 'Sign in with a password instead' }).click();
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 }
