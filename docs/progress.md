@@ -114,6 +114,8 @@ Not yet run on the Owner's Mac — see README "First-time setup".
   - 13 Oct 2026 update: merged Developer 2's real 0016_booking_approvals and regenerated 0017 on top. Earlier gaps in the approvals interface are closed: customers withdraw any request (including membership.days and membership.move_once) from Your requests (`/account/requests`), and a failed approval attempt (e.g. a day now full) shows its reason to the Owner (`last_error`). The stopgap withdraw action was removed.
   - The `offered` booking status no longer exists (Developer 2, D84); membership clash checks now count `requested` days instead.
 
+- **Month-end in one tap (Developer 1, branch dev1/month-end-approve, 27 Oct 2026, local only):** “Approve all unchanged drafts” on Invoices, through the existing approval (D54 total check per draft); drafts that changed or need attention are listed separately and left out (D95, Proposed). Also: setting a dog's days twice with the same start date now changes that membership in place (no “ended” row that never ran), and an invoice's “email sent at” uses the app clock. No migration. D77 one Owner inbox approved (Dev1: membership and record-review side; shown on Dev4's Today screen); D59 auto-pay stays parked (see `drizzle/NOTES.md`).
+
 ## Decisions
 - See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed), D71 (web-form consent as written consent).
 
