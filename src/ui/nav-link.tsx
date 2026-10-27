@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import s from '@/ui/ui.module.css';
 
 /** Shown inside a link while its page loads: a bar along the top, and "Loading" for screen readers. */
-function Pending() {
+export function LinkPending() {
   const { pending } = useLinkStatus();
   if (!pending) return null;
   return (
@@ -26,7 +26,7 @@ export function NavLink({ href, children }: { href: Route; children: ReactNode }
   return (
     <Link href={href}>
       {children}
-      <Pending />
+      <LinkPending />
     </Link>
   );
 }

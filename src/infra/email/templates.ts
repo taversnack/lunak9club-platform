@@ -1,4 +1,5 @@
 import type { EmailMessage } from './types';
+import type { FaqItem } from '../../domain/membership/faq';
 
 import { APPROVED_PAY_TO_SECURE, REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 
@@ -168,16 +169,35 @@ export function bookingRequestedMessage(to: string, firstName: string, ls: Booki
 // Invoices (D24, D25). Invoice number, amount and due date only; details stay in the portal.
 export type InvoiceSummary = { number: string; amountText: string; dueText: string; periodText: string };
 
-export function invoiceIssuedMessage(to: string, firstName: string, inv: InvoiceSummary, url: string): EmailMessage {
+/** Membership invoices also ask the customer to confirm the month's days (D88) and carry the FAQ (D91). */
+export type InvoiceMembershipExtras = {
+  confirm?: { monthText: string; byText: string; url: string };
+  faqs?: FaqItem[];
+};
+
+export function invoiceIssuedMessage(
+  to: string,
+  firstName: string,
+  inv: InvoiceSummary,
+  url: string,
+  extras: InvoiceMembershipExtras = {},
+): EmailMessage {
   const title = `Invoice ${inv.number}`;
+  const c = extras.confirm;
+  const confirmText = c
+    ? `\n\nPlease confirm your days for ${c.monthText} by ${c.byText}. If we don’t hear from you, your days stay as they are and the invoice is still due.\nConfirm your days: ${c.url}`
+    : '';
+  const confirmHtml = c
+    ? `<p>Please confirm your days for ${escapeHtml(c.monthText)} by ${escapeHtml(c.byText)}. If we don’t hear from you, your days stay as they are and the invoice is still due.</p>${button(c.url, 'Confirm your days')}`
+    : '';
   return {
     to,
     template: 'invoice.issued',
     subject: `${BRAND}: invoice ${inv.number} for ${inv.periodText}`,
-    text: `Hi ${firstName},\n\nYour invoice ${inv.number} for ${inv.periodText} is ready. Amount: ${inv.amountText}. Please pay by ${inv.dueText}.\n\nSee the invoice here:\n${url}`,
+    text: `Hi ${firstName},\n\nYour invoice ${inv.number} for ${inv.periodText} is ready. Amount: ${inv.amountText}. Please pay by ${inv.dueText}.\n\nSee the invoice here:\n${url}${confirmText}${extras.faqs ? faqText(extras.faqs) : ''}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>Your invoice for ${escapeHtml(inv.periodText)} is ready.</p><p><strong>Amount:</strong> ${escapeHtml(inv.amountText)}<br><strong>Please pay by:</strong> ${escapeHtml(inv.dueText)}</p>${button(url, 'See your invoice')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Your invoice for ${escapeHtml(inv.periodText)} is ready.</p><p><strong>Amount:</strong> ${escapeHtml(inv.amountText)}<br><strong>Please pay by:</strong> ${escapeHtml(inv.dueText)}</p>${button(url, 'See your invoice')}${confirmHtml}${extras.faqs ? faqHtml(extras.faqs) : ''}`,
       '',
     ),
   };
@@ -228,6 +248,50 @@ export function ownerBillingMessage(to: string, subject: string, body: string, u
     subject: `${BRAND}: ${subject}`,
     text: `${body}\n\n${url}`,
     html: layout(subject, `<p>${escapeHtml(body)}</p>${button(url, 'Open invoices')}`, ''),
+  };
+}
+
+type ConfirmationLine = { name: string; dogs: string[]; byOwner?: boolean };
+
+/**
+ * Owner's monthly confirmation summary (D88, D92, D94): who has confirmed (on time or late) and who
+ * hasn't, by customer and dog. Customer and dog names only – nothing else about them (D33).
+ */
+export function ownerConfirmationSummaryMessage(
+  to: string,
+  s: {
+    monthText: string;
+    byText: string;
+    unconfirmed: ConfirmationLine[];
+    late: ConfirmationLine[];
+    confirmed: ConfirmationLine[];
+  },
+  url: string,
+): EmailMessage {
+  const line = (l: ConfirmationLine) => `${l.name}: ${l.dogs.join(', ')}${l.byOwner ? ' (confirmed by you)' : ''}`;
+  const sections = [
+    { title: `Not confirmed (${s.unconfirmed.length}) – their days are kept as booked`, rows: s.unconfirmed },
+    { title: `Confirmed late, after ${s.byText} (${s.late.length})`, rows: s.late },
+    { title: `Confirmed (${s.confirmed.length})`, rows: s.confirmed },
+  ].filter((x) => x.rows.length);
+  const title = `Membership confirmations for ${s.monthText}`;
+  const intro = `Members were asked to confirm their days for ${s.monthText} by ${s.byText}. Members who joined during ${s.monthText} aren’t included: their joining invoice covers it.`;
+  const subjectTail = s.unconfirmed.length ? ` – ${s.unconfirmed.length} not confirmed` : ' – all confirmed';
+  return {
+    to,
+    template: 'owner.membership-confirmations',
+    subject: `${BRAND}: membership confirmations for ${s.monthText}${subjectTail}`,
+    text: `${intro}\n\n${sections.map((x) => `${x.title}:\n${x.rows.map((r) => `- ${line(r)}`).join('\n')}`).join('\n\n')}\n\nYou can confirm for a member from their customer page:\n${url}`,
+    html: layout(
+      title,
+      `<p>${escapeHtml(intro)}</p>${sections
+        .map(
+          (x) =>
+            `<h2>${escapeHtml(x.title)}</h2><ul>${x.rows.map((r) => `<li>${escapeHtml(line(r))}</li>`).join('')}</ul>`,
+        )
+        .join('')}<p>You can confirm for a member from their customer page.</p>${button(url, 'Open the dashboard')}`,
+      '',
+    ),
   };
 }
 
@@ -486,6 +550,73 @@ export function approvalDecisionMessage(
     html: layout(
       title,
       `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(copy.body)}</p><p>${escapeHtml(p.summary)}</p>${button(url, 'See the details')}`,
+      '',
+    ),
+  };
+}
+
+// ---- Membership workflow (D86–D91). Names, dog names, weekdays and dates only (D33). ----------
+
+function faqText(faqs: FaqItem[]): string {
+  return `\n\nQuick answers\n${faqs.map((f) => `\n${f.question}\n${f.answer}`).join('\n')}`;
+}
+
+function faqHtml(faqs: FaqItem[]): string {
+  return `<h2 style="font-size:16px;margin:24px 0 8px">Quick answers</h2>${faqs
+    .map((f) => `<p><strong>${escapeHtml(f.question)}</strong><br>${escapeHtml(f.answer)}</p>`)
+    .join('')}`;
+}
+
+/** The days the Owner set at account creation, already described (e.g. "Bella: Mon, Wed – full day, from 2 Nov 2026"). */
+export type InviteDays = string[];
+
+/** "Finish signing up" invite with the fixed cover note (D87). No free text from the Owner. */
+export function customerInviteMessage(
+  to: string,
+  firstName: string,
+  ownerFirstName: string,
+  days: InviteDays | null,
+  url: string,
+  faqs: FaqItem[],
+): EmailMessage {
+  const title = 'Finish setting up your account';
+  const cover = days?.length
+    ? `We’ve set up your membership with these days:\n${days.map((d) => `- ${d}`).join('\n')}\n\nPlease check and confirm them when you finish setting up. You can change them – any change comes to us to approve.`
+    : 'Please choose your regular days while you finish setting up. Any days you choose come to us to approve, and we’ll confirm once we’ve checked there’s space.';
+  const coverHtml = days?.length
+    ? `<p>We’ve set up your membership with these days:</p><ul>${days.map((d) => `<li>${escapeHtml(d)}</li>`).join('')}</ul><p>Please check and confirm them when you finish setting up. You can change them – any change comes to us to approve.</p>`
+    : `<p>Please choose your regular days while you finish setting up. Any days you choose come to us to approve, and we’ll confirm once we’ve checked there’s space.</p>`;
+  return {
+    to,
+    template: 'customer.invite',
+    subject: `${BRAND}: finish setting up your account`,
+    text: `Hi ${firstName},\n\n${ownerFirstName} at ${BRAND} has created an account for you.\n\n${cover}\n\nFinish setting up (choose a password): ${url}\n\nThis link works once and expires in 7 days.${faqText(faqs)}\n\nThanks,\n${ownerFirstName}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(ownerFirstName)} at ${BRAND} has created an account for you.</p>${coverHtml}${button(url, 'Finish setting up')}<p style="font-size:13px;color:#4f5660">This link works once and expires in 7 days.</p>${faqHtml(faqs)}<p>Thanks,<br>${escapeHtml(ownerFirstName)}</p>`,
+      "If you weren't expecting this, you can ignore this email.",
+    ),
+  };
+}
+
+/** The Owner changed a dog's regular days (D89). */
+export function membershipDaysChangedMessage(
+  to: string,
+  firstName: string,
+  dogName: string,
+  daysText: string,
+  fromText: string,
+  url: string,
+): EmailMessage {
+  const title = `${dogName}’s days have changed`;
+  return {
+    to,
+    template: 'membership.days-changed',
+    subject: `${BRAND}: ${dogName}’s regular days have changed`,
+    text: `Hi ${firstName},\n\nWe’ve changed ${dogName}’s regular days to ${daysText}, from ${fromText}. Your bookings have been updated:\n${url}`,
+    html: layout(
+      title,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve changed ${escapeHtml(dogName)}’s regular days to ${escapeHtml(daysText)}, from ${escapeHtml(fromText)}. Your bookings have been updated.</p>${button(url, 'See your bookings')}`,
       '',
     ),
   };

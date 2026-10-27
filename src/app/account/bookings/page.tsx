@@ -15,7 +15,7 @@ import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
 import { formatDateTimeLondon } from '@/ui/format';
 import { withdrawRequestAction } from '../actions';
-import { myApprovalRequests } from '@/server/services/approvals';
+import { myApprovalRequests, myPendingApprovals } from '@/server/services/approvals';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 
 /** A receipt id from the query string; anything else gets no link. */
@@ -42,11 +42,12 @@ export default async function BookingsPage({
 }) {
   const actor = await requirePermission('account.access');
   const sp = await searchParams;
-  const [{ upcoming, past }, checkouts, requests, decided, unlinked] = await Promise.all([
+  const [{ upcoming, past }, checkouts, requests, decided, moves, unlinked] = await Promise.all([
     myBookings(getDb(), actor),
     myOpenCheckouts(getDb(), actor),
     myApprovalRequests(getDb(), actor, { type: 'booking.request', status: 'pending' }),
     myApprovalRequests(getDb(), actor, { type: 'booking.request', status: 'all' }),
+    myPendingApprovals(getDb(), actor, { type: 'membership.move_once' }),
     myHoldsWithoutPayLink(getDb(), actor),
   ]);
   // A pay link for something already paid: show what was paid, when, and the receipt's reference.
@@ -63,6 +64,7 @@ export default async function BookingsPage({
     .at(-1);
   // The Owner's note on a decided request is shown here only – never emailed (D80).
   const notes = decided.filter((r) => r.status !== 'pending' && r.reason).slice(0, 5);
+  const moving = new Set(moves.map((m) => m.subjectKey.replace(/^booking_dog:/, '')));
   return (
     <Stack>
       <div className={s.row}>
@@ -209,6 +211,18 @@ export default async function BookingsPage({
           <p>{r.reason}</p>
         </Alert>
       ))}
+      {sp.moveRequested ? (
+        <Alert tone="success" title="Move requested">
+          Thanks – we’ll check there’s space and confirm. Your day stays booked until then.
+        </Alert>
+      ) : null}
+      {moves.map((m) => (
+        <Alert key={m.id} tone="info" title="Move waiting for approval">
+          <p>{m.summary}</p>
+          <Link href={`/account/requests/${m.id}/withdraw`}>Withdraw move</Link> ·{' '}
+          <Link href="/account/requests">Your requests</Link>
+        </Alert>
+      ))}
       <Card aria-labelledby="upcoming">
         <h2 id="upcoming">Coming up</h2>
         {upcoming.length === 0 ? (
@@ -243,8 +257,22 @@ export default async function BookingsPage({
                       <StatusBadge tone={STATUS[b.status]!.tone}>{STATUS[b.status]!.text}</StatusBadge>
                     </td>
                     <td>
+                      {b.kind === 'membership' && b.status === 'confirmed' && !b.late && !moving.has(b.id) ? (
+                        <>
+                          <Link
+                            href={`/account/bookings/${b.id}/move`}
+                            style={{ display: 'inline-block', minHeight: 24, minWidth: 24, marginInlineEnd: 12 }}
+                          >
+                            Move{' '}
+                            <span className="visually-hidden">{`${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
+                          </Link>{' '}
+                        </>
+                      ) : null}
                       {b.cancellable ? (
-                        <Link href={`/account/bookings/${b.id}/cancel`}>
+                        <Link
+                          href={`/account/bookings/${b.id}/cancel`}
+                          style={{ display: 'inline-block', minHeight: 24, minWidth: 24 }}
+                        >
                           Cancel{' '}
                           <span className="visually-hidden">{`${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
                         </Link>

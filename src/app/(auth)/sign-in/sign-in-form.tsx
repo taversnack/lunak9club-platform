@@ -4,9 +4,16 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authClient } from '@/infra/auth/client';
 import { DEFAULT_AFTER_SIGN_IN, safeCallbackPath } from '@/domain/auth/callback-url';
-import { Alert, Button, Field, Stack } from '@/ui/components';
+import { Alert, Field, Stack } from '@/ui/components';
+import { PendingButton } from '@/ui/form';
 
-export function SignInForm({ notice, callbackUrl }: { notice?: 'reset' | 'verified'; callbackUrl?: string }) {
+export function SignInForm({
+  notice,
+  callbackUrl,
+}: {
+  notice?: 'reset' | 'verified' | 'welcome';
+  callbackUrl?: string;
+}) {
   const router = useRouter();
   const next = safeCallbackPath(callbackUrl);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +58,11 @@ export function SignInForm({ notice, callbackUrl }: { notice?: 'reset' | 'verifi
             You can now sign in with your new password.
           </Alert>
         ) : null}
+        {notice === 'welcome' ? (
+          <Alert tone="success" title="Your account is ready">
+            Sign in with your email address and new password to finish setting up.
+          </Alert>
+        ) : null}
         {notice === 'verified' ? (
           <Alert tone="success" title="Email confirmed">
             Please sign in to continue.
@@ -64,9 +76,9 @@ export function SignInForm({ notice, callbackUrl }: { notice?: 'reset' | 'verifi
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <Field label="Email address" name="email" type="email" autoComplete="email" required />
         <Field label="Password" name="password" type="password" autoComplete="current-password" required />
-        <Button type="submit" full disabled={pending} aria-disabled={pending}>
-          {pending ? 'Signing in…' : 'Sign in'}
-        </Button>
+        <PendingButton full pending={pending} pendingText="Signing in…">
+          Sign in
+        </PendingButton>
         <p>
           <Link href="/forgot-password">Forgotten your password?</Link>
         </p>
