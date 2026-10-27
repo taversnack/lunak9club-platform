@@ -54,6 +54,22 @@ export function signInPathFor(path: string): string {
   return safe ? `/sign-in?callbackUrl=${encodeURIComponent(safe)}` : '/sign-in';
 }
 
+/**
+ * Request header carrying the page the visitor asked for (path + query), set by `src/proxy.ts` on
+ * every request except Next's build assets, so server-side guards can send signed-out visitors back
+ * there after sign-in. The proxy always overwrites it (a client value never reaches a guard), and
+ * readers still pass it through `safeCallbackPath`.
+ */
+export const RETURN_TO_HEADER = 'x-lunak9-return-to';
+
+/** Path + query for the way back, without Next's internal `_rsc` cache-busting parameter. */
+export function returnToFrom(pathname: string, search: string): string {
+  const params = new URLSearchParams(search);
+  params.delete('_rsc');
+  const q = params.toString();
+  return q ? `${pathname}?${q}` : pathname;
+}
+
 /** `decodeURIComponent` that returns null instead of throwing on a malformed escape. */
 export function decodeOrNull(value: string): string | null {
   try {

@@ -92,6 +92,11 @@ test.describe('menu drawer at 390px', () => {
     await expect(page).toHaveURL(/\/account\/profile/);
     await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).not.toBe('hidden');
+    // A page with a loading skeleton: focus waits for the real h1, not the skeleton or <main>.
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Invoices' }).click();
+    await expect(page).toHaveURL(/\/account\/invoices$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Your invoices' })).toBeFocused();
   });
 });
 
@@ -118,5 +123,24 @@ test.describe('admin sidebar at 1280x800', () => {
     expect(m.sideHeight).toBeLessThanOrEqual(Math.ceil(m.mainHeight));
     expect(m.sideHeight).toBeLessThanOrEqual(m.innerHeight);
     expect(m.scrollHeight, JSON.stringify(m)).toBeLessThanOrEqual(m.innerHeight);
+    // The nav fills the space between header and footer and scrolls inside it, so every item is reachable.
+    const n = await page.evaluate(() => {
+      const side = document.querySelector<HTMLElement>('[data-sidebar]')!;
+      const header = document.querySelector('[data-app-shell] header')!.getBoundingClientRect();
+      const footer = document.querySelector('body > footer')!.getBoundingClientRect();
+      side.scrollTop = side.scrollHeight;
+      const last = [...side.querySelectorAll('a')].at(-1)!.getBoundingClientRect();
+      const box = side.getBoundingClientRect();
+      return {
+        gap: footer.top - header.bottom - box.height,
+        overflowY: getComputedStyle(side).overflowY,
+        lastVisible: last.bottom <= box.bottom + 1 && last.top >= box.top,
+        pageScrollY: window.scrollY,
+      };
+    });
+    expect(n.gap, JSON.stringify(n)).toBeLessThanOrEqual(2);
+    expect(n.overflowY).toBe('auto');
+    expect(n.lastVisible, JSON.stringify(n)).toBe(true);
+    expect(n.pageScrollY).toBe(0);
   });
 });

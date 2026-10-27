@@ -7,7 +7,13 @@ import { DEFAULT_AFTER_SIGN_IN, safeCallbackPath } from '@/domain/auth/callback-
 import { Alert, Field, Stack } from '@/ui/components';
 import { PendingButton } from '@/ui/form';
 
-export function SignInForm({ notice, callbackUrl }: { notice?: 'reset' | 'verified'; callbackUrl?: string }) {
+export function SignInForm({
+  notice,
+  callbackUrl,
+}: {
+  notice?: 'reset' | 'verified' | 'welcome';
+  callbackUrl?: string;
+}) {
   const router = useRouter();
   const next = safeCallbackPath(callbackUrl);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +56,11 @@ export function SignInForm({ notice, callbackUrl }: { notice?: 'reset' | 'verifi
         {notice === 'reset' ? (
           <Alert tone="success" title="Password updated">
             You can now sign in with your new password.
+          </Alert>
+        ) : null}
+        {notice === 'welcome' ? (
+          <Alert tone="success" title="Your account is ready">
+            Sign in with your email address and new password to finish setting up.
           </Alert>
         ) : null}
         {notice === 'verified' ? (

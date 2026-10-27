@@ -16,7 +16,14 @@ import { startInvoiceCheckout } from '@/server/services/payments';
 import { acknowledgeIncident } from '@/server/services/welfare';
 import { requestErasure, withdrawErasureRequest } from '@/server/services/privacy';
 import type { Route } from 'next';
-import { leaveMembership, requestMembership, withdrawMembershipRequest } from '@/server/services/memberships';
+import { leaveMembership, withdrawMembershipRequest } from '@/server/services/memberships';
+import {
+  confirmMyMonth,
+  confirmMyOffer,
+  requestMyMembershipDays,
+  requestMyMoveOnce,
+} from '@/server/services/membership-workflow';
+import { formatUkDate } from '@/domain/time';
 
 export async function payInvoiceAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
@@ -187,23 +194,65 @@ export async function withdrawRequestAction(_: ActionState, fd: FormData): Promi
 
 // ---- Memberships (Phase 4) -----------------------------------------------------
 
-export async function requestMembershipAction(_: ActionState, fd: FormData): Promise<ActionState> {
+/** Choose or change a dog's regular days; goes to the Owner for approval (D87, D89). */
+export async function requestMembershipDaysAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
     const actor = await requirePermission('account.access');
-    const changeOf = String(fd.get('changeOf') ?? '') || undefined;
-    const r = await requestMembership(
-      getDb(),
-      actor,
-      { ...obj(fd), weekdays: fd.getAll('weekdays').map(String) },
-      { changeOf },
-    );
+    const r = await requestMyMembershipDays(getDb(), actor, {
+      ...obj(fd),
+      weekdays: fd.getAll('weekdays').map(String),
+    });
     revalidatePath('/account/membership');
     return {
       status: 'success',
-      message: changeOf
-        ? `Thanks – we’ll confirm your new days, starting ${r.startsOn}.`
-        : 'Thanks – we’ll review your membership request and email you.',
+      message: `Thanks – we’ll check there’s space and confirm. The days would start on ${formatUkDate(r.startsOn)}.`,
     };
+  });
+}
+
+/** Confirm the Owner's days unchanged for a dog (D87). */
+export async function confirmOfferAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    await confirmMyOffer(getDb(), actor, obj(fd));
+    revalidatePath('/account/membership');
+    return { status: 'success', message: 'Thanks – your days are confirmed and booked ahead.' };
+  });
+}
+
+/** Confirm a month's membership days (D88). */
+export async function confirmMonthAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    await confirmMyMonth(getDb(), actor, obj(fd));
+    revalidatePath('/account/membership');
+    return { status: 'success', message: 'Thanks – your days are confirmed.' };
+  });
+}
+
+/** Move one membership day, this occasion only; goes to the Owner for approval (D90). */
+export async function requestMoveOnceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    await requestMyMoveOnce(getDb(), actor, obj(fd));
+    revalidatePath('/account/bookings');
+    return {
+      status: 'success',
+      message: 'Thanks – we’ll check and confirm the move. Your day stays booked until then.',
+    };
+  });
+}
+
+/** "This occasion only" → a move request; "all future months" → the Membership page to change days (D90). */
+export async function moveMembershipDayAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('account.access');
+    if (fd.get('scope') === 'future') redirect('/account/membership#yours');
+    if (fd.get('scope') !== 'once')
+      return { status: 'error', message: 'Please choose an option.', fields: { scope: 'Choose an option' } };
+    await requestMyMoveOnce(getDb(), actor, obj(fd));
+    revalidatePath('/account/bookings');
+    redirect('/account/bookings?moveRequested=1');
   });
 }
 
@@ -226,7 +275,7 @@ export async function leaveMembershipAction(_: ActionState, fd: FormData): Promi
     revalidatePath('/account/membership');
     return {
       status: 'success',
-      message: `Your membership ends after ${endsOn}. Later booked days have been cancelled free of charge.`,
+      message: `Your membership ends after ${formatUkDate(endsOn)}. Later booked days have been cancelled free of charge.`,
     };
   });
 }
