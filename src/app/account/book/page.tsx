@@ -42,6 +42,10 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
   return (
     <Stack>
       <h1>Book day care</h1>
+      <p className={s.hint}>
+        Members: extra days are booked here and charged at your membership day rate.{' '}
+        <Link href="/account/faq#faq-extra">How extra days work</Link>
+      </p>
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <Alert tone="info" title="How booking works">
         <p data-testid="book-request-not-secured">{REQUEST_NOT_SECURED}</p>

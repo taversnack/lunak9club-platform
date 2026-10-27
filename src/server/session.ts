@@ -1,4 +1,5 @@
 import 'server-only';
+import type { Route } from 'next';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getAuth } from '@/infra/auth/auth';
@@ -7,6 +8,7 @@ import { getUserRoles } from './roles';
 import { authorize, type Actor, type OwnedResource } from './policy/authorize';
 import type { Permission } from './policy/permissions';
 import { recordAudit } from './audit';
+import { RETURN_TO_HEADER, signInPathFor } from '@/domain/auth/callback-url';
 
 export type UserActor = Extract<Actor, { kind: 'user' }> & { name: string };
 
@@ -25,14 +27,23 @@ export async function getActor(): Promise<UserActor | { kind: 'anonymous' }> {
 }
 
 /**
- * Page/layout guard: redirects anonymous users to sign-in and renders the
- * access-denied route for signed-in users without the permission. Denials are audited.
+ * The sign-in page URL that brings this visitor back to the page they asked for (path + query, from
+ * the header `src/proxy.ts` sets). Falls back to a bare `/sign-in` if the header is missing or unsafe.
+ */
+export async function signInRedirectPath(): Promise<Route> {
+  return signInPathFor((await headers()).get(RETURN_TO_HEADER) ?? '') as Route;
+}
+
+/**
+ * Page/layout guard: redirects anonymous users to sign-in (coming back to the page they asked for)
+ * and renders the access-denied route for signed-in users without the permission. Denials are audited.
  */
 export async function requirePermission(permission: Permission, resource?: OwnedResource): Promise<UserActor> {
   const actor = await getActor();
   const decision = authorize(actor, permission, resource);
   if (decision.allowed && actor.kind === 'user') return actor;
-  if (actor.kind === 'anonymous' || (!decision.allowed && decision.reason === 'unauthenticated')) redirect('/sign-in');
+  if (actor.kind === 'anonymous' || (!decision.allowed && decision.reason === 'unauthenticated'))
+    redirect(await signInRedirectPath());
   if (!decision.allowed && decision.reason === 'unverified') redirect('/verify-email');
   await recordAudit(getDb(), {
     actor,

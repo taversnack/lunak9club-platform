@@ -36,8 +36,12 @@ export default async function OwnerMembershipsPage({
       ) : null}
       {sp.declined ? <Alert tone="info">Request declined. The customer can see your reason.</Alert> : null}
       <Card aria-labelledby="requests">
-        <h2 id="requests">Requests ({requests.length})</h2>
-        {requests.length === 0 ? <Muted>No requests waiting.</Muted> : null}
+        <h2 id="requests">Older requests ({requests.length})</h2>
+        <p className={s.hint}>
+          Requests made before the new workflow. New day choices, changes and moves are in{' '}
+          <Link href="/admin/approvals">Approvals</Link>; set or change days directly from the customer’s page.
+        </p>
+        {requests.length === 0 ? <Muted>No older requests waiting.</Muted> : null}
         <ul className={s.list}>
           {requests.map(({ m, dogName, customerName, customerId }) => (
             <li key={m.id} className={s.listItem} style={{ display: 'block' }}>

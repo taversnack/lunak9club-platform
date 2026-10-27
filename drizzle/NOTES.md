@@ -36,3 +36,19 @@
 - `documents_purpose_chk` (0013 welfare locks): added along with the lock triggers when `documents.purpose` gained `incident`.
 
 **Ordering note (19 Oct 2026, `dev3/fix-holiday-closures-2029`):** 0022 is the number the PM confirmed for the 2029–2031 bank holidays. 0021 is reserved for Developer 1's migration, which wasn't on main when this was generated, so the journal skips idx 21 for now (like the 0017 gap). This must merge **after** Developer 1's 0021; if it lands first, Developer 1 regenerates on top of it, or 0022 is renumbered. Either way, `when` must stay strictly increasing (`tests/unit/migration-journal.test.ts`). `tests/unit/bank-holidays.test.ts` now also checks every fully seeded year against the standing E&W rules, so a mistyped computed date fails. When gov.uk publishes 2029+ check the dates again; a one-off holiday needs a new migration.
+
+**0016_booking_approvals (generated 13 Oct 2026 after 0015 / PR #4 merged to main):** `pnpm db:generate --name booking_approvals`, with the data step hand-added after the old check is dropped and **before** the new check constraints are recreated:
+
+```sql
+UPDATE "booking_dogs" SET "status" = 'waitlisted', "offer_expires_at" = NULL WHERE "status" = 'offered';
+```
+
+| Migration | Purpose | Data impact | Rollback / recovery | Destructive |
+|---|---|---|---|---|
+| 0016_booking_approvals | `approval_requests` (status check, `last_error`/`last_error_at` for a failed approval attempt, status/created index, one pending request per type + subject); booking_dogs status `requested`/`rejected` added and `offered` removed (checks and live/place partial indexes recreated); offer check limited to `pending_payment`; drop `booking_settings.waitlist_offer_hours` | Converts any `offered` rows to `waitlisted` (D84); drops one settings column | Drop `approval_requests`; restore the previous checks/indexes once no `requested`/`rejected` rows exist (cancel them first); re-add `waitlist_offer_hours integer NOT NULL DEFAULT 12` and set it back to the previous value from the audit log/backup. Converted offers can't be told apart afterwards – take a backup first | Yes (drops a column) |
+
+**0023_membership_workflow (Developer 1, regenerated 19 Oct 2026 after main reached 0022):** first drafted as 0017, then 0021; renumbered because 0016, 0018–0020 and 0022 merged first. Additive only.
+
+| Migration | Purpose | Data impact | Rollback / recovery | Destructive |
+|---|---|---|---|---|
+| 0023_membership_workflow | New tables `customer_invites` (hashed single-use 7-day invite tokens, D86), `membership_offers` (Owner-agreed days per dog at account creation, D86–D87), `membership_month_confirmations` (one row per customer and month, D88, with `late` boolean default false for confirmations after the confirm-by day, D94); `business_settings.confirm_by_day` (default 1, check 1–28) | Additive only: new empty tables and a column with a default | Drop the three tables and the column (loses invites, offers and confirmations recorded since 0017) | No |

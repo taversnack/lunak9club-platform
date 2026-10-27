@@ -3,6 +3,8 @@ import { auditActionLabel, auditEntityLabel } from '@/domain/audit-labels';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
+import { unconfirmedMembers } from '@/server/services/membership-workflow';
+import { formatMonth } from '@/domain/billing/rules';
 import { requirePermission } from '@/server/session';
 import { listRecentAuditEvents } from '@/server/queries/audit';
 import { listRequirements, reviewQueue } from '@/server/services/owner-review';
@@ -24,17 +26,20 @@ export const dynamic = 'force-dynamic';
 export default async function AdminHome() {
   const actor = await requirePermission('admin.access');
   const db = getDb();
-  const [events, queue, today, billing, welfare, expiring, requests, approvals, requirements] = await Promise.all([
-    listRecentAuditEvents(db, actor, 20),
-    reviewQueue(db, actor),
-    ownerDay(db, actor, londonDate(new Date())),
-    billingOverview(db, actor),
-    welfareOverview(db, actor),
-    expiringVaccinations(db, actor),
-    ownerDataRequests(db, actor),
-    pendingApprovalCount(db, actor),
-    listRequirements(db, actor),
-  ]);
+  const thisMonth = londonDate(new Date()).slice(0, 7);
+  const [events, queue, today, billing, welfare, expiring, requests, approvals, requirements, unconfirmed] =
+    await Promise.all([
+      listRecentAuditEvents(db, actor, 20),
+      reviewQueue(db, actor),
+      ownerDay(db, actor, londonDate(new Date())),
+      billingOverview(db, actor),
+      welfareOverview(db, actor),
+      expiringVaccinations(db, actor),
+      ownerDataRequests(db, actor),
+      pendingApprovalCount(db, actor),
+      listRequirements(db, actor),
+      unconfirmedMembers(db, actor, thisMonth),
+    ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
   return (
@@ -117,6 +122,20 @@ export default async function AdminHome() {
           )}
           <p className={s.hint}>{reminderDaysCopy(requirements)}</p>
         </Card>
+        {unconfirmed.length ? (
+          <Card aria-labelledby="unconfirmed">
+            <h2 id="unconfirmed">Membership days not confirmed ({formatMonth(thisMonth)})</h2>
+            <ul className={s.list}>
+              {unconfirmed.map((u) => (
+                <li key={u.customerId}>
+                  <Link href={`/admin/customers/${u.customerId}#membership`}>{u.name}</Link>
+                  {u.dogs.length ? ` (${u.dogs.join(', ')})` : ''}
+                </li>
+              ))}
+            </ul>
+            <p className={s.hint}>Their days are kept. You can confirm for them from their customer page.</p>
+          </Card>
+        ) : null}
         {waitingRequests ? (
           <Card aria-labelledby="requests">
             <h2 id="requests">Data requests</h2>

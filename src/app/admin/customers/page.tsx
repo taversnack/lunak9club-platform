@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
-import { Card, Muted, Stack } from '@/ui/components';
+import { buttonClass, Card, Muted, Stack } from '@/ui/components';
 import { requirePermission } from '@/server/session';
 import { listCustomers } from '@/server/services/owner-review';
 import { getDb } from '@/infra/db/client';
@@ -15,7 +15,12 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const rows = await listCustomers(getDb(), actor, q);
   return (
     <Stack>
-      <h1>Customers</h1>
+      <div className={s.row}>
+        <h1>Customers</h1>
+        <Link href="/admin/customers/new" className={buttonClass('primary')}>
+          New customer
+        </Link>
+      </div>
       <form role="search" className={s.row} style={{ justifyContent: 'flex-start' }}>
         <label htmlFor="q" className={s.label}>
           Search
