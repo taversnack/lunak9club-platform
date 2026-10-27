@@ -13,7 +13,14 @@ const ADMIN = [
   '/admin/approvals',
   '/admin/customers',
 ];
-const ACCOUNT = ['/account', '/account/bookings', '/account/requests', '/account/invoices', '/account/profile'];
+const ACCOUNT = [
+  '/account',
+  '/account/book',
+  '/account/bookings',
+  '/account/requests',
+  '/account/invoices',
+  '/account/profile',
+];
 
 test.describe('@a11y reflow at 320px', () => {
   test.use({ viewport: { width: 320, height: 640 } });
