@@ -191,8 +191,8 @@ export async function approveMembership(db: Db, actor: Actor, rawId: string, inp
       to: row.email,
       template: 'membership.approved',
       subject: `Luna’s K9 Club: ${row.dogName}'s membership is confirmed`,
-      text: `Hi ${row.name.split(' ')[0]},\n\n${row.dogName}'s membership (${describeWeekdays(row.m.weekdays)}, ${SESSION_LABELS[row.m.session as Session]}) starts on ${formatUkDate(row.m.startsOn)}. We've booked the days ahead for you:\n${appUrl('/account/bookings')}`,
-      html: `<p>Hi ${row.name.split(' ')[0]},</p><p>${row.dogName}'s membership starts on ${formatUkDate(row.m.startsOn)}. We've booked the days ahead for you.</p><p><a href="${appUrl('/account/bookings')}">See your bookings</a></p>`,
+      text: `Hi ${row.name.split(' ')[0]},\n\n${row.dogName}’s membership (${describeWeekdays(row.m.weekdays)}, ${SESSION_LABELS[row.m.session as Session]}) starts on ${formatUkDate(row.m.startsOn)}. We’ve booked the days ahead for you:\n${appUrl('/account/bookings')}`,
+      html: `<p>Hi ${row.name.split(' ')[0]},</p><p>${row.dogName}’s membership starts on ${formatUkDate(row.m.startsOn)}. We’ve booked the days ahead for you.</p><p><a href="${appUrl('/account/bookings')}">See your bookings</a></p>`,
     });
   }
   return { ...result, drafts: drafts?.drafts ?? 0 };
