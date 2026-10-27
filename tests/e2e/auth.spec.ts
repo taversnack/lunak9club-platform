@@ -74,7 +74,8 @@ test('a signed-out Owner deep-linking to an admin page lands back on it after si
   await expect(page).toHaveURL(`/sign-in?callbackUrl=${encodeURIComponent(target)}`);
   await signInHere(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(target);
-  await expect(page.getByRole('navigation', { name: 'Owner' })).toBeVisible();
+  // The Owner nav is in the sidebar on desktop and inside the closed Menu drawer at 390px, so check the page.
+  await expect(page.getByRole('heading', { level: 1, name: 'Customers' })).toBeVisible();
   await expect(page.locator('#q')).toHaveValue('casey'); // the query came back too
 });
 
