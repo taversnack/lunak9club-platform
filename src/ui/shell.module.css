@@ -78,7 +78,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  /* WCAG 2.5.8 / house rule: header tap targets at least 44px high at every width. */
+  min-height: var(--target-min);
   padding: 0 var(--space-4);
   border-radius: var(--radius-pill);
   font-weight: var(--weight-bold);

@@ -84,6 +84,8 @@
 }
 
 .card {
+  min-width: 0;
+  overflow-wrap: break-word;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -254,6 +256,7 @@
 
 .badge {
   display: inline-flex;
+  max-width: 100%;
   align-items: center;
   gap: var(--space-1);
   padding: 2px var(--space-2);
@@ -384,11 +387,12 @@
 .two {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: 1fr;
+  /* minmax(0, …): long words (e.g. with text spacing) wrap instead of widening the column. */
+  grid-template-columns: minmax(0, 1fr);
 }
 @media (min-width: 720px) {
   .two {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 .sensitive {
@@ -689,6 +693,8 @@
 /* Booking/date cards */
 .dateCard {
   display: flex;
+  /* WCAG 1.4.10 at 320px (and with 1.4.12 text spacing): the status wraps under the text, never out. */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-4);
@@ -718,8 +724,12 @@
   letter-spacing: 0.06em;
 }
 .dateCardMain {
-  flex: 1;
+  flex: 1 1 8rem;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dateCard > :last-child:not(.dateCardMain) {
+  max-width: 100%;
 }
 .dateCardMain h3 {
   margin: 0;
