@@ -395,7 +395,7 @@ export function vaccinationReminderMessage(
   p: { dogName: string; expired: boolean; dateText: string },
   url: string,
 ): EmailMessage {
-  const title = p.expired ? `${p.dogName}'s records need updating` : `Please update ${p.dogName}'s records`;
+  const title = p.expired ? `${p.dogName}’s records need updating` : `Please update ${p.dogName}’s records`;
   const body = p.expired
     ? `A vaccination record for ${p.dogName} expired on ${p.dateText}, so we can’t accept bookings after that date until a new record is uploaded.`
     : `A vaccination record for ${p.dogName} runs out on ${p.dateText}. Please upload the new record before then so ${p.dogName} can keep coming to day care.`;
@@ -403,7 +403,7 @@ export function vaccinationReminderMessage(
     to,
     template: p.expired ? 'compliance.vaccination-expired' : 'compliance.vaccination-reminder',
     // Never lowercase the dog's name (it can start the title).
-    subject: `${BRAND}: ${p.expired ? title : `please update ${p.dogName}'s records`}`,
+    subject: `${BRAND}: ${p.expired ? title : `please update ${p.dogName}’s records`}`,
     text: `Hi ${firstName},\n\n${body} Sign in to see which record:\n${url}`,
     html: layout(
       title,
@@ -619,5 +619,20 @@ export function membershipDaysChangedMessage(
       `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve changed ${escapeHtml(dogName)}’s regular days to ${escapeHtml(daysText)}, from ${escapeHtml(fromText)}. Your bookings have been updated.</p>${button(url, 'See your bookings')}`,
       '',
     ),
+  };
+}
+
+/** Sent when the Owner confirms a membership. Names are escaped in the HTML part. */
+export function membershipConfirmedMessage(
+  to: string,
+  firstName: string,
+  p: { dogName: string; pattern: string; startsOn: string; url: string },
+): EmailMessage {
+  return {
+    to,
+    template: 'membership.approved',
+    subject: `${BRAND}: ${p.dogName}’s membership is confirmed`,
+    text: `Hi ${firstName},\n\n${p.dogName}’s membership (${p.pattern}) starts on ${p.startsOn}. We’ve booked the days ahead for you:\n${p.url}`,
+    html: `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(p.dogName)}’s membership starts on ${escapeHtml(p.startsOn)}. We’ve booked the days ahead for you.</p><p><a href="${escapeHtml(p.url)}">See your bookings</a></p>`,
   };
 }
