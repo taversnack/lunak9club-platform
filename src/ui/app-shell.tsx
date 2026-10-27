@@ -153,6 +153,22 @@ export function AppShell({
   // Set when a link in the drawer is followed: the drawer then closes without sending focus back to Menu,
   // and the new page's heading gets focus instead.
   const followed = useRef(false);
+  const header = useRef<HTMLElement>(null);
+  // WCAG 2.4.11: keep --header-h equal to the real sticky header height (it differs by width and can
+  // wrap), so scroll-padding-top in globals.css keeps Shift+Tab'd controls clear of it.
+  useEffect(() => {
+    const el = header.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const set = () => root.style.setProperty('--header-h', `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty('--header-h');
+    };
+  }, []);
 
   useEffect(() => {
     if (dialog.current?.open) dialog.current.close();
@@ -181,7 +197,7 @@ export function AppShell({
 
   return (
     <div className={s.shell} data-app-shell="">
-      <header className={s.header}>
+      <header ref={header} className={s.header} data-app-header="">
         <div className={s.headerInner}>
           <Link href="/" className={s.brand}>
             <Image src="/brand/lunak9-logo.png" alt="Luna’s K9 Club home" width={155} height={55} priority />
