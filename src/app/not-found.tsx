@@ -1,8 +1,11 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import p from '@/ui/public.module.css';
 import { buttonClass, Card, Stack } from '@/ui/components';
 import { getActor } from '@/server/session';
+
+export const metadata: Metadata = { title: 'Page not found' };
 
 export default async function NotFound() {
   // Signed-out visitors would just bounce from the dashboard or booking page to sign-in, so offer

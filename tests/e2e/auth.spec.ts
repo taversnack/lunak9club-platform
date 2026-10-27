@@ -41,7 +41,7 @@ test('customers cannot open the owner area', async ({ page }) => {
   await expect(page).toHaveURL(/\/account$/);
   await page.goto('/admin');
   await expect(page).toHaveURL(/\/access-denied$/);
-  await expect(page.getByRole('heading', { name: "You don't have access to this page" })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'You don’t have access to this page' })).toBeVisible();
 });
 
 test('anonymous visitors are sent to sign in, remembering the page they asked for', async ({ page }) => {

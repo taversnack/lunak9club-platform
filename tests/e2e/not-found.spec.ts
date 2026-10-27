@@ -7,6 +7,7 @@ test('a signed-out visitor on the 404 page is offered sign-in and home, not acco
   const r = await page.goto(MISSING);
   expect(r?.status()).toBe(404);
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+  await expect(page).toHaveTitle('Page not found · Luna’s K9 Club');
   const main = page.locator('main');
   await expect(main.getByRole('link', { name: 'Sign in', exact: true })).toHaveAttribute('href', '/sign-in');
   await expect(main.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('href', '/');
