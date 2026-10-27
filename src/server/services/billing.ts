@@ -474,7 +474,7 @@ async function sendInvoice(db: Db, actor: Actor, id: string, now: Date) {
         ),
       ),
     );
-    await db.update(invoices).set({ emailSentAt: new Date() }).where(eq(invoices.id, id));
+    await db.update(invoices).set({ emailSentAt: now }).where(eq(invoices.id, id));
   }
   await recordAudit(db, {
     actor,
