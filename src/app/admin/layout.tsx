@@ -54,7 +54,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       root="/admin"
       navLabel="Owner"
       userName={actor.name}
-      cta={{ href: '/admin/bookings', label: 'Today’s bookings' }}
+      cta={{ href: '/admin/bookings', label: 'Today’s bookings', short: 'Today' }}
       groups={groups}
       sidebar
     >
