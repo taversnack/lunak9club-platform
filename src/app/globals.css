@@ -196,6 +196,11 @@ main:has(> [data-app-shell]) {
 main:has([data-sidebar]) {
   padding-bottom: 0;
 }
+/* WCAG 2.4.11: keep focused controls clear of the sticky AppShell header when tabbing backwards.
+   --header-h is the measured header height (AppShell sets it); 68px is the header's min-height. */
+html:has([data-app-shell]) {
+  scroll-padding-top: calc(var(--header-h, 68px) + var(--space-2));
+}
 @media (max-width: 899px) {
   /* WCAG 2.4.11: keep focused controls clear of the fixed tab bar when the browser scrolls them into view. */
   html:has([data-tabbar]) {

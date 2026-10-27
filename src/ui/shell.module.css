@@ -318,13 +318,13 @@
   .sidebar {
     display: block;
     position: sticky;
-    top: 68px;
+    top: var(--header-h, 68px);
     /* The page content sets the row height (contain:size gives the nav no intrinsic height), and the row
        fills the space between header and footer, so short pages never scroll because of the nav. The nav
        stretches to that row, up to the viewport below the header on long pages, and scrolls inside it. */
     contain: size;
     align-self: stretch;
-    max-height: calc(100dvh - 68px);
+    max-height: calc(100dvh - var(--header-h, 68px));
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
