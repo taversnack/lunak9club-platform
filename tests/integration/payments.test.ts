@@ -192,10 +192,12 @@ describe('pay at booking (D6)', () => {
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const [a] = await attemptsFor(pia.userId);
     // Quinn takes the place once Pia's hold has lapsed (simulated by a confirmed row).
-    await db().execute(
-      // The app's clock, not Postgres now(): they differ when TEST_NOW pins the date.
-      sql`update booking_dogs set offer_expires_at = ${new Date(Date.now() - 60_000)} where booking_id = ${a!.bookingId}`,
-    );
+    // Relative to the app's clock (Date, which TEST_NOW fakes), not Postgres now(): the app compares
+    // against its own clock, so a DB-clock value is "not lapsed yet" when the pin is in the past.
+    await db()
+      .update(bookingDogs)
+      .set({ offerExpiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(bookingDogs.bookingId, a!.bookingId!));
     await requestAndApprove(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'full', taxi: false }, owner);
     await payLatest(quinn.userId);
     // Pia's payment arrives late.
@@ -459,10 +461,12 @@ describe('automatic refunds (D20, D58)', () => {
       (await db().select().from(auditEvents).where(eq(auditEvents.entityId, r!.id))).map((e) => e.action).sort();
     const before = await audits();
 
-    // Interrupted long enough ago for the safety net (by the app's clock); three ticks arrive at once.
-    await db().execute(
-      sql`update card_refunds set updated_at = ${new Date(Date.now() - 11 * 60_000)} where id = ${r!.id}`,
-    );
+    // Interrupted long enough ago for the safety net; three ticks arrive at once.
+    // App clock, not Postgres now() (see the lapsed-hold test above).
+    await db()
+      .update(cardRefunds)
+      .set({ updatedAt: new Date(Date.now() - 11 * 60_000) })
+      .where(eq(cardRefunds.id, r!.id));
     stripe.delayMs = 200;
     const calls = stripe.refundCalls;
     await Promise.all([submitPendingRefunds(db()), submitPendingRefunds(db()), submitPendingRefunds(db())]);
