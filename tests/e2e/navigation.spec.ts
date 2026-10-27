@@ -92,5 +92,10 @@ test.describe('menu drawer at 390px', () => {
     await expect(page).toHaveURL(/\/account\/profile/);
     await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).not.toBe('hidden');
+    // A page with a loading skeleton: focus waits for the real h1, not the skeleton or <main>.
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Invoices' }).click();
+    await expect(page).toHaveURL(/\/account\/invoices$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Your invoices' })).toBeFocused();
   });
 });

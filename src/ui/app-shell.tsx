@@ -76,6 +76,58 @@ function NavList({ groups, path, root, label }: { groups: NavGroup[]; path: stri
  * <dialog> drawer (focus trapped by the browser, Esc closes, focus returns to the Menu button), an optional
  * mobile bottom tab bar, and an optional desktop sidebar (Owner area).
  */
+/**
+ * After a drawer link changes the route, focus the new page's h1 once it has rendered. The pathname
+ * updates before streamed content (or a loading skeleton, marked aria-busy) is replaced, so wait for a
+ * settled `main h1`, then focus it on the next frame. Falls back to #main after 4s (e.g. a page without
+ * an h1). Gives up if the user moves focus themselves meanwhile. Returns a cleanup for the effect.
+ */
+function focusNewPageHeading(): () => void {
+  let done = false;
+  let frame = 0;
+  const main = document.getElementById('main');
+  const startFocus = document.activeElement;
+  const userMoved = () => {
+    const a = document.activeElement;
+    return a !== startFocus && a !== document.body && a !== main && !a?.closest('dialog');
+  };
+  const ready = () => {
+    const h1 = document.querySelector<HTMLElement>('main h1');
+    return h1 && !document.querySelector('main [aria-busy="true"]') ? h1 : null;
+  };
+  const focus = (el: HTMLElement | null) => {
+    if (done) return;
+    done = true;
+    observer.disconnect();
+    clearTimeout(timer);
+    if (!el || userMoved()) return;
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+    el.focus();
+  };
+  const check = () => {
+    const h1 = ready();
+    if (h1) {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => focus(ready() ?? h1));
+    }
+  };
+  const observer = new MutationObserver(check);
+  observer.observe(main ?? document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['aria-busy'],
+  });
+  const timer = setTimeout(() => focus(ready() ?? main), 4000);
+  check();
+  return () => {
+    done = true;
+    observer.disconnect();
+    clearTimeout(timer);
+    cancelAnimationFrame(frame);
+  };
+}
+
 export function AppShell({
   root,
   navLabel,
@@ -106,12 +158,7 @@ export function AppShell({
     if (dialog.current?.open) dialog.current.close();
     if (followed.current) {
       followed.current = false;
-      requestAnimationFrame(() => {
-        const h1 = document.querySelector<HTMLElement>('main h1');
-        const target = h1 ?? document.getElementById('main');
-        if (h1 && !h1.hasAttribute('tabindex')) h1.setAttribute('tabindex', '-1');
-        target?.focus();
-      });
+      return focusNewPageHeading();
     }
   }, [path]);
 
