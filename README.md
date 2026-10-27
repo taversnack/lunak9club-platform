@@ -115,12 +115,21 @@ tests/            unit, integration, authz, e2e
 
 ## Deploying: client addresses and rate limits
 
-The auth rate limits count requests per client address. Behind a proxy or load balancer the app only sees the proxy's address, and a client can put anything it likes in `X-Forwarded-For`, so the app trusts no forwarding header unless told which one is safe. With `APP_ENV=production` and `AUTH_RATE_LIMIT=on` it refuses to start until one of these is set:
+The auth rate limits (sign-in, sign-up, password reset, verification and magic-link requests) count requests per client address. Behind a proxy or load balancer the app only sees the proxy's address, and a client can put anything it likes in `X-Forwarded-For`, so the app trusts no forwarding header unless told which one is safe. With `APP_ENV=production` and `AUTH_RATE_LIMIT=on` it refuses to start until one of these is set:
 
-- `TRUSTED_PROXIES` – comma-separated addresses or CIDR ranges of **your own** proxies, e.g. `10.0.0.0/8` or the load balancer's subnet. Every proxy in the chain must append the address it received the request from to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`; most load balancers do this by default). The app reads the header from the right and takes the first address that isn't one of yours, so anything the client wrote further left is ignored.
-- `CLIENT_IP_HEADER` – the name of a header your edge **always overwrites** with the connecting address, e.g. `cf-connecting-ip` (Cloudflare), `fly-client-ip` (Fly.io) or `x-real-ip` (nginx `proxy_set_header X-Real-IP $remote_addr`). Only use this if clients can't reach the app except through that edge; otherwise they can set the header themselves.
+- `TRUSTED_PROXIES` – comma-separated addresses or CIDR ranges of **your own** proxies, e.g. `10.0.0.0/8` or the load balancer's subnet. Every proxy in the chain must append the address it received the request from to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`; most load balancers do this by default). The app reads the header from the right and takes the first address that isn't one of yours, so anything the client wrote further left is ignored. **The app must only be reachable through those proxies** (firewall the app's port to them): a client that can reach it directly can send its own `X-Forwarded-For` and get a fresh limit with every request.
+- `CLIENT_IP_HEADER` – the name of a header your edge **always overwrites** with the connecting address, e.g. `cf-connecting-ip` (Cloudflare), `fly-client-ip` (Fly.io) or `x-real-ip` (nginx `proxy_set_header X-Real-IP $remote_addr`). On Vercel use `x-real-ip`: Vercel overwrites `X-Forwarded-For` with the client's address and sends `x-real-ip` with the same value ([Vercel request headers](https://vercel.com/docs/headers/request-headers)). Again, the app must only be reachable through that edge; otherwise clients can set the header themselves.
 
-Check after deploying: six wrong-password sign-ins from one machine must give `429 Too Many Requests` even when each request sends a different `X-Forwarded-For`. Locally and in tests neither setting is needed: without them every request counts as `127.0.0.1`.
+How addresses become limits:
+
+- If the configured header is missing, empty, not a valid address or (in `CLIENT_IP_HEADER` mode) holds more than one value, the request can't be tied to a client, so it goes into **one bucket shared by everyone** for that endpoint (better-auth logs a warning). A forged header still never gets a fresh limit, but if your edge sometimes drops the header, real users can lock each other out. Make sure it always sets it.
+- IPv6 clients are limited per **/64** network (better-auth's default), because one household or device usually holds a whole /64. IPv4-mapped IPv6 (`::ffff:203.0.113.7`) counts as the plain IPv4 address.
+- With neither setting, a server running with `NODE_ENV` set to `development` or `test` (`pnpm dev`, the test suites) counts every request as `127.0.0.1`. Any other run, e.g. a production build with `APP_ENV=test`, puts every request in the shared bucket above and logs a warning. Either way there is one limit for everyone, which is fine on your own machine and is why production refuses to start without a setting.
+
+Check after deploying (both steps; the first alone also passes when everyone shares one bucket):
+
+1. From one machine, six wrong-password sign-ins within a minute must end in `429 Too Many Requests`, even when each request sends a different `X-Forwarded-For`.
+2. Straight after that, from a **different network** (e.g. a phone on mobile data, not your Wi-Fi), a wrong-password sign-in must get the normal "invalid email or password" error, not `429`. If it gets `429`, everyone is sharing one bucket: the proxy setting doesn't match what your edge sends.
 
 ## Not yet covered (later phases)
 
