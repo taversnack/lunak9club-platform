@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_OWNER, signIn } from './helpers';
+import { DEMO_CUSTOMER, DEMO_OWNER, signIn, signOut } from './helpers';
 
 test('@a11y customer menu drawer: aria-expanded, Esc closes and returns focus, no axe violations', async ({ page }) => {
   await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
@@ -143,4 +143,35 @@ test.describe('admin sidebar at 1280x800', () => {
     expect(n.lastVisible, JSON.stringify(n)).toBe(true);
     expect(n.pageScrollY).toBe(0);
   });
+});
+
+test('the skip link is fully visible above the sticky header when focused (public, account, admin)', async ({
+  page,
+}) => {
+  const check = async (path: string) => {
+    await page.goto(path);
+    await page.keyboard.press('Tab');
+    const skip = page.getByRole('link', { name: 'Skip to main content' });
+    await expect(skip).toBeFocused();
+    const onTop = await skip.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const pts = [
+        [r.left + 2, r.top + 2],
+        [r.right - 2, r.top + 2],
+        [r.left + 2, r.bottom - 2],
+        [r.right - 2, r.bottom - 2],
+        [r.left + r.width / 2, r.top + r.height / 2],
+      ];
+      return pts.every(([x, y]) => el.contains(document.elementFromPoint(x!, y!)));
+    });
+    expect(onTop, path).toBe(true);
+  };
+  await check('/');
+  await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+  await expect(page).toHaveURL(/\/account$/);
+  await check('/account');
+  await signOut(page);
+  await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
+  await expect(page).toHaveURL(/\/admin$/);
+  await check('/admin');
 });

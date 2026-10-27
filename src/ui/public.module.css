@@ -12,6 +12,9 @@
   max-width: var(--content-max);
   margin: 0 auto;
 }
+.heroText {
+  max-width: 44rem;
+}
 .heroText h1 {
   color: #fff;
   font-size: clamp(2rem, 6vw, 3rem);
@@ -64,7 +67,8 @@
   margin: 0;
   font-size: 4rem;
   font-weight: var(--weight-bold);
-  color: var(--color-brand-sand);
+  /* Navy on white is 13.4:1 (sand was 1.61:1, and aria-hidden text still counts for axe). */
+  color: var(--color-brand-navy);
   line-height: 1;
 }
 .errorActions {
@@ -74,9 +78,6 @@
   gap: var(--space-3);
 }
 @media (min-width: 900px) {
-  .heroInner {
-    grid-template-columns: 1.3fr 1fr;
-  }
   .benefitList {
     grid-template-columns: repeat(3, 1fr);
   }

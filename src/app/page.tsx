@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import p from '@/ui/public.module.css';
-import { buttonClass, Card, Stack } from '@/ui/components';
+import { buttonClass } from '@/ui/components';
+import { getActor } from '@/server/session';
+import { authorize } from '@/server/policy/authorize';
 
 const benefits = [
   { title: 'Book in seconds', text: 'Pick your days, see the price straight away and pay securely by card.' },
@@ -9,7 +11,11 @@ const benefits = [
   { title: 'Peace of mind', text: 'Daily welfare checks and clear incident reports, shared with you.' },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  // One set of calls to action: sign up / sign in for visitors, the dashboard and booking for signed-in users.
+  const actor = await getActor();
+  const signedIn = actor.kind !== 'anonymous';
+  const canBook = signedIn && authorize(actor, 'account.access').allowed;
   return (
     <>
       <section className={p.hero} aria-labelledby="hero-title">
@@ -21,26 +27,29 @@ export default function HomePage() {
               Book day care, keep your dog&apos;s details up to date and pay invoices in one place.
             </p>
             <div className={p.heroActions}>
-              <Link href="/register" className={buttonClass('cta')}>
-                Create an account
-              </Link>
-              <Link href="/sign-in" className={`${buttonClass('secondary')} ${p.onDark}`}>
-                Sign in
-              </Link>
+              {signedIn ? (
+                <>
+                  <Link href="/dashboard" className={buttonClass('cta')}>
+                    Go to your dashboard
+                  </Link>
+                  {canBook ? (
+                    <Link href="/account/book" className={`${buttonClass('secondary')} ${p.onDark}`}>
+                      Book day care
+                    </Link>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <Link href="/register" className={buttonClass('cta')}>
+                    Create an account
+                  </Link>
+                  <Link href="/sign-in" className={`${buttonClass('secondary')} ${p.onDark}`}>
+                    Sign in
+                  </Link>
+                </>
+              )}
             </div>
           </div>
-          <Card as="div">
-            <Stack>
-              <h2>Welcome back</h2>
-              <p className={s.muted}>Sign in to book days, see your bookings and pay invoices.</p>
-              <Link href="/sign-in" className={buttonClass('primary', true)}>
-                Sign in
-              </Link>
-              <Link href="/register" className={buttonClass('secondary', true)}>
-                Create an account
-              </Link>
-            </Stack>
-          </Card>
         </div>
       </section>
       <section className={`${s.container} ${p.benefits}`} aria-labelledby="why">

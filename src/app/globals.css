@@ -151,7 +151,9 @@ a:hover {
   background: var(--color-surface);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-sm);
-  z-index: 10;
+  /* Above the sticky headers (public and AppShell, z-index 30); below the route loading bar (1000). */
+  z-index: 100;
+  box-shadow: var(--shadow-1);
 }
 .skip-link:focus {
   top: var(--space-4);
