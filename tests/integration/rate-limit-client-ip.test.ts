@@ -9,7 +9,8 @@ import { setEmailProvider } from '@/infra/email/providers';
 import { env } from '@/infra/env';
 import { createAuth } from '@/infra/auth/auth';
 import { MemoryEmailProvider } from '../support/memory-email';
-import { authRequest, freshIp } from '../support/auth-http';
+import { randomInt } from 'node:crypto';
+import { authRequest } from '../support/auth-http';
 
 beforeAll(() => setEmailProvider(new MemoryEmailProvider()));
 afterAll(closeDb);
@@ -18,6 +19,8 @@ const signIn = (opts: Parameters<typeof authRequest>[1] = {}) =>
   authRequest('/sign-in/email', { ...opts, body: { email: 'nobody@example.test', password: 'wrong-password-xx' } });
 const magicLink = (opts: Parameters<typeof authRequest>[1] = {}) =>
   authRequest('/sign-in/magic-link', { ...opts, body: { email: `ml-${Math.random()}@example.test` } });
+// freshIp() restarts in every test file, and buckets live in the database, so use our own range.
+const freshIp = () => `100.${64 + randomInt(64)}.${randomInt(256)}.${randomInt(1, 255)}`;
 let spoof = 0;
 const spoofed = () => `203.0.113.${++spoof % 250}`;
 
