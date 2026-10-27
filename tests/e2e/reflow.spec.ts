@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_OWNER, signIn } from './helpers';
+import { DEMO_CUSTOMER, DEMO_OWNER, showDate, signIn } from './helpers';
 
 /**
  * WCAG 1.4.10 Reflow: at 320 CSS px nothing may scroll sideways, also with the WCAG 1.4.12 text-spacing
@@ -70,7 +70,9 @@ test.describe('@a11y reflow at 320px', () => {
     // An upcoming booking request, so /account and the lists show date cards.
     await page.goto('/account/book');
     await page.getByRole('checkbox', { name: 'Biscuit', exact: true }).check();
-    await page.locator('input[name="date"]:not([disabled])').nth(12).check();
+    // The calendar shows two weeks at a time, so page forward to the day first.
+    const iso = (await page.locator('input[name="date"]:not([disabled])').nth(12).getAttribute('value'))!;
+    await (await showDate(page, iso)).check();
     await page.getByRole('button', { name: 'Check price and availability' }).click();
     await page.getByRole('button', { name: 'Send booking request' }).click();
     await expect(page.getByText('Booking request sent')).toBeVisible();
