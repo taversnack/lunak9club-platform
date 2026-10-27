@@ -12,7 +12,7 @@ function escapeHtml(s: string): string {
 function layout(
   title: string,
   bodyHtml: string,
-  footer = "If you didn’t ask for this, you can ignore this email.",
+  footer = 'If you didn’t ask for this, you can ignore this email.',
 ): string {
   return `<!doctype html><html lang="en-GB"><body style="font-family:system-ui,sans-serif;background:#f7f5f2;color:#273039;padding:24px">
 <div style="max-width:520px;margin:auto;background:#fff;border-top:4px solid #283039;padding:28px">
@@ -594,7 +594,7 @@ export function customerInviteMessage(
     html: layout(
       title,
       `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(ownerFirstName)} at ${BRAND} has created an account for you.</p>${coverHtml}${button(url, 'Finish setting up')}<p style="font-size:13px;color:#4f5660">This link works once and expires in 7 days.</p>${faqHtml(faqs)}<p>Thanks,<br>${escapeHtml(ownerFirstName)}</p>`,
-      "If you weren’t expecting this, you can ignore this email.",
+      'If you weren’t expecting this, you can ignore this email.',
     ),
   };
 }
