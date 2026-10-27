@@ -6,7 +6,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
 import { getDb } from '../db/client';
 import * as schema from '../db/schema';
-import { env } from '../env';
+import { env, type Env } from '../env';
 import { logger } from '../logger';
 import { getEmailProvider } from '../email/providers';
 import { magicLinkMessage, resetPasswordMessage, verifyEmailMessage } from '../email/templates';
@@ -23,8 +23,21 @@ const MAGIC_VERIFY_PATH = '/magic-link/verify';
 /** Where a failed magic link (expired, used, refused) lands, keeping the safe way back. */
 const magicErrorPath = (callback: string) => `/sign-in?callbackUrl=${encodeURIComponent(callback)}`;
 
-function createAuth() {
-  const e = env();
+/**
+ * Where the rate limiter (and session records) read the client's address from. better-auth's
+ * default trusts a single-value X-Forwarded-For as sent, so any client could pick a fresh rate-limit
+ * bucket per request by setting that header. Only headers our own proxy controls are used here; with
+ * nothing configured no header is trusted (development and tests then share 127.0.0.1, and
+ * production refuses to start – see env.ts).
+ */
+export function clientIpOptions(e: Pick<Env, 'TRUSTED_PROXIES' | 'CLIENT_IP_HEADER'>) {
+  if (e.CLIENT_IP_HEADER) return { ipAddressHeaders: [e.CLIENT_IP_HEADER] };
+  if (e.TRUSTED_PROXIES.length) return { ipAddressHeaders: ['x-forwarded-for'], trustedProxies: e.TRUSTED_PROXIES };
+  return { ipAddressHeaders: [] as string[] };
+}
+
+/** Exported for tests that need an instance with other settings; the app uses getAuth(). */
+export function createAuth(e: Env = env()) {
   const db = getDb();
 
   const audit = (action: string, userId: string | null) =>
@@ -151,6 +164,7 @@ function createAuth() {
     advanced: {
       useSecureCookies: e.APP_URL.startsWith('https://'),
       defaultCookieAttributes: { sameSite: 'lax', httpOnly: true },
+      ipAddress: clientIpOptions(e),
     },
     databaseHooks: {
       user: {

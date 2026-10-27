@@ -106,12 +106,21 @@ tests/            unit, integration, authz, e2e
 
 - Every page, route and query checks permissions on the server (`src/server/policy`). Hiding a link is never the control.
 - Sessions live in Postgres and are re-checked on every request; password reset signs out all other sessions.
-- Sign-in, sign-up, reset and verification requests are rate-limited.
+- Sign-in, sign-up, reset, verification and magic-link requests are rate-limited per client address. In production the app must be told how its proxy passes that address – see below.
 - `audit_events` is append-only at the database level.
 - Documents are checked by their contents (not the file name), stored under random names in a private bucket, and only opened through the app after a permission check (S3/R2 links last 60 seconds). Every view is audited. There's no virus scanning yet (see D30).
 - Health and behaviour details are visible only to the Owner and the dog's customer, and never go into emails, logs or the audit trail.
 - Logs are structured and redact personal fields; don't log personal data anyway.
 - Secrets only in `.env` (git-ignored). `.env.example` holds names only.
+
+## Deploying: client addresses and rate limits
+
+The auth rate limits count requests per client address. Behind a proxy or load balancer the app only sees the proxy's address, and a client can put anything it likes in `X-Forwarded-For`, so the app trusts no forwarding header unless told which one is safe. With `APP_ENV=production` and `AUTH_RATE_LIMIT=on` it refuses to start until one of these is set:
+
+- `TRUSTED_PROXIES` – comma-separated addresses or CIDR ranges of **your own** proxies, e.g. `10.0.0.0/8` or the load balancer's subnet. Every proxy in the chain must append the address it received the request from to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`; most load balancers do this by default). The app reads the header from the right and takes the first address that isn't one of yours, so anything the client wrote further left is ignored.
+- `CLIENT_IP_HEADER` – the name of a header your edge **always overwrites** with the connecting address, e.g. `cf-connecting-ip` (Cloudflare), `fly-client-ip` (Fly.io) or `x-real-ip` (nginx `proxy_set_header X-Real-IP $remote_addr`). Only use this if clients can't reach the app except through that edge; otherwise they can set the header themselves.
+
+Check after deploying: six wrong-password sign-ins from one machine must give `429 Too Many Requests` even when each request sends a different `X-Forwarded-For`. Locally and in tests neither setting is needed: without them every request counts as `127.0.0.1`.
 
 ## Not yet covered (later phases)
 
