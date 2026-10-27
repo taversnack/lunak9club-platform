@@ -87,7 +87,10 @@ describe('simulated checkout buttons: same-origin only', () => {
     ['foreign Referer only', { referer: 'https://evil.example/page' }],
     ['look-alike Origin', { origin: 'http://localhost:3000.evil.example' }],
     // Contradictory headers: a foreign Origin wins over a claimed same-origin fetch.
-    ['cross-site Origin claiming Sec-Fetch-Site same-origin', { origin: 'https://evil.example', 'sec-fetch-site': 'same-origin' }],
+    [
+      'cross-site Origin claiming Sec-Fetch-Site same-origin',
+      { origin: 'https://evil.example', 'sec-fetch-site': 'same-origin' },
+    ],
     ['Origin "null" claiming Sec-Fetch-Site same-origin', { origin: 'null', 'sec-fetch-site': 'same-origin' }],
   ])('rejects %s with 403 and leaves the checkout unpaid', async (_name, headers) => {
     const a = await caseyCheckout(30);
