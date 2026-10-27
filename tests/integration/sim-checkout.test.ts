@@ -86,6 +86,9 @@ describe('simulated checkout buttons: same-origin only', () => {
     ['no Origin, no Sec-Fetch-Site', {}],
     ['foreign Referer only', { referer: 'https://evil.example/page' }],
     ['look-alike Origin', { origin: 'http://localhost:3000.evil.example' }],
+    // Contradictory headers: a foreign Origin wins over a claimed same-origin fetch.
+    ['cross-site Origin claiming Sec-Fetch-Site same-origin', { origin: 'https://evil.example', 'sec-fetch-site': 'same-origin' }],
+    ['Origin "null" claiming Sec-Fetch-Site same-origin', { origin: 'null', 'sec-fetch-site': 'same-origin' }],
   ])('rejects %s with 403 and leaves the checkout unpaid', async (_name, headers) => {
     const a = await caseyCheckout(30);
     signedIn = casey; // even with the customer's own cookie
@@ -166,6 +169,24 @@ describe('paying twice (replay or double-click)', () => {
     const directCancelReturn = await returnGET(new Request(`${APP}/api/payments/return?attempt=${a.id}&cancelled=1`));
     expect(directCancelReturn.headers.get('location')).toBe(alreadyPaid);
 
+    const rows = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    expect(rows).toHaveLength(1);
+  });
+});
+
+describe('a double-click: parallel pay POSTs', () => {
+  it('every one ends on the paid page (none on "not finished"), and one payment is recorded', async () => {
+    signedIn = casey;
+    const a = await caseyCheckout(37);
+    const ok = `${APP}/api/payments/return?attempt=${a.id}`;
+    const res = await Promise.all(Array.from({ length: 5 }, () => post(payPOST, a.providerSessionId!, SAME)));
+    const locations = res.map((r) => r.headers.get('location'));
+    expect(locations.filter((l) => l === ok)).toHaveLength(1);
+    expect(locations.filter((l) => l === `${ok}&again=1`)).toHaveLength(4);
+    for (const l of locations) {
+      const back = await returnGET(new Request(l!));
+      expect(back.headers.get('location')).toMatch(/^\/account\/bookings\?payment=(paid|already-paid&receipt=)/);
+    }
     const rows = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
     expect(rows).toHaveLength(1);
   });

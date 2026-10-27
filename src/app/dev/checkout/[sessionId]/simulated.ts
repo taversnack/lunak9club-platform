@@ -23,12 +23,13 @@ export function simulatedOr404() {
 }
 
 /**
- * The POST came from our own pages: its Origin is APP_URL's, or the browser says Sec-Fetch-Site:
- * same-origin. A cross-site form, a missing Origin without that header, or Origin "null" are refused.
+ * The POST came from our own pages. If the browser sent an Origin, it must be APP_URL's (so a foreign
+ * Origin or "null" is refused, whatever Sec-Fetch-Site says). With no Origin, Sec-Fetch-Site must be
+ * same-origin; a missing Origin with any other (or no) Sec-Fetch-Site is refused.
  */
 export function sameOrigin(req: Request): boolean {
   const origin = req.headers.get('origin');
-  if (origin !== null && origin === new URL(appUrl('/')).origin) return true;
+  if (origin !== null) return origin === new URL(appUrl('/')).origin;
   return req.headers.get('sec-fetch-site') === 'same-origin';
 }
 
@@ -53,5 +54,9 @@ export async function finishSimulatedCheckout(
   if (session.status === 'complete') return NextResponse.redirect(`${session.successUrl}&again=1`, 303);
   const paid = outcome === 'pay' ? p.pay(sessionId) : null;
   // successUrl / cancelUrl are absolute APP_URL addresses we created (appUrl), as Stripe's would be.
-  return NextResponse.redirect(paid ? paid.successUrl : session.cancelUrl, 303);
+  if (paid) return NextResponse.redirect(paid.successUrl, 303);
+  // Lost a race with another click that paid it while we checked ownership: it's paid, so say so.
+  if (outcome === 'pay' && p.sessions.get(sessionId)?.status === 'complete')
+    return NextResponse.redirect(`${session.successUrl}&again=1`, 303);
+  return NextResponse.redirect(session.cancelUrl, 303);
 }
