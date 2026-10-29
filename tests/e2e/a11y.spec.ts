@@ -49,6 +49,30 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
     }
   });
 
+  test('sign-in: link sent state', async ({ page }) => {
+    await page.goto('/sign-in');
+    await page.getByLabel('Email address').fill('nobody@example.com');
+    await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+    await expect(page.getByRole('heading', { name: 'Check your email' })).toBeFocused();
+    await scan(page);
+  });
+
+  test('sign-in: expired or used link', async ({ page }) => {
+    await page.goto('/sign-in?callbackUrl=%2Faccount&error=INVALID_TOKEN');
+    await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
+    await scan(page);
+  });
+
+  test('sign-in: email field error and password form', async ({ page }) => {
+    await page.goto('/sign-in');
+    await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+    await expect(page.getByText('Error: Enter an email address')).toBeVisible();
+    await scan(page);
+    await page.getByRole('button', { name: 'Sign in with a password instead' }).click();
+    await expect(page.getByLabel('Password')).toBeVisible();
+    await scan(page);
+  });
+
   test('register with validation errors shown', async ({ page }) => {
     await page.goto('/register');
     await page.getByRole('button', { name: 'Create account' }).click();

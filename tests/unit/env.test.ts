@@ -42,7 +42,54 @@ describe('env', () => {
     vi.stubEnv('S3_ACCESS_KEY_ID', 'id');
     vi.stubEnv('S3_SECRET_ACCESS_KEY', 'secret');
     vi.stubEnv('CRON_SECRET', 'c'.repeat(40));
+    vi.stubEnv('TRUSTED_PROXIES', '10.0.0.0/8');
   };
+
+  it('wants to know how to find the client address in production while the auth rate limit is on', async () => {
+    productionReady();
+    vi.stubEnv('TRUSTED_PROXIES', '');
+    let { env } = await import('@/infra/env');
+    expect(() => env()).toThrow(/TRUSTED_PROXIES or CLIENT_IP_HEADER is required/);
+    vi.resetModules();
+    vi.stubEnv('CLIENT_IP_HEADER', 'CF-Connecting-IP');
+    ({ env } = await import('@/infra/env'));
+    expect(env().CLIENT_IP_HEADER).toBe('cf-connecting-ip');
+    // Blank lines copied from .env.example mean "not set".
+    vi.resetModules();
+    vi.stubEnv('CLIENT_IP_HEADER', '');
+    vi.stubEnv('TRUSTED_PROXIES', '');
+    ({ env } = await import('@/infra/env'));
+    expect(() => env()).toThrow(/TRUSTED_PROXIES or CLIENT_IP_HEADER is required/);
+    vi.resetModules();
+    vi.stubEnv('CLIENT_IP_HEADER', 'x-real-ip, x-forwarded-for');
+    ({ env } = await import('@/infra/env'));
+    expect(() => env()).toThrow(/CLIENT_IP_HEADER/);
+  });
+
+  it('parses TRUSTED_PROXIES and refuses entries that are not addresses or CIDR ranges', async () => {
+    base();
+    vi.stubEnv('TRUSTED_PROXIES', ' 10.0.0.0/8, 192.0.2.1 ,2001:db8::/32');
+    let { env } = await import('@/infra/env');
+    expect(env().TRUSTED_PROXIES).toEqual(['10.0.0.0/8', '192.0.2.1', '2001:db8::/32']);
+    for (const bad of ['10.0.0.0/33', 'proxy.internal', '10.0.0.1/8/1', '*']) {
+      vi.resetModules();
+      vi.stubEnv('TRUSTED_PROXIES', bad);
+      ({ env } = await import('@/infra/env'));
+      expect(() => env(), bad).toThrow(/TRUSTED_PROXIES/);
+    }
+  });
+
+  it('trusts no forwarded header unless one is configured', async () => {
+    const { clientIpOptions } = await import('@/infra/auth/auth');
+    expect(clientIpOptions({ TRUSTED_PROXIES: [], CLIENT_IP_HEADER: undefined })).toEqual({ ipAddressHeaders: [] });
+    expect(clientIpOptions({ TRUSTED_PROXIES: ['10.0.0.0/8'], CLIENT_IP_HEADER: undefined })).toEqual({
+      ipAddressHeaders: ['x-forwarded-for'],
+      trustedProxies: ['10.0.0.0/8'],
+    });
+    expect(clientIpOptions({ TRUSTED_PROXIES: [], CLIENT_IP_HEADER: 'fly-client-ip' })).toEqual({
+      ipAddressHeaders: ['fly-client-ip'],
+    });
+  });
 
   it('refuses to run a production build without APP_ENV (M3)', async () => {
     base();

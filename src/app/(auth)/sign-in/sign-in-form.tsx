@@ -1,21 +1,84 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { authClient } from '@/infra/auth/client';
 import { DEFAULT_AFTER_SIGN_IN, safeCallbackPath } from '@/domain/auth/callback-url';
-import { Alert, Field, Stack } from '@/ui/components';
+import { Alert, Field, Stack, buttonClass } from '@/ui/components';
 import { PendingButton } from '@/ui/form';
+import { MagicLinkForm } from './magic-link-form';
 
+type Notice = 'reset' | 'verified' | 'welcome';
+
+/**
+ * Sign-in leads with an emailed link; "Sign in with a password instead" shows the password form (the
+ * Owner and staff always use it: links are customers-only). Both keep the callbackUrl. After a password
+ * reset or account setup we open on the password form, since that's what the notice asks for.
+ */
 export function SignInForm({
   notice,
   callbackUrl,
+  linkError = false,
 }: {
-  notice?: 'reset' | 'verified' | 'welcome';
+  notice?: Notice;
   callbackUrl?: string;
+  linkError?: boolean;
+}) {
+  const next = safeCallbackPath(callbackUrl);
+  const [mode, setMode] = useState<'link' | 'password'>(
+    notice === 'reset' || notice === 'welcome' ? 'password' : 'link',
+  );
+  const [email, setEmail] = useState('');
+  const [switched, setSwitched] = useState(false);
+  const toggle = (to: 'link' | 'password') => {
+    setSwitched(true);
+    setMode(to);
+  };
+
+  return (
+    <div>
+      {mode === 'link' ? (
+        <MagicLinkForm callbackUrl={next} email={email} onEmailChange={setEmail} linkError={linkError} />
+      ) : (
+        <PasswordForm notice={notice} next={next} email={email} onEmailChange={setEmail} focusOnMount={switched} />
+      )}
+      <Stack>
+        <p>
+          <button
+            type="button"
+            className={buttonClass('ghost', true)}
+            onClick={() => toggle(mode === 'link' ? 'password' : 'link')}
+          >
+            {mode === 'link' ? 'Sign in with a password instead' : 'Email me a sign-in link instead'}
+          </button>
+        </p>
+        <p>
+          New to Luna’s K9 Club? <Link href="/register">Create an account</Link>
+        </p>
+      </Stack>
+    </div>
+  );
+}
+
+function PasswordForm({
+  notice,
+  next,
+  email,
+  onEmailChange,
+  focusOnMount,
+}: {
+  notice?: Notice;
+  next: string;
+  email: string;
+  onEmailChange: (email: string) => void;
+  focusOnMount: boolean;
 }) {
   const router = useRouter();
-  const next = safeCallbackPath(callbackUrl);
+  const heading = useRef<HTMLHeadingElement>(null);
+  // After the toggle, focus the new form's heading so the switch is announced.
+  useEffect(() => {
+    if (focusOnMount) heading.current?.focus();
+  }, [focusOnMount]);
   const [error, setError] = useState<string | null>(null);
   const [unverified, setUnverified] = useState(false);
   const [pending, setPending] = useState(false);
@@ -52,7 +115,9 @@ export function SignInForm({
   return (
     <form onSubmit={onSubmit} noValidate>
       <Stack>
-        <h1>Sign in</h1>
+        <h1 ref={heading} tabIndex={-1}>
+          Sign in with your password
+        </h1>
         {notice === 'reset' ? (
           <Alert tone="success" title="Password updated">
             You can now sign in with your new password.
@@ -74,16 +139,21 @@ export function SignInForm({
           </Alert>
         ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Field label="Email address" name="email" type="email" autoComplete="email" required />
+        <Field
+          label="Email address"
+          name="email"
+          type="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => onEmailChange(e.target.value)}
+        />
         <Field label="Password" name="password" type="password" autoComplete="current-password" required />
         <PendingButton full pending={pending} pendingText="Signing in…">
           Sign in
         </PendingButton>
         <p>
           <Link href="/forgot-password">Forgotten your password?</Link>
-        </p>
-        <p>
-          New to Luna’s K9 Club? <Link href="/register">Create an account</Link>
         </p>
       </Stack>
     </form>

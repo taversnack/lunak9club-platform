@@ -55,6 +55,7 @@ test('anonymous visitors are sent to sign in, remembering the page they asked fo
 
 async function signInHere(page: Page, email: string, password: string) {
   await page.getByLabel('Email address').fill(email);
+  await page.getByRole('button', { name: 'Sign in with a password instead' }).click();
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 }
@@ -112,7 +113,9 @@ test('owner signs in to the owner dashboard and sees recent activity', async ({ 
 
 test('wrong password shows a generic error', async ({ page }) => {
   await signIn(page, DEMO_CUSTOMER.email, 'definitely-wrong');
-  await expect(page.getByRole('alert').filter({ hasText: 'Email or password is incorrect.' })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByRole('alert').filter({ hasText: 'Email or password is incorrect.' }),
+  ).toBeVisible();
 });
 
 test('customer resets a forgotten password', async ({ page }, info) => {
@@ -154,6 +157,7 @@ test('signing in from a link before confirming: the confirmation email brings yo
 
   await page.goto(`/sign-in?callbackUrl=${encodeURIComponent('/account/bookings')}`);
   await page.getByLabel('Email address').fill(email);
+  await page.getByRole('button', { name: 'Sign in with a password instead' }).click();
   await page.getByLabel('Password').fill('robin-long-password');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByText('Please confirm your email')).toBeVisible();
@@ -184,17 +188,12 @@ test('magic link: a customer signs in from the emailed link once and lands on th
   await expect(page).toHaveURL(/\/account$/);
   await page.context().clearCookies();
 
-  await page.goto('/');
-  // No sign-in UI for this yet (Dev4); ask for the link the way the client helper does.
-  const status = await page.evaluate(async (email) => {
-    const r = await fetch('/api/auth/sign-in/magic-link', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, callbackURL: '/account/bookings' }),
-    });
-    return r.status;
-  }, email);
-  expect(status).toBe(200);
+  // Ask for the link through the sign-in page, keeping the way back.
+  await page.goto(`/sign-in?callbackUrl=${encodeURIComponent('/account/bookings')}`);
+  await page.getByLabel('Email address').fill(email);
+  await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeFocused();
+  await expect(page.getByText('If that address has an account, a link is on its way.')).toBeVisible();
   const link = await latestLink(email, 'auth.magic-link');
   expect(link).toContain('/api/auth/magic-link/verify?token=');
   await page.goto(link);
@@ -205,4 +204,44 @@ test('magic link: a customer signs in from the emailed link once and lands on th
   await page.context().clearCookies();
   await page.goto(link);
   await expect(page).toHaveURL(/\/sign-in\?callbackUrl=%2Faccount%2Fbookings&error=INVALID_TOKEN$/);
+  await expect(page.getByRole('main').getByRole('alert')).toHaveText(
+    'That link has expired or was already used. Request a new one.',
+  );
+  // Asking again from here still brings them back to the same page.
+  await page.getByLabel('Email address').fill(email);
+  await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  await expect.poll(() => latestLink(email, 'auth.magic-link')).not.toBe(link);
+  await page.goto(await latestLink(email, 'auth.magic-link'));
+  await expect(page).toHaveURL(/\/account\/bookings$/);
+});
+
+test('magic link: an unknown address gets exactly the same reply, and resend says so', async ({ page }) => {
+  await page.goto('/sign-in');
+  await page.getByLabel('Email address').fill(`nobody-${Date.now()}@example.com`);
+  await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeFocused();
+  await expect(page.getByText('If that address has an account, a link is on its way.')).toBeVisible();
+  await page.getByRole('button', { name: 'Send the link again' }).click();
+  await expect(page.getByText("We've sent another link. Use the newest one.")).toBeVisible();
+  await page.getByRole('button', { name: 'Use a different email address' }).click();
+  await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toBeVisible();
+});
+
+test('magic link: a made-up or expired token lands on sign-in with the expired-link message', async ({ page }) => {
+  await page.goto('/api/auth/magic-link/verify?token=not-a-real-token&callbackURL=%2Faccount');
+  await expect(page).toHaveURL(/\/sign-in\?.*error=/);
+  await expect(page.getByRole('main').getByRole('alert')).toHaveText(
+    'That link has expired or was already used. Request a new one.',
+  );
+});
+
+test('the Owner signs in with the password toggle', async ({ page }) => {
+  await page.goto('/sign-in');
+  await page.getByRole('button', { name: 'Sign in with a password instead' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in with your password' })).toBeFocused();
+  await page.getByLabel('Email address').fill(DEMO_OWNER.email);
+  await page.getByLabel('Password').fill(DEMO_OWNER.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL(/\/admin/);
 });

@@ -59,6 +59,7 @@ describe('approval registry', () => {
   const def: ApprovalType<{ n: number }> = {
     type: 'test.thing',
     label: 'Test request',
+    emailNoun: 'test request',
     schema: z.object({ n: z.number() }),
     describe: (p) => `Thing ${p.n}`,
     onApprove: async () => {},
@@ -117,13 +118,13 @@ describe('approval and booking-request emails (D76, D80)', () => {
 
   it('decision emails have no place for the Owner’s note', async () => {
     const { approvalDecisionMessage } = await import('@/infra/email/templates');
-    // The template takes only label, summary and outcome – a note can't be passed in.
+    // The template takes only noun, summary and outcome – a note can't be passed in.
     expect(approvalDecisionMessage.length).toBe(4);
     for (const outcome of ['approved', 'rejected', 'withdrawn', 'expired'] as const) {
       const m = approvalDecisionMessage(
         'a@example.test',
         'Alice',
-        { label: 'Booking request', summary: 'Day care · 1 dog-day · £50.00', outcome },
+        { noun: 'booking request', summary: 'Day care · 1 dog-day · £50.00', outcome },
         'https://app.test/account/bookings',
       );
       expect(Object.keys(m).sort()).toEqual(['html', 'subject', 'template', 'text', 'to']);

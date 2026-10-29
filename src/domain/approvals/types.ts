@@ -35,6 +35,12 @@ export interface ApprovalTypeShape<P, Ctx, Q> {
   type: string;
   /** What the Owner and customer call it, e.g. "Booking request". */
   label: string;
+  /**
+   * How emails name one request, read after "your", "a" and "new", lower case: e.g. "booking request",
+   * "membership days request", "request to move a membership day". Not the label – labels are list headings
+   * ("Move a membership day") and don't read as nouns in a sentence.
+   */
+  emailNoun: string;
   /** Validates the payload on create and again before every decision. */
   schema: ZodType<P>;
   /** A short summary for the Owner list and emails. Never sensitive (no health, behaviour, notes or contact data). */
