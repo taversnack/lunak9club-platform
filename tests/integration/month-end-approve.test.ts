@@ -22,10 +22,13 @@ import { approvedDog, readyCustomer, clearDayLimits, releaseMemberDays } from '.
 const db = () => getDb();
 const mail = new MemoryEmailProvider();
 const today = londonDate(new Date());
-const M1 = addMonths(monthOf(today), 1);
-/** After next month's draft day, before its send day. */
-const on26 = londonInstant(`${monthOf(today)}-26`, '10:00');
-const now = new Date(Math.max(on26.getTime(), Date.now()));
+// Pinned app clock, independent of the real date: the 26th of next month at 10:00 – after the
+// draft day, before the send day (28th 09:00). CUR is then the current month (sent straight away,
+// D55) and TARGET the month after (waits for the send day).
+const CUR = addMonths(monthOf(today), 1);
+const TARGET = addMonths(CUR, 1);
+const now = londonInstant(`${CUR}-26`, '10:00');
+const sendAt = londonInstant(`${CUR}-28`, '09:00');
 
 const BUSINESS = {
   tradingName: 'Luna’s K9 Club',
@@ -48,7 +51,7 @@ const people: Record<'ann' | 'ben' | 'cat' | 'dan', TestUser> = {} as never;
 const customerIds: Record<string, string> = {};
 
 const seen = (d: MonthEndDraft) => `${d.id}:${d.version}:${d.totalPence}`;
-async function mine() {
+async function mine(month: string = TARGET) {
   const r = await monthEndDrafts(db(), owner);
   const ids = new Set(Object.values(customerIds));
   const own = async (list: MonthEndDraft[]) => {
@@ -64,7 +67,7 @@ async function mine() {
           )
       : [];
     const keep = new Set(rows.filter((x) => ids.has(x.customerId)).map((x) => x.id));
-    return list.filter((d) => keep.has(d.id) && d.month === M1);
+    return list.filter((d) => keep.has(d.id) && d.month === month);
   };
   return { ready: await own(r.ready), toCheck: await own(r.toCheck) };
 }
@@ -95,7 +98,7 @@ afterAll(async () => {
 describe('month-end in one tap (D95)', () => {
   it('lists drafts that changed or need attention separately, and leaves them out', async () => {
     // Ben: one of next month's days is cancelled free after the draft was made.
-    const { first, last } = monthRange(M1);
+    const { first, last } = monthRange(TARGET);
     const [day] = await db()
       .select({ id: bookingDogs.id })
       .from(bookingDogs)
@@ -138,34 +141,49 @@ describe('month-end in one tap (D95)', () => {
 
   it('approves the unchanged ones through the usual approval, refuses any that changed meanwhile, and is safe to repeat', async () => {
     const r = await mine();
-    const input = { drafts: [...r.ready.map(seen), ...r.toCheck.map(seen)] };
+    // Ann's current-month draft is in the same tap: it goes out straight away (D55).
+    const annCur = (await mine(CUR)).ready.filter((d) => d.customerName === 'ME ann');
+    expect(annCur.length).toBe(1);
+    const input = { drafts: [...annCur.map(seen), ...r.ready.map(seen), ...r.toCheck.map(seen)] };
     // Cat's draft is rebuilt after the Owner opened the page (its version moves on).
     await refreshMembershipDrafts(db(), owner, { customerId: customerIds.cat! }, now);
     mail.sent.length = 0;
     const out = await approveUnchangedDrafts(db(), owner, input, now);
     const ann = r.ready.filter((d) => d.customerName === 'ME ann');
-    expect(out.approved).toBe(ann.length);
-    expect(out.approvedPence).toBe(ann.reduce((a, d) => a + d.totalPence, 0));
+    expect(ann.length).toBe(1);
+    expect(out.approved).toBe(2);
+    expect(out.approvedPence).toBe(ann[0]!.totalPence + annCur[0]!.totalPence);
     expect(out.notApproved.map((n) => n.customerName).sort()).toEqual(
       [...r.toCheck.map(nameOf), ...r.ready.filter((d) => d.customerName === 'ME cat').map(nameOf)].sort(),
     );
 
     const rows = await db()
-      .select({ customerId: invoices.customerId, status: invoices.status, month: invoices.periodMonth })
+      .select({
+        customerId: invoices.customerId,
+        status: invoices.status,
+        month: invoices.periodMonth,
+        scheduledFor: invoices.scheduledFor,
+      })
       .from(invoices)
       .where(inArray(invoices.customerId, Object.values(customerIds)));
-    for (const row of rows.filter((x) => x.month === M1)) {
+    for (const row of rows.filter((x) => x.month === TARGET)) {
       if (row.customerId === customerIds.ann) expect(row.status).not.toBe('draft');
       else expect(row.status).toBe('draft');
     }
-    const nextMonth = rows.find((x) => x.customerId === customerIds.ann && x.month === M1);
-    expect(nextMonth?.status).toBe('scheduled');
-    // No email beyond what approving already sends (current-month invoices go straight away).
-    expect(mail.sent.length).toBe(out.sentNow);
+    // Next month's invoice waits for the send day; the current month's is issued now.
+    const annTarget = rows.find((x) => x.customerId === customerIds.ann && x.month === TARGET);
+    expect(annTarget?.status).toBe('scheduled');
+    expect(annTarget?.scheduledFor?.toISOString()).toBe(sendAt.toISOString());
+    expect(rows.find((x) => x.customerId === customerIds.ann && x.month === CUR)?.status).toBe('issued');
+    // Exactly one email: the current-month invoice. Nothing for next month's until the send day.
+    expect(out.sentNow).toBe(1);
+    expect(mail.sent.length).toBe(1);
+    expect(mail.sent[0]!.to).toBe(people.ann.email);
 
     const again = await approveUnchangedDrafts(db(), owner, input, now);
     expect(again.approved).toBe(0);
-    expect(again.alreadyApproved).toBe(ann.length);
+    expect(again.alreadyApproved).toBe(2);
+    expect(mail.sent.length).toBe(1);
   });
 
   it('writes one audit entry with counts only', async () => {
