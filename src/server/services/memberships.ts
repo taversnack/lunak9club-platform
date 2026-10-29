@@ -19,6 +19,7 @@ import { evaluateDogs } from './compliance-facts';
 import { closuresBetween, consume, loadSettings, lockDays } from './booking-shared';
 import { currentPrices, loadPricingContext, priceWith, writeSnapshot } from './pricing';
 import { appUrl, sendSafely } from '../notify';
+import { membershipConfirmedMessage } from '@/infra/email/templates';
 
 export const HORIZON_DAYS = 60;
 const WEEKDAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -187,13 +188,14 @@ export async function approveMembership(db: Db, actor: Actor, rawId: string, inp
     .innerJoin(users, eq(users.id, customers.userId))
     .where(eq(memberships.id, id));
   if (row) {
-    await sendSafely({
-      to: row.email,
-      template: 'membership.approved',
-      subject: `Luna’s K9 Club: ${row.dogName}'s membership is confirmed`,
-      text: `Hi ${row.name.split(' ')[0]},\n\n${row.dogName}'s membership (${describeWeekdays(row.m.weekdays)}, ${SESSION_LABELS[row.m.session as Session]}) starts on ${formatUkDate(row.m.startsOn)}. We've booked the days ahead for you:\n${appUrl('/account/bookings')}`,
-      html: `<p>Hi ${row.name.split(' ')[0]},</p><p>${row.dogName}'s membership starts on ${formatUkDate(row.m.startsOn)}. We've booked the days ahead for you.</p><p><a href="${appUrl('/account/bookings')}">See your bookings</a></p>`,
-    });
+    await sendSafely(
+      membershipConfirmedMessage(row.email, row.name.split(' ')[0] ?? row.name, {
+        dogName: row.dogName,
+        pattern: `${describeWeekdays(row.m.weekdays)}, ${SESSION_LABELS[row.m.session as Session]}`,
+        startsOn: formatUkDate(row.m.startsOn),
+        url: appUrl('/account/bookings'),
+      }),
+    );
   }
   return { ...result, drafts: drafts?.drafts ?? 0 };
 }

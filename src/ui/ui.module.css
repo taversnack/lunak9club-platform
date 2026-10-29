@@ -276,6 +276,9 @@
 }
 .tableWrap {
   overflow-x: auto;
+  /* Contain absolutely positioned content (e.g. a visually-hidden header label) so it scrolls with the
+     table instead of widening the page on phones. */
+  position: relative;
 }
 .textarea {
   min-height: 88px;

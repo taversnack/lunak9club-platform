@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 const EnvSchema = z.object({
@@ -14,6 +15,29 @@ const EnvSchema = z.object({
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   MAIL_DIR: z.string().default('.tmp/mail'),
   AUTH_RATE_LIMIT: z.enum(['on', 'off']).default('on'),
+  /**
+   * How the auth rate limiter finds the client's address (see README, "Deploying: client IP").
+   * TRUSTED_PROXIES: comma-separated IPs/CIDRs of our own proxies. X-Forwarded-For is read from the
+   * right and the first address that is not one of ours is the client, so a client-supplied value
+   * can't choose the bucket. CLIENT_IP_HEADER: a header the proxy always overwrites (e.g.
+   * cf-connecting-ip, fly-client-ip, x-real-ip). Neither set (the default): no request header is
+   * trusted, and production refuses to start while the rate limit is on.
+   */
+  TRUSTED_PROXIES: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    )
+    .refine((list) => list.every(isIpOrCidr), 'TRUSTED_PROXIES entries must be IP addresses or CIDR ranges'),
+  CLIENT_IP_HEADER: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim().toLowerCase() || undefined)
+    .refine((v) => v === undefined || /^[a-z0-9-]+$/.test(v), 'CLIENT_IP_HEADER must be a header name'),
   STORAGE_DRIVER: z.enum(['s3', 'fs']).default('fs'),
   STORAGE_DIR: z.string().default('.data/uploads'),
   S3_ENDPOINT: z.url().optional(),
@@ -33,6 +57,16 @@ const EnvSchema = z.object({
 });
 
 export type Env = z.infer<typeof EnvSchema>;
+
+/** "203.0.113.7", "10.0.0.0/8", "2001:db8::/32". */
+export function isIpOrCidr(entry: string): boolean {
+  const [addr, prefix, extra] = entry.split('/');
+  const family = isIP(addr ?? '');
+  if (!family || extra !== undefined) return false;
+  if (prefix === undefined) return true;
+  if (!/^\d{1,3}$/.test(prefix)) return false;
+  return Number(prefix) <= (family === 4 ? 32 : 128);
+}
 
 let cached: Env | undefined;
 
@@ -69,6 +103,8 @@ function productionProblems(e: Env): string[] {
   if (e.STORAGE_DRIVER !== 's3') out.push('STORAGE_DRIVER must be s3');
   else if (!e.S3_ENDPOINT || !e.S3_BUCKET || !e.S3_ACCESS_KEY_ID || !e.S3_SECRET_ACCESS_KEY)
     out.push('S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required');
+  if (e.AUTH_RATE_LIMIT === 'on' && e.TRUSTED_PROXIES.length === 0 && !e.CLIENT_IP_HEADER)
+    out.push('TRUSTED_PROXIES or CLIENT_IP_HEADER is required so the auth rate limit sees real client addresses');
   if (!e.CRON_SECRET) out.push('CRON_SECRET is required (the scheduler is off without it)');
   return out;
 }
