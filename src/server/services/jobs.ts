@@ -44,7 +44,7 @@ async function alertOwner(db: Db, job: string, what: string, now: Date) {
         ownerBillingMessage(
           to,
           `Scheduled job failed: ${job}`,
-          `The scheduled "${job}" job failed (${what}). It will be tried again automatically on the next run. If this email comes again tomorrow, the problem hasn't cleared – please check the server logs.`,
+          `The scheduled "${job}" job failed (${what}). It will be tried again automatically on the next run. If this email comes again tomorrow, the problem hasn’t cleared – please check the server logs.`,
           appUrl('/admin'),
         ),
       );

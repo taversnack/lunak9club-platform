@@ -1,3 +1,4 @@
+import { formatUkDate } from '@/domain/time';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { mkdtempSync } from 'node:fs';
@@ -279,6 +280,8 @@ describe('booking requests (D76)', () => {
     expect((await rowsOf(r.bookingId))[0]!.status).toBe('rejected');
     const email = mail.sent.find((m) => m.to === alice.email && m.template === 'approval.rejected')!;
     expect(email.text).toMatch(/Unfortunately we can’t accept it this time/);
+    // Names the dog and the day, like the membership emails (Tester note on #65).
+    expect(email.text).toContain(`: Day care on ${formatUkDate(date)} · 1 dog-day`);
     expect(email.text + email.html).not.toContain('scuffle');
     // The place is free again.
     const b = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
@@ -299,7 +302,9 @@ describe('booking requests (D76)', () => {
     await withdrawMyApprovalRequest(db(), alice, r.requestId!);
     expect((await rowOf(aliceDog, d2)).status).toBe('cancelled');
     expect((await rowOf(aliceDog, d2)).lateCancellation).toBe(false);
-    expect(mail.sent.filter((m) => m.to === alice.email && m.template === 'approval.withdrawn')).toHaveLength(1);
+    const withdrawn = mail.sent.filter((m) => m.to === alice.email && m.template === 'approval.withdrawn');
+    expect(withdrawn).toHaveLength(1);
+    expect(withdrawn[0]!.text).toContain(`${formatUkDate(d1)} to ${formatUkDate(d2)}`);
   });
 
   it('the Owner declines one day first, then approves the rest', async () => {
