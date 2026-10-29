@@ -498,16 +498,19 @@ export function erasureDecisionMessage(
 
 // Approval requests (D77). Polite standard wording only: the summary comes from the request type's
 // describe() (never sensitive), and the Owner's note is never included – the customer reads it in the portal.
-export function approvalRequestedOwnerMessage(to: string, p: { label: string }, url: string): EmailMessage {
-  const title = `New ${p.label.toLowerCase()} to review`;
+/** "a booking request", "an …": the article for an approval type's email noun. */
+const withArticle = (noun: string) => `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
+
+export function approvalRequestedOwnerMessage(to: string, p: { noun: string }, url: string): EmailMessage {
+  const title = `New ${p.noun} to review`;
   return {
     to,
     template: 'approval.owner-new',
     subject: `${BRAND}: ${title.toLowerCase()}`,
-    text: `A customer has sent a ${p.label.toLowerCase()}. Review it here:\n${url}`,
+    text: `A customer has sent ${withArticle(p.noun)}. Review it here:\n${url}`,
     html: layout(
       title,
-      `<p>A customer has sent a ${escapeHtml(p.label.toLowerCase())}.</p>${button(url, 'Review requests')}`,
+      `<p>A customer has sent ${escapeHtml(withArticle(p.noun))}.</p>${button(url, 'Review requests')}`,
       '',
     ),
   };
@@ -515,7 +518,7 @@ export function approvalRequestedOwnerMessage(to: string, p: { label: string }, 
 
 export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn' | 'expired';
 
-const APPROVAL_COPY: Record<ApprovalOutcome, { title: (label: string) => string; body: string }> = {
+const APPROVAL_COPY: Record<ApprovalOutcome, { title: (noun: string) => string; body: string }> = {
   approved: {
     title: (l) => `Your ${l} has been approved`,
     body: 'Good news – we’ve approved your request.',
@@ -537,11 +540,11 @@ const APPROVAL_COPY: Record<ApprovalOutcome, { title: (label: string) => string;
 export function approvalDecisionMessage(
   to: string,
   firstName: string,
-  p: { label: string; summary: string; outcome: ApprovalOutcome },
+  p: { noun: string; summary: string; outcome: ApprovalOutcome },
   url: string,
 ): EmailMessage {
   const copy = APPROVAL_COPY[p.outcome];
-  const title = copy.title(p.label.toLowerCase());
+  const title = copy.title(p.noun);
   return {
     to,
     template: `approval.${p.outcome}`,

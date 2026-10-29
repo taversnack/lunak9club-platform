@@ -98,6 +98,7 @@ async function setRequested(
 registerApprovalType<BookingRequestPayload>({
   type: BOOKING_REQUEST,
   label: 'Booking request',
+  emailNoun: 'booking request',
   customerPath: '/account/bookings',
   schema: BookingRequestPayload,
   describe: (p) =>
