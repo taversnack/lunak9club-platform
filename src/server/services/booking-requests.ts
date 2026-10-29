@@ -5,6 +5,7 @@ import type { Db } from '@/infra/db/client';
 import { approvalRequests, bookingDogs, customers, dogs, priceSnapshots, users } from '@/infra/db/schema';
 import { formatPounds, PLACE_STATUSES, remainingFor, SESSION_LABELS } from '@/domain/booking/rules';
 import { subjectKey } from '@/domain/approvals';
+import { describeBookingRequest } from '@/domain/booking/describe-request';
 import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
 import { formatUkDate, londonDate, type IsoDate } from '@/domain/time';
 import { bookingSummaryMessage, type BookingLine } from '@/infra/email/templates';
@@ -37,6 +38,9 @@ export const BookingRequestPayload = z.object({
   bookingDogIds: z.array(z.string().uuid()).min(1),
   kind: z.enum(['standard', 'trial']),
   totalPence: z.number().int().min(0),
+  // For the summary in emails and lists. Optional: requests sent before these were added stay valid.
+  dogNames: z.array(z.string()).optional(),
+  dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
 });
 export type BookingRequestPayload = z.infer<typeof BookingRequestPayload>;
 
@@ -101,8 +105,7 @@ registerApprovalType<BookingRequestPayload>({
   emailNoun: 'booking request',
   customerPath: '/account/bookings',
   schema: BookingRequestPayload,
-  describe: (p) =>
-    `${p.kind === 'trial' ? 'Trial day' : 'Day care'} · ${p.bookingDogIds.length} ${p.bookingDogIds.length === 1 ? 'dog-day' : 'dog-days'} · ${formatPounds(p.totalPence)}`,
+  describe: describeBookingRequest,
   // The approval sends its own pay-link or booked email (D80).
   skipGenericCustomerEmail: ['approved'],
 

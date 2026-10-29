@@ -350,6 +350,8 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
             bookingDogIds: requested.map((x) => x.id),
             kind: d.trial ? 'trial' : 'standard',
             totalPence: requested.reduce((a, x) => a + x.pence, 0),
+            dogNames: outcomes.filter((o) => o.outcome === 'requested').map((o) => o.dogName),
+            dates: outcomes.filter((o) => o.outcome === 'requested').map((o) => o.date),
           },
         },
         { tx },
