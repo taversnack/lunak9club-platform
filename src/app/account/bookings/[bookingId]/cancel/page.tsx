@@ -27,7 +27,6 @@ export default async function CancelPage({ params }: { params: Promise<{ booking
         <h1>{b.withdrawable ? 'Withdraw this requested day?' : 'Cancel this booking?'}</h1>
         <p>
           <strong>{b.dogName}</strong> – {formatUkDate(b.serviceDate)}, {SESSION_LABELS[b.session]}
-          {b.taxi ? ' with taxi' : ''}
         </p>
         {b.withdrawable ? (
           <Alert tone="info">This day hasn’t been approved or paid for, so there’s no charge.</Alert>

@@ -249,7 +249,6 @@ export default async function BookingsPage({
                     <td data-label="Dog">{b.dogName}</td>
                     <td data-label="Session">
                       {SESSION_LABELS[b.session]}
-                      {b.taxi ? ' + taxi' : ''}
                       {b.kind === 'membership' ? <div className={s.hint}>Membership day</div> : null}
                     </td>
                     <td data-label="Price">{b.pricePence != null ? formatPounds(b.pricePence) : '–'}</td>

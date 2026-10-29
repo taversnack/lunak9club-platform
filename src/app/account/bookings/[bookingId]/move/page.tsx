@@ -30,7 +30,6 @@ export default async function MovePage({ params }: { params: Promise<{ bookingId
         <h1>Move this membership day</h1>
         <p>
           <strong>{b.dogName}</strong> – {formatUkDate(b.serviceDate)}, {SESSION_LABELS[b.session]}
-          {b.taxi ? ' with taxi' : ''}
         </p>
         {b.late ? (
           <Alert tone="warning">

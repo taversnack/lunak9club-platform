@@ -27,7 +27,6 @@ export default async function LeaveWaitlistPage({ params }: { params: Promise<{ 
         <h1>Leave the waitlist?</h1>
         <p>
           <strong>{b.dogName}</strong> – {formatUkDate(b.serviceDate)}, {SESSION_LABELS[b.session]}
-          {b.taxi ? ' with taxi' : ''}
         </p>
         <p>We won’t be able to give you a place for this day. There’s no charge.</p>
         <ActionForm action={leaveWaitlistAction}>

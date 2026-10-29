@@ -6,6 +6,7 @@ import { ActionForm, SubmitButton, TextArea } from '@/ui/form';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { previewMyBookings } from '@/server/services/bookings';
+import { customerBookingInput } from '@/domain/booking/customer-request';
 import { ValidationError } from '@/server/errors';
 import { FocusOnMount } from '@/ui/focus-on-mount';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
@@ -25,14 +26,8 @@ export default async function ReviewPage({
 }) {
   const actor = await requirePermission('account.access');
   const sp = await searchParams;
-  const input = {
-    dogIds: list(sp.dog),
-    dates: list(sp.date),
-    session: String(sp.session ?? ''),
-    taxi: sp.taxi === '1',
-    ifFull: sp.ifFull === 'skip' ? 'skip' : 'waitlist',
-    trial: sp.trial === '1',
-  };
+  // Full days only, the taxi is included for everyone, and a full day goes on the waitlist.
+  const input = customerBookingInput({ dogIds: list(sp.dog), dates: list(sp.date), trial: sp.trial === '1' });
   let preview;
   try {
     preview = await previewMyBookings(getDb(), actor, input);
@@ -72,10 +67,7 @@ export default async function ReviewPage({
       </p>
       <h1>Check your booking request</h1>
       <Card aria-labelledby="summary">
-        <h2 id="summary">
-          {SESSION_LABELS[request.session as 'full']}
-          {request.taxi ? ' with dog taxi' : ''}
-        </h2>
+        <h2 id="summary">{SESSION_LABELS[request.session as 'full']}</h2>
         <div className={s.tableWrap} role="region" aria-label="Booking summary" tabIndex={0}>
           <table className={`${s.table} ${s.stackTable}`}>
             <thead>
@@ -134,8 +126,6 @@ export default async function ReviewPage({
             <input key={d} type="hidden" name="date" value={d} />
           ))}
           <input type="hidden" name="session" value={request.session} />
-          <input type="hidden" name="taxi" value={request.taxi ? '1' : '0'} />
-          <input type="hidden" name="ifFull" value={request.ifFull} />
           <input type="hidden" name="trial" value={request.trial ? '1' : '0'} />
           {confirmed.length ? (
             <Alert tone="warning" title="Your booking isn’t secured yet">

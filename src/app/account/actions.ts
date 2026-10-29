@@ -11,6 +11,7 @@ import { createMyDog, saveMyDogVet, submitMyOnboardingForm, updateMyDogDetails }
 import { uploadVaccinationRecord } from '@/server/services/documents';
 import { acceptTerms } from '@/server/services/policies';
 import { cancelMyBooking, createMyBookings, leaveWaitlist } from '@/server/services/bookings';
+import { customerBookingInput } from '@/domain/booking/customer-request';
 import { withdrawMyApprovalRequest } from '@/server/services/approvals';
 import { startInvoiceCheckout } from '@/server/services/payments';
 import { acknowledgeIncident } from '@/server/services/welfare';
@@ -145,15 +146,18 @@ export async function uploadVaccinationAction(_: ActionState, fd: FormData): Pro
 export async function confirmBookingAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(fd, async () => {
     const actor = await requirePermission('account.access');
-    const r = await createMyBookings(getDb(), actor, {
-      dogIds: fd.getAll('dog').map(String),
-      dates: fd.getAll('date').map(String),
-      session: String(fd.get('session') ?? ''),
-      taxi: fd.get('taxi') === '1',
-      ifFull: String(fd.get('ifFull') ?? 'waitlist'),
-      customerNote: String(fd.get('customerNote') ?? ''),
-      trial: fd.get('trial') === '1',
-    });
+    // Customers book full days only; the taxi is included (no separate choice); a full day goes on the
+    // waitlist. Any session/taxi/ifFull values posted anyway are ignored (customerBookingInput).
+    const r = await createMyBookings(
+      getDb(),
+      actor,
+      customerBookingInput({
+        dogIds: fd.getAll('dog').map(String),
+        dates: fd.getAll('date').map(String),
+        customerNote: String(fd.get('customerNote') ?? ''),
+        trial: fd.get('trial') === '1',
+      }),
+    );
     const n = (k: string) => r.outcomes.filter((o) => o.outcome === k).length;
     revalidatePath('/account/bookings');
     // Nothing is charged until the Owner approves (D76, D78).

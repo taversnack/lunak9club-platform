@@ -25,9 +25,7 @@ async function axe(page: Page) {
 let bookedDateLabel = '';
 let bookedIso = '';
 
-test('customer books two days with the taxi, sees the estimate first, and cancels one for free', async ({
-  page,
-}, info) => {
+test('customer books two full days, sees the estimate first, and cancels one for free', async ({ page }, info) => {
   await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
   await expect(page).toHaveURL(/\/account$/);
   await navTo(page, 'Your account', 'Book', true);
@@ -35,7 +33,11 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   await axe(page);
 
   await page.getByRole('checkbox', { name: 'Biscuit', exact: true }).check();
-  await page.getByLabel(/Collect and drop off with the dog taxi/).check();
+  // Full days only with the taxi included: no session, taxi or "if a day is full" choices, and no place counts.
+  await expect(
+    page.locator('input[name="session"]:not([type="hidden"]), input[name="taxi"], input[name="ifFull"]'),
+  ).toHaveCount(0);
+  await expect(page.locator('main')).not.toContainText(/\d+ left|AM \d+ · PM \d+/);
   // Pick two open days; offset by project so mobile and desktop don't collide.
   const days = page.locator('input[name="date"]:not([disabled])');
   const offset = info.project.name === 'mobile' ? 0 : 4;
@@ -50,6 +52,8 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   // The request form says plainly that a request does not secure the booking (D76).
   await expect(page.getByRole('heading', { name: 'Check your booking request' })).toBeVisible();
   await expect(page.getByText('£100.00', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Full day', level: 2 })).toBeVisible();
+  await expect(page.locator('main')).not.toContainText(/taxi/i);
   await expect(page.getByText('Place available – will be requested')).toHaveCount(2);
   await expect(page.getByTestId('request-not-secured')).toHaveText(REQUEST_NOT_SECURED);
   await expect(page.getByTestId('request-not-secured')).toContainText(REQUEST_NOT_SECURED_KEY);

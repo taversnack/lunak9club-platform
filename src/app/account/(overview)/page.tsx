@@ -107,7 +107,6 @@ export default async function AccountPage() {
                     <DateCard
                       date={b.serviceDate}
                       title={`${b.dogName} · ${SESSION_LABELS[b.session]}`}
-                      detail={b.taxi ? 'With taxi' : undefined}
                       status={<StatusBadge tone={st.tone}>{st.text}</StatusBadge>}
                     />
                   </li>

@@ -104,59 +104,16 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                 ) : null}
               </fieldset>
             </Card>
-            <Card aria-labelledby="what">
-              <Stack>
-                <fieldset className={s.fieldset}>
-                  <legend className={s.label} id="what">
-                    Full day or half day?
-                  </legend>
-                  <div className={s.choices}>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="full" defaultChecked />
-                      <span>
-                        Full day ({cal.settings.fullDayStart}–{cal.settings.fullDayEnd})
-                      </span>
-                    </label>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="am" />
-                      <span>
-                        Morning ({cal.settings.morningStart}–{cal.settings.morningEnd})
-                      </span>
-                    </label>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="pm" />
-                      <span>
-                        Afternoon ({cal.settings.afternoonStart}–{cal.settings.afternoonEnd})
-                      </span>
-                    </label>
-                  </div>
-                </fieldset>
-                <label className={s.choice}>
-                  <input type="checkbox" name="taxi" value="1" />
-                  <span>Collect and drop off with the dog taxi (included in the price)</span>
-                </label>
-                <fieldset className={s.fieldset}>
-                  <legend className={s.label}>If a day is full</legend>
-                  <div className={s.choices}>
-                    <label className={s.choice}>
-                      <input type="radio" name="ifFull" value="waitlist" defaultChecked />
-                      <span>Add me to the waitlist</span>
-                    </label>
-                    <label className={s.choice}>
-                      <input type="radio" name="ifFull" value="skip" />
-                      <span>Don’t book that day</span>
-                    </label>
-                  </div>
-                </fieldset>
-              </Stack>
-            </Card>
+            {/* Full days only (Stephen, Oct 2026); the server ignores anything else from customers. */}
+            <input type="hidden" name="session" value="full" />
             <Card aria-labelledby="when">
               <fieldset className={s.fieldset}>
                 <legend className={s.label} id="when">
                   Choose your dates
                 </legend>
                 <span className={s.hint}>
-                  Bookings close at 23:59 the day before. Weekends and bank holidays are closed.
+                  Full days, {cal.settings.fullDayStart}–{cal.settings.fullDayEnd}, with the dog taxi included. Bookings
+                  close at 23:59 the day before. Weekends and bank holidays are closed.
                 </span>
                 <DatePager
                   labels={pairs.map(rangeLabel)}
@@ -171,15 +128,8 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                               <strong>{dayLabel(d.date)}</strong>
                             </span>
                             <StatusBadge tone={a.tone}>{a.text}</StatusBadge>
-                            {d.open ? (
-                              <span className={b.left}>
-                                {d.left.full > 0
-                                  ? `${d.left.full} left`
-                                  : `AM ${Math.max(0, d.left.am)} · PM ${Math.max(0, d.left.pm)} left`}
-                              </span>
-                            ) : (
-                              <span className={b.left}>{d.closedReason}</span>
-                            )}
+                            {/* Customers see Available / Nearly full / Full, never the number of places. */}
+                            {d.open ? null : <span className={b.left}>{d.closedReason}</span>}
                             {d.mine.length ? (
                               <span className={b.left}>Booked: {d.mine.map((m) => m.dogName).join(', ')}</span>
                             ) : null}
