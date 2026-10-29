@@ -451,7 +451,14 @@ export async function ownerCancel(db: Db, actor: Actor, rawId: string, input: un
   // Someone on the waitlist never had a place, so there's nothing to charge.
   const charge = d.charge && bd.status !== 'waitlisted';
   if (bd.status === 'pending_payment') {
-    await releaseBookingHold(db, bd.bookingId, bd.id, `Cancelled by Luna’s K9 Club before payment: ${d.reason}`, now);
+    await releaseBookingHold(
+      db,
+      bd.bookingId,
+      bd.id,
+      `Cancelled by Luna’s K9 Club before payment: ${d.reason}`,
+      now,
+      actor.kind === 'user' ? actor.userId : null,
+    );
     await recordAudit(db, { actor, action: 'booking.hold_cancelled', entityType: 'booking_dog', entityId: bd.id });
     return;
   }

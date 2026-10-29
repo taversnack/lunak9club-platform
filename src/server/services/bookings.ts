@@ -350,6 +350,8 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
             bookingDogIds: requested.map((x) => x.id),
             kind: d.trial ? 'trial' : 'standard',
             totalPence: requested.reduce((a, x) => a + x.pence, 0),
+            dogNames: outcomes.filter((o) => o.outcome === 'requested').map((o) => o.dogName),
+            dates: outcomes.filter((o) => o.outcome === 'requested').map((o) => o.date),
           },
         },
         { tx },
@@ -505,7 +507,7 @@ export async function cancelMyBooking(db: Db, actor: Actor, rawId: string, now =
   if (bd.serviceDate <= today) throw new ConflictError('Bookings for today can’t be cancelled online. Please call us.');
   if (bd.status === 'pending_payment') {
     // Not paid yet: cancelling releases every place held for that payment.
-    await releaseBookingHold(db, bd.bookingId, bd.id, 'Cancelled by the customer before paying', now);
+    await releaseBookingHold(db, bd.bookingId, bd.id, 'Cancelled by the customer before paying', now, me.userId);
     await recordAudit(db, { actor: me, action: 'booking.hold_cancelled', entityType: 'booking_dog', entityId: bd.id });
     return { late: false, refundedPence: 0 };
   }

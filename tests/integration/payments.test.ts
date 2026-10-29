@@ -25,6 +25,7 @@ import {
   completeCheckout,
   handleWebhook,
   OWNER_HOLD_MINUTES,
+  payForMyBooking,
   releaseExpiredCheckouts,
   resumeCheckoutUrl,
   startInvoiceCheckout,
@@ -192,9 +193,12 @@ describe('pay at booking (D6)', () => {
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const [a] = await attemptsFor(pia.userId);
     // Quinn takes the place once Pia's hold has lapsed (simulated by a confirmed row).
-    await db().execute(
-      sql`update booking_dogs set offer_expires_at = now() - interval '1 minute' where booking_id = ${a!.bookingId}`,
-    );
+    // Relative to the app's clock (Date, which TEST_NOW fakes), not Postgres now(): the app compares
+    // against its own clock, so a DB-clock value is "not lapsed yet" when the pin is in the past.
+    await db()
+      .update(bookingDogs)
+      .set({ offerExpiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(bookingDogs.bookingId, a!.bookingId!));
     await requestAndApprove(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'full', taxi: false }, owner);
     await payLatest(quinn.userId);
     // Pia's payment arrives late.
@@ -459,7 +463,11 @@ describe('automatic refunds (D20, D58)', () => {
     const before = await audits();
 
     // Interrupted long enough ago for the safety net; three ticks arrive at once.
-    await db().execute(sql`update card_refunds set updated_at = now() - interval '11 minutes' where id = ${r!.id}`);
+    // App clock, not Postgres now() (see the lapsed-hold test above).
+    await db()
+      .update(cardRefunds)
+      .set({ updatedAt: new Date(Date.now() - 11 * 60_000) })
+      .where(eq(cardRefunds.id, r!.id));
     stripe.delayMs = 200;
     const calls = stripe.refundCalls;
     await Promise.all([submitPendingRefunds(db()), submitPendingRefunds(db()), submitPendingRefunds(db())]);
@@ -598,9 +606,15 @@ describe('paying an invoice by card (D59)', () => {
     expect(first.url).not.toBe(second.url);
     const attempts = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.invoiceId, invoiceId));
     expect(attempts.filter((x) => x.status === 'open')).toHaveLength(1);
-    await payLatest(pia.userId);
+    const paid = await payLatest(pia.userId);
     const d = await myInvoice(db(), pia, invoiceId);
     expect(d.state).toBe('paid');
+    // Its pay link now says it's paid, on the invoice itself.
+    expect(await resumeCheckoutUrl(db(), pia, paid.id)).toEqual({
+      url: null,
+      reason: 'already-paid',
+      to: `/account/invoices/${invoiceId}?payment=already-paid`,
+    });
     expect(d.payments[0]).toMatchObject({ method: 'stripe', amountPence: 9600 });
     await expect(startInvoiceCheckout(db(), pia, invoiceId)).rejects.toBeInstanceOf(ConflictError);
   });
@@ -627,5 +641,50 @@ describe('webhooks (non-negotiable 3)', () => {
     const [evt] = await db().select().from(webhookEvents).where(eq(webhookEvents.eventId, 'evt_test_1'));
     expect(evt!.attempts).toBe(2);
     expect(evt!.processedAt).not.toBeNull();
+  });
+});
+
+describe('a pay link for a booking that is already paid', () => {
+  let rae: TestUser;
+  let raeDog: string;
+  beforeAll(async () => {
+    rae = await makeUser(db(), 'customer', 'Rae Repaid');
+    await readyCustomer(db(), rae);
+    raeDog = await approvedDog(db(), owner, rae, 'Pickle');
+  });
+
+  it('says it is paid and links to the receipt, not "the time to pay ran out"', async () => {
+    await requestAndApprove(
+      db(),
+      rae,
+      { dogIds: [raeDog], dates: [weekdayAhead(46)], session: 'full', taxi: false },
+      owner,
+    );
+    const a = await payLatest(rae.userId);
+    const [paid] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, a.id));
+    expect(paid!.status).toBe('paid');
+    const to = `/account/bookings?payment=already-paid&receipt=${paid!.resultInvoiceId}`;
+
+    // "Pay now" for the booking (pay-booking route) and the emailed link for the checkout (pay route).
+    expect(await payForMyBooking(db(), rae, a.bookingId!)).toEqual({ url: null, reason: 'already-paid', to });
+    expect(await resumeCheckoutUrl(db(), rae, a.id)).toEqual({ url: null, reason: 'already-paid', to });
+    // Still the customer's own booking only.
+    await expect(payForMyBooking(db(), pia, a.bookingId!)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('a booking whose places lapsed unpaid still says the time ran out', async () => {
+    await requestAndApprove(
+      db(),
+      rae,
+      { dogIds: [raeDog], dates: [weekdayAhead(47)], session: 'full', taxi: false },
+      owner,
+    );
+    const [open] = await attemptsFor(rae.userId);
+    await releaseExpiredCheckouts(db(), new Date(open!.expiresAt.getTime() + 60_000));
+    expect(await payForMyBooking(db(), rae, open!.bookingId!)).toEqual({
+      url: null,
+      reason: 'expired',
+      to: '/account/bookings?payment=expired',
+    });
   });
 });
