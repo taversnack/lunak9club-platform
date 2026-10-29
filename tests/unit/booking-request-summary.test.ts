@@ -104,6 +104,21 @@ describe('booking request summary (decline / withdrawn emails, Tester note on #6
     expect(out3).toMatch(/^B+… and 1 more: Day care on 4 November 2026 · 40 dog-days · £2,000\.00$/);
   });
 
+  it('shortens the dates before the names', () => {
+    const names = ['A'.repeat(40), 'B'.repeat(40)];
+    const dates = Array.from({ length: 25 }, (_, i) => addDays('2026-11-02', i * 2));
+    const out = describeBookingRequest({
+      bookingDogIds: ids(24),
+      kind: 'standard',
+      totalPence: 120000,
+      dogNames: names,
+      dates,
+    });
+    expect(out).toBe(
+      `${names[0]} and ${names[1]}: Day care on 25 days between 2 November 2026 and 20 December 2026 · 24 dog-days · £1,200.00`,
+    );
+  });
+
   it('says trial day for a trial', () => {
     expect(
       describeBookingRequest({
@@ -133,8 +148,7 @@ describe('booking request summary (decline / withdrawn emails, Tester note on #6
     const m = approvalDecisionMessage(
       'c@example.test',
       'Casey',
-      // Works with the field named `label` (main) or `noun` (#65): spread props aren't excess-checked.
-      { ...{ label: 'Booking request', noun: 'booking request' }, summary, outcome },
+      { noun: 'booking request', summary, outcome },
       'https://x.test/account/bookings',
     );
     expect(m.text).toContain('Biscuit: Day care on 4 November 2026');
@@ -203,7 +217,13 @@ describe('apostrophes in customer emails are curly', () => {
       .split('\n')
       .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)) // comments may use either
       .map((l) => l.replace(/\s\/\/ .*$/, ''));
-    const offenders = code.filter((l) => straight.test(l) && /[`"]/.test(l));
+    // Lines with a quote, plus continuation lines inside a multi-line template literal.
+    let inTemplate = false;
+    const offenders = code.filter((l) => {
+      const check = inTemplate || /[`"]/.test(l);
+      if ((l.replace(/\\`/g, '').match(/`/g) ?? []).length % 2) inTemplate = !inTemplate;
+      return check && straight.test(l);
+    });
     expect(offenders).toEqual([]);
   });
 });
