@@ -1,6 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut, navTo } from './helpers';
+import {
+  DEMO_CUSTOMER,
+  DEMO_CUSTOMER_2,
+  DEMO_OWNER,
+  expectLandedAfterPayment,
+  navTo,
+  signIn,
+  signOut,
+} from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -125,6 +133,7 @@ test('customer sees the invoice and can download the PDF', async ({ page }, info
   await expect(page.getByRole('heading', { name: 'Test card payment' })).toBeVisible();
   await page.getByRole('button', { name: /with a test card/ }).click();
   await expect(page.getByText('Payment received', { exact: true })).toBeVisible();
+  await expectLandedAfterPayment(page, /^\/account\/invoices\/[0-9a-f-]{36}$/);
   await expect(page.getByText('Paid').first()).toBeVisible();
   await axe(page);
   // Another customer can't open it.

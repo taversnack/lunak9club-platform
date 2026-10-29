@@ -67,6 +67,7 @@ async function daysStart(tx: Tx, customerId: string, p: MembershipDaysPayload, n
 registerApprovalType<MembershipDaysPayload>({
   type: 'membership.days',
   label: 'Membership days',
+  emailNoun: 'membership days request',
   schema: MembershipDaysPayload,
   customerPath: '/account/membership',
   describe: (p) =>
@@ -169,6 +170,7 @@ export async function checkMoveOnce(tx: Tx, customerId: string, p: MoveOncePaylo
 registerApprovalType<MoveOncePayload>({
   type: 'membership.move_once',
   label: 'Move a membership day',
+  emailNoun: 'request to move a membership day',
   schema: MoveOncePayload,
   customerPath: '/account/bookings',
   describe: (p) =>

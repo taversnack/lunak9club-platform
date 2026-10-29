@@ -185,7 +185,7 @@ export async function createApprovalRequest(
     if (sent) return;
     sent = true;
     for (const to of await ownerEmails(db))
-      await sendSafely(approvalRequestedOwnerMessage(to, { label: def.label }, appUrl('/admin/approvals')));
+      await sendSafely(approvalRequestedOwnerMessage(to, { noun: def.emailNoun }, appUrl('/admin/approvals')));
   };
 
   if (opts.tx) return { id: await insert(opts.tx), notifyOwner };
@@ -323,7 +323,7 @@ async function emailCustomer(
     approvalDecisionMessage(
       who.email,
       firstNameOf(who.name),
-      { label: def.label, summary, outcome },
+      { noun: def.emailNoun, summary, outcome },
       appUrl(def.customerPath ?? '/account'),
     ),
   );

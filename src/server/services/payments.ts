@@ -348,7 +348,10 @@ export async function payForMyBooking(db: Db, actor: Actor, rawBookingId: string
   const [b] = await db.select({ customerId: bookings.customerId }).from(bookings).where(eq(bookings.id, bookingId));
   if (!b || b.customerId !== customer.id) throw new NotFoundError('Booking');
   const hold = await liveHolds(db, bookingId, now);
-  if (!hold) return { url: null, reason: 'expired' as const };
+  if (!hold)
+    return (await bookingCancelled(db, bookingId))
+      ? payLinkEnded('booking-cancelled')
+      : ((await alreadyPaidBooking(db, bookingId)) ?? payLinkEnded('expired'));
   const r = await startBookingCheckout(
     db,
     {
@@ -362,7 +365,53 @@ export async function payForMyBooking(db: Db, actor: Actor, rawBookingId: string
     },
     now,
   );
-  return r ? { url: r.url, reason: null } : { url: null, reason: 'expired' as const };
+  return r ? { url: r.url, reason: null, to: null } : payLinkEnded('expired');
+}
+
+/** Where a pay link sends the customer when there's no card page to open (shown as a notice on that page). */
+function payLinkEnded(reason: 'expired' | 'booking-cancelled' | 'preparing' | 'unavailable'): {
+  url: null;
+  reason: typeof reason;
+  to: string;
+} {
+  return { url: null, reason, to: `/account/bookings?payment=${reason}` };
+}
+
+/** A pay link for something already paid: say so, and link to the receipt. */
+function alreadyPaid(attempt: {
+  purpose: 'booking' | 'invoice';
+  invoiceId: string | null;
+  resultInvoiceId: string | null;
+}) {
+  const to =
+    attempt.purpose === 'invoice' && attempt.invoiceId
+      ? `/account/invoices/${attempt.invoiceId}?payment=already-paid`
+      : `/account/bookings?payment=already-paid${attempt.resultInvoiceId ? `&receipt=${attempt.resultInvoiceId}` : ''}`;
+  return { url: null, reason: 'already-paid' as const, to };
+}
+
+/** Every day of the booking was cancelled by someone (customer or Owner), not just left to run out. */
+async function bookingCancelled(db: Db, bookingId: string) {
+  const rows = await db
+    .select({ status: bookingDogs.status, by: bookingDogs.cancelledBy })
+    .from(bookingDogs)
+    .where(eq(bookingDogs.bookingId, bookingId));
+  return rows.length > 0 && rows.every((r) => r.status === 'cancelled') && rows.some((r) => r.by !== null);
+}
+
+/** The booking's places were paid by card (no places still held): the newest paid checkout for it. */
+async function alreadyPaidBooking(db: Db, bookingId: string) {
+  const [paid] = await db
+    .select({
+      purpose: checkoutAttempts.purpose,
+      invoiceId: checkoutAttempts.invoiceId,
+      resultInvoiceId: checkoutAttempts.resultInvoiceId,
+    })
+    .from(checkoutAttempts)
+    .where(and(eq(checkoutAttempts.bookingId, bookingId), eq(checkoutAttempts.status, 'paid')))
+    .orderBy(desc(checkoutAttempts.completedAt))
+    .limit(1);
+  return paid ? alreadyPaid(paid) : null;
 }
 
 /** Owner: email the customer a pay link again, creating the checkout if it's missing. */
@@ -561,13 +610,21 @@ async function releaseOrphanHolds(db: Db, now: Date) {
   return released;
 }
 
-async function releaseHolds(q: Db | Tx, bookingId: string, now: Date, note: string, ids: string[] | null) {
+async function releaseHolds(
+  q: Db | Tx,
+  bookingId: string,
+  now: Date,
+  note: string,
+  ids: string[] | null,
+  /** Who cancelled (customer or Owner); null when the hold just ran out. Lets a pay link tell them apart. */
+  by: string | null = null,
+) {
   const released = await q
     .update(bookingDogs)
     .set({
       status: 'cancelled',
       cancelledAt: now,
-      cancelledBy: null,
+      cancelledBy: by,
       lateCancellation: false,
       internalNote: note,
       version: sql`${bookingDogs.version} + 1`,
@@ -804,7 +861,7 @@ async function completeBookingPayment(
 export async function releaseCheckout(
   db: Db,
   attemptId: string,
-  opts: { reason: string; notify: boolean },
+  opts: { reason: string; notify: boolean; by?: string | null },
   now = new Date(),
 ) {
   const [attempt] = await db.select().from(checkoutAttempts).where(eq(checkoutAttempts.id, attemptId));
@@ -822,7 +879,7 @@ export async function releaseCheckout(
       .set({ status: 'expired', completedAt: now })
       .where(eq(checkoutAttempts.id, attemptId));
     const n = locked.bookingId
-      ? await releaseHolds(tx, locked.bookingId, now, opts.reason, await attemptDayIds(tx, locked.id))
+      ? await releaseHolds(tx, locked.bookingId, now, opts.reason, await attemptDayIds(tx, locked.id), opts.by ?? null)
       : 0;
     await recordAudit(tx, {
       actor: SYSTEM,
@@ -930,6 +987,8 @@ export async function releaseBookingHold(
   bookingDogId: string,
   reason: string,
   now = new Date(),
+  /** The user cancelling (customer or Owner), recorded on the day. */
+  by: string | null = null,
 ) {
   const open = await db
     .selectDistinct({ id: checkoutAttempts.id })
@@ -944,8 +1003,8 @@ export async function releaseBookingHold(
       ),
     );
   let released = 0;
-  for (const a of open) released += (await releaseCheckout(db, a.id, { reason, notify: false }, now)).released;
-  released += await releaseHolds(db, bookingId, now, reason, [bookingDogId]);
+  for (const a of open) released += (await releaseCheckout(db, a.id, { reason, notify: false, by }, now)).released;
+  released += await releaseHolds(db, bookingId, now, reason, [bookingDogId], by);
   return released;
 }
 
@@ -999,26 +1058,61 @@ async function loadMyAttempt(db: Db, actor: Actor, rawId: string) {
   return attempt;
 }
 
-/** Where the customer lands after the checkout page (success or cancel). Confirms the payment if made. */
-export async function returnFromCheckout(db: Db, actor: Actor, rawId: string, cancelled: boolean, now = new Date()) {
+/**
+ * Where the customer lands after the checkout page (success or cancel). Confirms the payment if made.
+ * `again`: the checkout page was submitted again after it had already been paid (a replay or a
+ * double-click), so say it's already paid rather than "payment received" a second time.
+ */
+export async function returnFromCheckout(
+  db: Db,
+  actor: Actor,
+  rawId: string,
+  cancelled: boolean,
+  now = new Date(),
+  opts: { again?: boolean } = {},
+) {
   const attempt = await loadMyAttempt(db, actor, rawId);
   const target =
     attempt.purpose === 'invoice' ? `/account/invoices/${attempt.invoiceId}` : ('/account/bookings' as string);
-  if (cancelled) return `${target}?payment=cancelled`;
+  // "Cancel" (or a losing double-click) on something already paid: it's paid, not "not finished".
+  if (cancelled && attempt.status !== 'paid') return `${target}?payment=cancelled`;
   const r = await completeCheckout(db, attempt.id, now);
+  if (r.paid && (opts.again || cancelled)) {
+    const [after] = await db.select().from(checkoutAttempts).where(eq(checkoutAttempts.id, attempt.id));
+    return alreadyPaid(after ?? attempt).to;
+  }
   return `${target}?payment=${r.paid ? 'paid' : 'processing'}`;
+}
+
+/**
+ * The simulated checkout page and its buttons (PAYMENTS_DRIVER=simulated): only the customer whose
+ * checkout it is may see or use it. Anyone else, including the Owner, gets "not found".
+ */
+export async function mySimulatedCheckout(db: Db, actor: Actor, sessionId: string) {
+  if (actor.kind !== 'user') throw new NotFoundError('Payment');
+  const [row] = await db
+    .select({ attempt: checkoutAttempts, ownerUserId: customers.userId })
+    .from(checkoutAttempts)
+    .innerJoin(customers, eq(customers.id, checkoutAttempts.customerId))
+    .where(eq(checkoutAttempts.providerSessionId, sessionId))
+    .limit(1);
+  if (!row || row.ownerUserId !== actor.userId) throw new NotFoundError('Payment');
+  return row.attempt;
 }
 
 /** "Pay now" link (from the bookings page or the Owner's payment email). */
 export async function resumeCheckoutUrl(db: Db, actor: Actor, rawId: string, now = new Date()) {
   const attempt = await loadMyAttempt(db, actor, rawId);
-  if (attempt.status === 'paid') return { url: null, reason: 'paid' as const };
-  if (attempt.status === 'open' && attempt.url && attempt.expiresAt > now) return { url: attempt.url, reason: null };
+  if (attempt.purpose === 'booking' && attempt.bookingId && (await bookingCancelled(db, attempt.bookingId)))
+    return payLinkEnded('booking-cancelled');
+  if (attempt.status === 'paid') return alreadyPaid(attempt);
+  if (attempt.status === 'open' && attempt.url && attempt.expiresAt > now)
+    return { url: attempt.url, reason: null, to: null };
   // The link in the email still works if the checkout failed or was replaced: make (or reuse) one
   // for the places still held on that booking.
   if (attempt.purpose === 'booking' && attempt.bookingId && !hasPermission(actor, 'invoices.manage'))
     return payForMyBooking(db, actor, attempt.bookingId, now);
-  return { url: null, reason: 'expired' as const };
+  return payLinkEnded('expired');
 }
 
 /** The customer's bookings still waiting for payment. */

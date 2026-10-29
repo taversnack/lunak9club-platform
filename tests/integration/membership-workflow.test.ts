@@ -42,6 +42,7 @@ import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
 import { addDays, londonDate } from '@/domain/time';
 import { MemoryEmailProvider, linkFrom } from '../support/memory-email';
+import { BANK_HOLIDAYS } from '../support/dates';
 import { makeUser, type TestUser } from '../support/factories';
 import { approvedDog, readyCustomer, clearDayLimits, releaseMemberDays } from '../support/onboard';
 
@@ -56,6 +57,12 @@ let other: TestUser;
 const nextWeekday = (iso: number, from = addDays(today, 1)) => {
   let d = from;
   while (isoWeekday(d) !== iso) d = addDays(d, 1);
+  return d;
+};
+/** Like nextWeekday, but never a bank holiday (the club is shut, so capping it would test nothing). */
+const nextOpenWeekday = (iso: number, from: string) => {
+  let d = nextWeekday(iso, from);
+  while (BANK_HOLIDAYS.has(d)) d = nextWeekday(iso, addDays(d, 1));
   return d;
 };
 const sensitive = /password|token=|vaccin|medical|vet/i;
@@ -231,7 +238,7 @@ describe('full days block approval (D90)', () => {
       session: 'full',
       startsOn: start,
     });
-    const full = addDays(start, 7);
+    const full = nextOpenWeekday(5, addDays(start, 7));
     await db().execute(
       sql`insert into service_days (service_date, session_capacity) values (${full}, 0) on conflict (service_date) do update set session_capacity = 0`,
     );
@@ -258,7 +265,7 @@ describe('confirming the Owner’s offer checks space (D87)', () => {
       .insert(membershipOffers)
       .values({ customerId: c!.id, dogName: 'Moss', weekdays: [5], session: 'full', startsOn: start })
       .returning();
-    const full = addDays(start, 7);
+    const full = nextOpenWeekday(5, addDays(start, 7));
     await db().execute(
       sql`insert into service_days (service_date, session_capacity) values (${full}, 0) on conflict (service_date) do update set session_capacity = 0`,
     );
