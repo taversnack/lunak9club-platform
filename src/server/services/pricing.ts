@@ -72,7 +72,13 @@ export async function loadPricingContext(
 }
 
 export function membershipDaysOn(ctx: PricingContext, dogId: string, date: IsoDate): number | null {
-  const m = ctx.memberships.get(dogId)?.find((x) => date >= x.from && (x.to === null || date <= x.to));
+  // A replacement can overlap the one it replaces by a day (an old membership that hadn't started yet is kept
+  // to its first day), so the one that runs longest (open-ended first) wins: the replacement outlives the old.
+  const end = (x: { to: IsoDate | null }) => x.to ?? '9999-12-31';
+  const m = ctx.memberships
+    .get(dogId)
+    ?.filter((x) => date >= x.from && (x.to === null || date <= x.to))
+    .sort((a, b) => end(b).localeCompare(end(a)))[0];
   return m ? m.daysPerWeek : null;
 }
 

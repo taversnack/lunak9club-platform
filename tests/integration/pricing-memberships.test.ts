@@ -26,7 +26,7 @@ import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
 import { changeEffectiveDate, firstUninvoicedMonthStart } from '@/domain/membership/rules';
 import { addDays, londonDate } from '@/domain/time';
-import { BANK_HOLIDAYS, weekdayPicker } from '../support/dates';
+import { BANK_HOLIDAYS, firstOpenWeekday, weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { makeUser, type TestUser } from '../support/factories';
@@ -156,7 +156,10 @@ describe('scheduled price changes (D44, D45)', () => {
     const later = weekdayAhead(31);
     const p = await previewMyBookings(db(), dan, { dogIds: [danDog], dates: [later], session: 'full', taxi: false });
     expect(p.totalPence).toBe(5500);
-    const soon = weekdayAhead(5);
+    // A preview books nothing, so the day needn't be unique; it must just fall before the new book starts.
+    // (weekdayAhead skips days other files have claimed, and near Christmas that could push it past `from`.)
+    const soon = firstOpenWeekday(5);
+    expect(soon < from, `${soon} should be before ${from}`).toBe(true);
     expect(
       (await previewMyBookings(db(), dan, { dogIds: [danDog], dates: [soon], session: 'full', taxi: false }))
         .totalPence,

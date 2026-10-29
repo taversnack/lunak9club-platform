@@ -12,7 +12,7 @@ function escapeHtml(s: string): string {
 function layout(
   title: string,
   bodyHtml: string,
-  footer = "If you didn't ask for this, you can ignore this email.",
+  footer = 'If you didn’t ask for this, you can ignore this email.',
 ): string {
   return `<!doctype html><html lang="en-GB"><body style="font-family:system-ui,sans-serif;background:#f7f5f2;color:#273039;padding:24px">
 <div style="max-width:520px;margin:auto;background:#fff;border-top:4px solid #283039;padding:28px">
@@ -78,10 +78,10 @@ export function recordNeedsAttentionMessage(to: string, firstName: string, dogNa
     to,
     template: 'compliance.needs-attention',
     subject: `Luna’s K9 Club: an update is needed for ${dogName}`,
-    text: `Hi ${firstName},\n\nWe've looked at the records you sent for ${dogName} and need something updated. Please sign in to see what's needed:\n${url}`,
+    text: `Hi ${firstName},\n\nWe’ve looked at the records you sent for ${dogName} and need something updated. Please sign in to see what’s needed:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We've looked at the records you sent for ${escapeHtml(dogName)} and need something updated. Please sign in to see what's needed.</p>${button(url, 'Sign in')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve looked at the records you sent for ${escapeHtml(dogName)} and need something updated. Please sign in to see what’s needed.</p>${button(url, 'Sign in')}`,
     ),
   };
 }
@@ -92,7 +92,7 @@ export function dogApprovedMessage(to: string, firstName: string, dogName: strin
     to,
     template: 'compliance.dog-approved',
     subject: `Luna’s K9 Club: ${dogName} is approved for day care`,
-    text: `Hi ${firstName},\n\nGreat news – ${dogName} is approved for day care at Luna’s K9 Club. Sign in to see your dog's page:\n${url}`,
+    text: `Hi ${firstName},\n\nGreat news – ${dogName} is approved for day care at Luna’s K9 Club. Sign in to see your dog’s page:\n${url}`,
     html: layout(
       title,
       `<p>Hi ${escapeHtml(firstName)},</p><p>Great news – ${escapeHtml(dogName)} is approved for day care at Luna’s K9 Club.</p>${button(url, 'Sign in')}`,
@@ -129,10 +129,10 @@ export function bookingSummaryMessage(to: string, firstName: string, ls: Booking
     to,
     template: 'booking.summary',
     subject: 'Luna’s K9 Club: your booking',
-    text: `Hi ${firstName},\n\nHere's a summary of your booking:\n${l.text}\n\nYou can see or cancel bookings here:\n${url}`,
+    text: `Hi ${firstName},\n\nHere’s a summary of your booking:\n${l.text}\n\nYou can see or cancel bookings here:\n${url}`,
     html: layout(
       'Your booking',
-      `<p>Hi ${escapeHtml(firstName)},</p><p>Here's a summary of your booking:</p>${l.html}${button(url, 'See your bookings')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Here’s a summary of your booking:</p>${l.html}${button(url, 'See your bookings')}`,
     ),
   };
 }
@@ -209,10 +209,10 @@ export function paymentReminderMessage(to: string, firstName: string, inv: Invoi
     to,
     template: 'invoice.reminder',
     subject: `${BRAND}: reminder – invoice ${inv.number} is due ${inv.dueText}`,
-    text: `Hi ${firstName},\n\nA quick reminder that invoice ${inv.number} (${inv.amountText} still to pay) is due on ${inv.dueText}. If you've already paid, thank you – please ignore this.\n\n${url}`,
+    text: `Hi ${firstName},\n\nA quick reminder that invoice ${inv.number} (${inv.amountText} still to pay) is due on ${inv.dueText}. If you’ve already paid, thank you – please ignore this.\n\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>A quick reminder that invoice ${escapeHtml(inv.number)} is due on ${escapeHtml(inv.dueText)}.</p><p><strong>Still to pay:</strong> ${escapeHtml(inv.amountText)}</p><p>If you've already paid, thank you – please ignore this.</p>${button(url, 'See your invoice')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>A quick reminder that invoice ${escapeHtml(inv.number)} is due on ${escapeHtml(inv.dueText)}.</p><p><strong>Still to pay:</strong> ${escapeHtml(inv.amountText)}</p><p>If you’ve already paid, thank you – please ignore this.</p>${button(url, 'See your invoice')}`,
       '',
     ),
   };
@@ -226,8 +226,8 @@ export function refundDecisionMessage(
 ): EmailMessage {
   const title = d.approved ? 'Refund approved' : 'Refund not approved';
   const body = d.approved
-    ? `We've approved a refund of ${d.amountText} for ${d.dayText}.`
-    : `We couldn't approve a refund for ${d.dayText}.${d.reason ? ` Reason: ${d.reason}` : ''}`;
+    ? `We’ve approved a refund of ${d.amountText} for ${d.dayText}.`
+    : `We couldn’t approve a refund for ${d.dayText}.${d.reason ? ` Reason: ${d.reason}` : ''}`;
   return {
     to,
     template: d.approved ? 'refund.approved' : 'refund.declined',
@@ -308,10 +308,10 @@ export function paymentReceivedMessage(
     to,
     template: 'payment.received',
     subject: `${BRAND}: payment received${p.number ? ` – ${p.number}` : ''}`,
-    text: `Hi ${firstName},\n\nWe've received your card payment of ${p.amountText} for ${p.forText}${ref}. Your receipt is in your account:\n${url}`,
+    text: `Hi ${firstName},\n\nWe’ve received your card payment of ${p.amountText} for ${p.forText}${ref}. Your receipt is in your account:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We've received your card payment of <strong>${escapeHtml(p.amountText)}</strong> for ${escapeHtml(p.forText)}${escapeHtml(ref)}.</p>${button(url, 'See your receipt')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve received your card payment of <strong>${escapeHtml(p.amountText)}</strong> for ${escapeHtml(p.forText)}${escapeHtml(ref)}.</p>${button(url, 'See your receipt')}`,
       '',
     ),
   };
@@ -330,10 +330,10 @@ export function paymentLinkMessage(
       to,
       template: 'booking.request-approved',
       subject: `${BRAND}: request approved – please pay to secure your booking`,
-      text: `Hi ${firstName},\n\n${APPROVED_PAY_TO_SECURE}\n\nWe're holding ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} (UK time). If it isn't paid by then, the place is released.\n\nPay here:\n${url}`,
+      text: `Hi ${firstName},\n\n${APPROVED_PAY_TO_SECURE}\n\nWe’re holding ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} (UK time). If it isn’t paid by then, the place is released.\n\nPay here:\n${url}`,
       html: layout(
         t,
-        `<p>Hi ${escapeHtml(firstName)},</p><p><strong>${escapeHtml(APPROVED_PAY_TO_SECURE)}</strong></p><p>We're holding ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by <strong>${escapeHtml(p.untilText)}</strong> (UK time). If it isn't paid by then, the place is released.</p>${button(url, 'Pay by card')}<p>Or copy this link: ${escapeHtml(url)}</p>`,
+        `<p>Hi ${escapeHtml(firstName)},</p><p><strong>${escapeHtml(APPROVED_PAY_TO_SECURE)}</strong></p><p>We’re holding ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by <strong>${escapeHtml(p.untilText)}</strong> (UK time). If it isn’t paid by then, the place is released.</p>${button(url, 'Pay by card')}<p>Or copy this link: ${escapeHtml(url)}</p>`,
         '',
       ),
     };
@@ -343,10 +343,10 @@ export function paymentLinkMessage(
     to,
     template: 'payment.link',
     subject: `${BRAND}: please pay to confirm your booking`,
-    text: `Hi ${firstName},\n\nWe've held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to confirm it – after that the place is released.\n\n${url}`,
+    text: `Hi ${firstName},\n\nWe’ve held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to confirm it – after that the place is released.\n\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We've held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to confirm it. After that the place is released.</p>${button(url, 'Pay by card')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to confirm it. After that the place is released.</p>${button(url, 'Pay by card')}`,
       '',
     ),
   };
@@ -358,10 +358,10 @@ export function holdReleasedMessage(to: string, firstName: string, forText: stri
     to,
     template: 'payment.hold-released',
     subject: `${BRAND}: booking not completed`,
-    text: `Hi ${firstName},\n\nWe didn't receive payment in time for ${forText}, so the place has been released. You can book again here:\n${url}`,
+    text: `Hi ${firstName},\n\nWe didn’t receive payment in time for ${forText}, so the place has been released. You can book again here:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We didn't receive payment in time for ${escapeHtml(forText)}, so the place has been released.</p>${button(url, 'Book again')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We didn’t receive payment in time for ${escapeHtml(forText)}, so the place has been released.</p>${button(url, 'Book again')}`,
       '',
     ),
   };
@@ -378,10 +378,10 @@ export function cardRefundMessage(
     to,
     template: 'payment.refund',
     subject: `${BRAND}: refund of ${p.amountText}`,
-    text: `Hi ${firstName},\n\nWe've refunded ${p.amountText} to your card for ${p.forText}. It usually appears within 5–10 working days.\n\n${url}`,
+    text: `Hi ${firstName},\n\nWe’ve refunded ${p.amountText} to your card for ${p.forText}. It usually appears within 5–10 working days.\n\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We've refunded <strong>${escapeHtml(p.amountText)}</strong> to your card for ${escapeHtml(p.forText)}. It usually appears within 5–10 working days.</p>${button(url, 'See your invoices')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve refunded <strong>${escapeHtml(p.amountText)}</strong> to your card for ${escapeHtml(p.forText)}. It usually appears within 5–10 working days.</p>${button(url, 'See your invoices')}`,
       '',
     ),
   };
@@ -395,15 +395,15 @@ export function vaccinationReminderMessage(
   p: { dogName: string; expired: boolean; dateText: string },
   url: string,
 ): EmailMessage {
-  const title = p.expired ? `${p.dogName}'s records need updating` : `Please update ${p.dogName}'s records`;
+  const title = p.expired ? `${p.dogName}’s records need updating` : `Please update ${p.dogName}’s records`;
   const body = p.expired
-    ? `A vaccination record for ${p.dogName} expired on ${p.dateText}, so we can't accept bookings after that date until a new record is uploaded.`
+    ? `A vaccination record for ${p.dogName} expired on ${p.dateText}, so we can’t accept bookings after that date until a new record is uploaded.`
     : `A vaccination record for ${p.dogName} runs out on ${p.dateText}. Please upload the new record before then so ${p.dogName} can keep coming to day care.`;
   return {
     to,
     template: p.expired ? 'compliance.vaccination-expired' : 'compliance.vaccination-reminder',
     // Never lowercase the dog's name (it can start the title).
-    subject: `${BRAND}: ${p.expired ? title : `please update ${p.dogName}'s records`}`,
+    subject: `${BRAND}: ${p.expired ? title : `please update ${p.dogName}’s records`}`,
     text: `Hi ${firstName},\n\n${body} Sign in to see which record:\n${url}`,
     html: layout(
       title,
@@ -419,10 +419,10 @@ export function bookingReminderMessage(to: string, firstName: string, ls: Bookin
     to,
     template: 'booking.reminder',
     subject: `${BRAND}: see you tomorrow`,
-    text: `Hi ${firstName},\n\nA reminder of tomorrow's day care:\n${l.text}\n\nNeed to change something? Please call us.\n${url}`,
+    text: `Hi ${firstName},\n\nA reminder of tomorrow’s day care:\n${l.text}\n\nNeed to change something? Please call us.\n${url}`,
     html: layout(
       'See you tomorrow',
-      `<p>Hi ${escapeHtml(firstName)},</p><p>A reminder of tomorrow's day care:</p>${l.html}<p>Need to change something? Please call us.</p>${button(url, 'See your bookings')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>A reminder of tomorrow’s day care:</p>${l.html}<p>Need to change something? Please call us.</p>${button(url, 'See your bookings')}`,
       '',
     ),
   };
@@ -439,8 +439,8 @@ export function incidentMessage(
     ? `An update about ${p.dogName}`
     : `Something happened at day care ${p.dayText ?? 'today'} – ${p.dogName}`;
   const body = p.update
-    ? `We've added an update to an incident report about ${p.dogName}.`
-    : `We've written an incident report about ${p.dogName} so you know exactly what happened and what we did.`;
+    ? `We’ve added an update to an incident report about ${p.dogName}.`
+    : `We’ve written an incident report about ${p.dogName} so you know exactly what happened and what we did.`;
   return {
     to,
     template: p.update ? 'welfare.incident-update' : 'welfare.incident',
@@ -467,10 +467,10 @@ export function welfareNoteMessage(
     to,
     template: 'welfare.note',
     subject: `${BRAND}: a note about ${dogName} ${dayText}`,
-    text: `Hi ${firstName},\n\nWe noticed something about ${dogName} ${dayText} that we'd like you to know about. Please sign in to read our note:\n${url}`,
+    text: `Hi ${firstName},\n\nWe noticed something about ${dogName} ${dayText} that we’d like you to know about. Please sign in to read our note:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We noticed something about ${escapeHtml(dogName)} ${escapeHtml(dayText)} that we'd like you to know about.</p>${button(url, 'Read the note')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We noticed something about ${escapeHtml(dogName)} ${escapeHtml(dayText)} that we’d like you to know about.</p>${button(url, 'Read the note')}`,
       '',
     ),
   };
@@ -484,9 +484,9 @@ export function erasureDecisionMessage(
   const title = p.approved ? 'Your account has been closed' : 'About your request to delete your account';
   const body = p.approved
     ? p.retainUntilText
-      ? `We've closed your account and you can no longer sign in. The law requires us to keep some records (your dog's day care register and invoices) for a set time; we'll delete or anonymise them by ${p.retainUntilText}, and we won't use them for anything else.`
-      : `We've closed your account and removed your personal details. Invoices are kept for 6 years as the law requires.`
-    : `We couldn't close your account yet. ${p.reason ?? ''}`.trim();
+      ? `We’ve closed your account and you can no longer sign in. The law requires us to keep some records (your dog’s day care register and invoices) for a set time; we’ll delete or anonymise them by ${p.retainUntilText}, and we won’t use them for anything else.`
+      : `We’ve closed your account and removed your personal details. Invoices are kept for 6 years as the law requires.`
+    : `We couldn’t close your account yet. ${p.reason ?? ''}`.trim();
   return {
     to,
     template: p.approved ? 'data.erasure-approved' : 'data.erasure-declined',
@@ -498,16 +498,19 @@ export function erasureDecisionMessage(
 
 // Approval requests (D77). Polite standard wording only: the summary comes from the request type's
 // describe() (never sensitive), and the Owner's note is never included – the customer reads it in the portal.
-export function approvalRequestedOwnerMessage(to: string, p: { label: string }, url: string): EmailMessage {
-  const title = `New ${p.label.toLowerCase()} to review`;
+/** "a booking request", "an …": the article for an approval type's email noun. */
+const withArticle = (noun: string) => `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
+
+export function approvalRequestedOwnerMessage(to: string, p: { noun: string }, url: string): EmailMessage {
+  const title = `New ${p.noun} to review`;
   return {
     to,
     template: 'approval.owner-new',
     subject: `${BRAND}: ${title.toLowerCase()}`,
-    text: `A customer has sent a ${p.label.toLowerCase()}. Review it here:\n${url}`,
+    text: `A customer has sent ${withArticle(p.noun)}. Review it here:\n${url}`,
     html: layout(
       title,
-      `<p>A customer has sent a ${escapeHtml(p.label.toLowerCase())}.</p>${button(url, 'Review requests')}`,
+      `<p>A customer has sent ${escapeHtml(withArticle(p.noun))}.</p>${button(url, 'Review requests')}`,
       '',
     ),
   };
@@ -515,7 +518,7 @@ export function approvalRequestedOwnerMessage(to: string, p: { label: string }, 
 
 export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn' | 'expired';
 
-const APPROVAL_COPY: Record<ApprovalOutcome, { title: (label: string) => string; body: string }> = {
+const APPROVAL_COPY: Record<ApprovalOutcome, { title: (noun: string) => string; body: string }> = {
   approved: {
     title: (l) => `Your ${l} has been approved`,
     body: 'Good news – we’ve approved your request.',
@@ -537,11 +540,11 @@ const APPROVAL_COPY: Record<ApprovalOutcome, { title: (label: string) => string;
 export function approvalDecisionMessage(
   to: string,
   firstName: string,
-  p: { label: string; summary: string; outcome: ApprovalOutcome },
+  p: { noun: string; summary: string; outcome: ApprovalOutcome },
   url: string,
 ): EmailMessage {
   const copy = APPROVAL_COPY[p.outcome];
-  const title = copy.title(p.label.toLowerCase());
+  const title = copy.title(p.noun);
   return {
     to,
     template: `approval.${p.outcome}`,
@@ -594,7 +597,7 @@ export function customerInviteMessage(
     html: layout(
       title,
       `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(ownerFirstName)} at ${BRAND} has created an account for you.</p>${coverHtml}${button(url, 'Finish setting up')}<p style="font-size:13px;color:#4f5660">This link works once and expires in 7 days.</p>${faqHtml(faqs)}<p>Thanks,<br>${escapeHtml(ownerFirstName)}</p>`,
-      "If you weren't expecting this, you can ignore this email.",
+      'If you weren’t expecting this, you can ignore this email.',
     ),
   };
 }
@@ -619,5 +622,20 @@ export function membershipDaysChangedMessage(
       `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve changed ${escapeHtml(dogName)}’s regular days to ${escapeHtml(daysText)}, from ${escapeHtml(fromText)}. Your bookings have been updated.</p>${button(url, 'See your bookings')}`,
       '',
     ),
+  };
+}
+
+/** Sent when the Owner confirms a membership. Names are escaped in the HTML part. */
+export function membershipConfirmedMessage(
+  to: string,
+  firstName: string,
+  p: { dogName: string; pattern: string; startsOn: string; url: string },
+): EmailMessage {
+  return {
+    to,
+    template: 'membership.approved',
+    subject: `${BRAND}: ${p.dogName}’s membership is confirmed`,
+    text: `Hi ${firstName},\n\n${p.dogName}’s membership (${p.pattern}) starts on ${p.startsOn}. We’ve booked the days ahead for you:\n${p.url}`,
+    html: `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(p.dogName)}’s membership starts on ${escapeHtml(p.startsOn)}. We’ve booked the days ahead for you.</p><p><a href="${escapeHtml(p.url)}">See your bookings</a></p>`,
   };
 }
