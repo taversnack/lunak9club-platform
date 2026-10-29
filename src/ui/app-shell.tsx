@@ -141,7 +141,8 @@ export function AppShell({
   root: Route;
   navLabel: string;
   userName: string;
-  cta?: { href: Route; label: string };
+  /** `short` is shown instead of `label` on very narrow screens (<360px); the link's name stays `label`. */
+  cta?: { href: Route; label: string; short?: string };
   tabs?: NavItem[];
   groups: NavGroup[];
   sidebar?: boolean;
@@ -218,8 +219,17 @@ export function AppShell({
           ) : null}
           <div className={s.headerRight}>
             {cta ? (
-              <Link href={cta.href} className={s.ctaPill}>
-                {cta.label}
+              <Link href={cta.href} className={s.ctaPill} aria-label={cta.short ? cta.label : undefined}>
+                {cta.short ? (
+                  <>
+                    <span className={s.ctaLong}>{cta.label}</span>
+                    <span className={s.ctaShort} aria-hidden="true">
+                      {cta.short}
+                    </span>
+                  </>
+                ) : (
+                  cta.label
+                )}
                 <LinkPending />
               </Link>
             ) : null}
