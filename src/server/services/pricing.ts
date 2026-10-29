@@ -51,7 +51,6 @@ export async function loadPricingContext(
         startsOn: memberships.startsOn,
         endsOn: memberships.endsOn,
         weekdays: memberships.weekdays,
-        status: memberships.status,
       })
       .from(memberships)
       .where(
@@ -66,17 +65,20 @@ export async function loadPricingContext(
   const map = new Map<string, { from: IsoDate; to: IsoDate | null; daysPerWeek: number }[]>();
   for (const m of ms) {
     const list = map.get(m.dogId) ?? [];
-    const entry = { from: m.startsOn, to: m.endsOn, daysPerWeek: m.weekdays.length };
-    // A membership replaced before it began is kept as 'ended' on its start day; the active one wins that day.
-    if (m.status === 'active') list.unshift(entry);
-    else list.push(entry);
+    list.push({ from: m.startsOn, to: m.endsOn, daysPerWeek: m.weekdays.length });
     map.set(m.dogId, list);
   }
   return { books, rates, memberships: map };
 }
 
 export function membershipDaysOn(ctx: PricingContext, dogId: string, date: IsoDate): number | null {
-  const m = ctx.memberships.get(dogId)?.find((x) => date >= x.from && (x.to === null || date <= x.to));
+  // A replacement can overlap the one it replaces by a day (an old membership that hadn't started yet is kept
+  // to its first day), so the one that runs longest (open-ended first) wins: the replacement outlives the old.
+  const end = (x: { to: IsoDate | null }) => x.to ?? '9999-12-31';
+  const m = ctx.memberships
+    .get(dogId)
+    ?.filter((x) => date >= x.from && (x.to === null || date <= x.to))
+    .sort((a, b) => end(b).localeCompare(end(a)))[0];
   return m ? m.daysPerWeek : null;
 }
 

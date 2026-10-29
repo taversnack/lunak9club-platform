@@ -54,6 +54,7 @@ export async function latestLink(to: string, template: string): Promise<string> 
 export async function signIn(page: Page, email: string, password: string) {
   await page.goto('/sign-in');
   await page.getByLabel('Email address').fill(email);
+  await page.getByRole('button', { name: 'Sign in with a password instead' }).click();
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 }
@@ -88,4 +89,18 @@ export async function setVaccinationExpiry(dogName: string, requirementKey: stri
   } finally {
     await c.end();
   }
+}
+
+/**
+ * After a card payment the address bar must show a real page (e.g. /account/bookings?payment=paid),
+ * not /api/payments/return or the simulated checkout's own POST URLs.
+ */
+export async function expectLandedAfterPayment(page: Page, pathname: string | RegExp, payment = 'paid') {
+  await expect(page).toHaveURL(
+    (u) =>
+      !u.pathname.startsWith('/api/') &&
+      !u.pathname.startsWith('/dev/checkout/') &&
+      (typeof pathname === 'string' ? u.pathname === pathname : pathname.test(u.pathname)) &&
+      u.searchParams.get('payment') === payment,
+  );
 }

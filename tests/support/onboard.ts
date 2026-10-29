@@ -63,7 +63,7 @@ export async function approvedDog(db: Db, owner: TestUser, user: TestUser, name:
  */
 export async function releaseMemberDays(db: Db) {
   await db.execute(
-    sql`update booking_dogs set status = 'cancelled', cancelled_at = now(), late_cancellation = false where kind = 'membership' and status in ('confirmed', 'waitlisted', 'requested')`,
+    sql`update booking_dogs set status = 'cancelled', cancelled_at = ${new Date()}, late_cancellation = false where kind = 'membership' and status in ('confirmed', 'waitlisted', 'requested')`,
   );
   await db.execute(sql`update memberships set status = 'ended' where status in ('active', 'requested')`);
 }
@@ -74,7 +74,9 @@ export async function releaseMemberDays(db: Db) {
  */
 export async function clearDayLimits(db: Db) {
   await db.execute(
-    sql`update service_days set session_capacity = null, taxi_capacity = null where service_date >= current_date`,
+    // From the app's today, not Postgres current_date: with TEST_NOW in the past they differ, and
+    // limits left on the days in between used to fill them (D87, D88, D90 failed at 2026-10-14).
+    sql`update service_days set session_capacity = null, taxi_capacity = null where service_date >= ${londonDate(new Date())}`,
   );
 }
 

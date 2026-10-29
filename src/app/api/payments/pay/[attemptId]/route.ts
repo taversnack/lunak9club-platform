@@ -16,8 +16,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ attemptI
   if (actor.kind === 'anonymous') return toSignIn(req);
   try {
     const r = await resumeCheckoutUrl(getDb(), actor, attemptId);
-    if (r.url) return NextResponse.redirect(r.url, 303);
-    return seeOtherInApp(`/account/bookings?payment=${r.reason}`);
+    if (r.to === null) return NextResponse.redirect(r.url, 303);
+    return seeOtherInApp(r.to);
   } catch (e) {
     if (e instanceof AuthorizationError || e instanceof NotFoundError)
       return new Response('Not found', { status: 404 });

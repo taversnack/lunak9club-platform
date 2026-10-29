@@ -190,6 +190,7 @@ test('a signed-out customer who opens the emailed pay link signs in and lands on
   // Path and query only: the host is whatever APP_URL says, not necessarily the one the test used.
   await expect(page).toHaveURL((u) => u.pathname === '/sign-in' && u.searchParams.get('callbackUrl') === payPath);
   await page.getByLabel('Email address').fill(DEMO_CUSTOMER.email);
+  await page.getByRole('button', { name: 'Sign in with a password instead' }).click();
   await page.getByLabel('Password').fill(DEMO_CUSTOMER.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   // …and after signing in you're on the card payment, not the dashboard.
@@ -200,6 +201,7 @@ test('a signed-out customer who opens the emailed pay link signs in and lands on
 test('a sign-in link pointing at another site lands on the dashboard instead', async ({ page }) => {
   await page.goto(`/sign-in?callbackUrl=${encodeURIComponent('//evil.example/steal')}`);
   await page.getByLabel('Email address').fill(DEMO_CUSTOMER.email);
+  await page.getByRole('button', { name: 'Sign in with a password instead' }).click();
   await page.getByLabel('Password').fill(DEMO_CUSTOMER.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/account$/); // /dashboard sends a customer to /account
