@@ -724,12 +724,20 @@ describe('approvals authorisation', () => {
 
 describe('One trial day per dog (D95)', () => {
   // Its own picker: the file's main one starts 40 days out and has few weekdays left by now.
+  // Two days only (refused requests write nothing; ended trial days free their place), so the shared
+  // day ledger stays free for the later files.
   const trialDay = weekdayPicker();
+  let dayA = '';
+  let dayB = '';
+  beforeAll(() => {
+    dayA = trialDay(2);
+    dayB = trialDay(2);
+  });
   const trial = (dogId: string, date: string) =>
     createMyBookings(db(), alice, { dogIds: [dogId], dates: [date], session: 'full', taxi: false, trial: true });
   /** The second request is refused with the plain-English reason on the dog field. */
   const refused = async (dogId: string, name: string) => {
-    const err = await trial(dogId, trialDay(2)).catch((e: unknown) => e);
+    const err = await trial(dogId, dayB).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ValidationError);
     expect((err as ValidationError).fields.dogIds).toBe(trialAlreadyUsed(name));
     const dog = (await myBookableDogs(db(), alice)).find((d) => d.id === dogId)!;
@@ -743,13 +751,13 @@ describe('One trial day per dog (D95)', () => {
 
   it('a second request is refused while the first is waiting for the Owner', async () => {
     const dog = await onboardedDog(alice, 'Trial One', false);
-    await trial(dog, trialDay(2));
+    await trial(dog, dayA);
     await refused(dog, 'Trial One');
   });
 
   it('a second request is refused once the first is approved, and once it has been taken', async () => {
     const dog = await onboardedDog(alice, 'Trial Two', false);
-    const r = await trial(dog, trialDay(2));
+    const r = await trial(dog, dayA);
     await approveApprovalRequest(db(), owner, r.requestId!);
     expect((await trialRows(dog))[0]!.status).toBe('pending_payment');
     await refused(dog, 'Trial Two');
@@ -765,23 +773,23 @@ describe('One trial day per dog (D95)', () => {
 
   it('withdrawn, declined and cancelled trial days don’t count', async () => {
     const dog = await onboardedDog(alice, 'Trial Three', false);
-    const withdrawn = await trial(dog, trialDay(2));
+    const withdrawn = await trial(dog, dayA);
     await withdrawMyApprovalRequest(db(), alice, withdrawn.requestId!);
-    const declined = await trial(dog, trialDay(2));
+    const declined = await trial(dog, dayA);
     await rejectApprovalRequest(db(), owner, declined.requestId!, {});
-    const approved = await trial(dog, trialDay(2));
+    const approved = await trial(dog, dayA);
     await approveApprovalRequest(db(), owner, approved.requestId!);
     const [held] = (await trialRows(dog)).filter((x) => x.status === 'pending_payment');
     await cancelMyBooking(db(), alice, held!.id);
     expect((await trialRows(dog)).map((x) => x.status).sort()).toEqual(['cancelled', 'cancelled', 'rejected']);
-    const again = await trial(dog, trialDay(2));
+    const again = await trial(dog, dayA);
     expect(again.outcomes[0]!.outcome).toBe('requested');
     expect((await myBookableDogs(db(), alice)).find((d) => d.id === dog)!.trialUsed).toBe(true);
   });
 
   it('two trial requests sent at the same time for different dates: only one gets through', async () => {
     const dog = await onboardedDog(alice, 'Trial Four', false);
-    const results = await Promise.allSettled([trial(dog, trialDay(2)), trial(dog, trialDay(2))]);
+    const results = await Promise.allSettled([trial(dog, dayA), trial(dog, dayB)]);
     expect(results.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
     const failed = results.find((x) => x.status === 'rejected') as PromiseRejectedResult;
     expect(failed.reason).toBeInstanceOf(ValidationError);
@@ -790,7 +798,7 @@ describe('One trial day per dog (D95)', () => {
   });
 
   it('the Owner approval rule is unchanged: an approved dog still can’t ask for a trial day', async () => {
-    const err = await trial(aliceDog, trialDay(2)).catch((e: unknown) => e);
+    const err = await trial(aliceDog, dayB).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ValidationError);
     expect((err as ValidationError).fields.dogIds).toMatch(/already approved/);
   });
