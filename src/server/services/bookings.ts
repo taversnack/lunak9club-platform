@@ -1,11 +1,18 @@
 import 'server-only';
-import { formatPounds, LIVE_STATUSES, OPEN_STATUSES, PRICED_PLACE_STATUSES } from '@/domain/booking/rules';
+import {
+  ENDED_STATUSES,
+  formatPounds,
+  LIVE_STATUSES,
+  OPEN_STATUSES,
+  PRICED_PLACE_STATUSES,
+} from '@/domain/booking/rules';
+import { trialAlreadyUsed } from '@/domain/booking/wording';
 import { raiseRefundRequests } from './billing';
 import { submitPendingRefunds } from './card-refunds';
 import { refundBookingDayTx, releaseBookingHold } from './payments';
 import { createApprovalRequest, withdrawMyApprovalRequest } from './approvals';
 import { BOOKING_REQUEST, bookingSubjectKey, pendingRequestFor, requestedLeft } from './booking-requests';
-import { and, asc, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, notInArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import { bookingDogs, bookings, customers, dogPermissions, dogs, priceSnapshots, users } from '@/infra/db/schema';
@@ -46,19 +53,20 @@ export async function myBookableDogs(db: Db, actor: Actor) {
     .leftJoin(dogPermissions, eq(dogPermissions.dogId, dogs.id))
     .where(and(eq(dogs.customerId, customer.id), isNull(dogs.archivedAt)))
     .orderBy(asc(dogs.createdAt));
-  const evals = await evaluateDogs(
-    db,
-    rows.map((r) => r.id),
-  );
+  const ids = rows.map((r) => r.id);
+  const [evals, trialUsed] = await Promise.all([evaluateDogs(db, ids), dogsWithTrialDay(db, ids)]);
   return rows.map((r) => {
     const e = evals.get(r.id)!;
+    const notApproved = r.status === 'not_started' || r.status === 'pending_review';
     return {
       id: r.id,
       name: r.name,
       taxiAllowed: Boolean(r.transport),
       canBook: e.canBook,
-      /** A dog not approved yet can be requested for a trial day (D85). */
-      canRequestTrial: r.status === 'not_started' || r.status === 'pending_review',
+      /** A dog not approved yet can be requested for a trial day (D85), once only (D95). */
+      canRequestTrial: notApproved && !trialUsed.has(r.id),
+      /** Set when the dog would need a trial day but already has one requested, approved or taken (D95). */
+      trialUsed: notApproved && trialUsed.has(r.id),
       blockers: e.bookingBlockers,
       /** Facts for the vaccination rules per date (D40, D73, D74). */
       attendance: {
@@ -67,6 +75,25 @@ export async function myBookableDogs(db: Db, actor: Actor) {
       },
     };
   });
+}
+
+/**
+ * Dogs that already have a trial day that counts towards the one-per-dog limit (D95): any trial day
+ * not withdrawn, cancelled or declined, whoever booked it.
+ */
+async function dogsWithTrialDay(db: Pick<Db, 'select'>, dogIds: string[]) {
+  if (!dogIds.length) return new Set<string>();
+  const rows = await db
+    .select({ dogId: bookingDogs.dogId })
+    .from(bookingDogs)
+    .where(
+      and(
+        inArray(bookingDogs.dogId, dogIds),
+        eq(bookingDogs.kind, 'trial'),
+        notInArray(bookingDogs.status, [...ENDED_STATUSES]),
+      ),
+    );
+  return new Set(rows.map((r) => r.dogId));
 }
 
 /** Calendar for the booking page: availability per session and the customer's own bookings. */
@@ -164,7 +191,9 @@ async function validateRequest(db: Db, actor: Actor, input: unknown, now: Date) 
   for (const dog of chosen) {
     if (d.trial ? !dog.canRequestTrial : !dog.canBook)
       fields.dogIds = d.trial
-        ? `${dog.name} doesn’t need a trial day request: ${dog.canBook ? 'they’re already approved, so book a normal day' : (dog.blockers[0] ?? 'please contact us')}`
+        ? dog.trialUsed
+          ? trialAlreadyUsed(dog.name)
+          : `${dog.name} doesn’t need a trial day request: ${dog.canBook ? 'they’re already approved, so book a normal day' : (dog.blockers[0] ?? 'please contact us')}`
         : `${dog.name} can’t be booked yet: ${dog.blockers[0] ?? 'please finish onboarding'}`;
     if (d.taxi && !dog.taxiAllowed)
       fields.taxi = `You haven’t given permission for ${dog.name} to use the dog taxi. Update the onboarding form first.`;
@@ -258,6 +287,14 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
   };
   await db.transaction(async (tx) => {
     const days = await lockDays(tx, dates, settings, now);
+    if (d.trial) {
+      // One trial day per dog (D95). Lock the dog's row so two trial requests sent at the same time
+      // (for any dates) run one after the other, then check again: the second sees the first's day.
+      const dog = chosen[0]!;
+      await tx.select({ id: dogs.id }).from(dogs).where(eq(dogs.id, dog.id)).for('no key update');
+      if ((await dogsWithTrialDay(tx, [dog.id])).has(dog.id))
+        throw new ValidationError('Some of these can’t be booked.', { dogIds: trialAlreadyUsed(dog.name) });
+    }
     // Closing a day takes the same lock, so a closure added since the check above is visible now.
     const closedNow = await closuresBetween(tx, dates[0]!, dates.at(-1)!);
     for (const date of dates)

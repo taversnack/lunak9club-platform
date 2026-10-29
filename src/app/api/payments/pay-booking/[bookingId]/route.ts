@@ -3,7 +3,7 @@ import { getDb } from '@/infra/db/client';
 import { getActor } from '@/server/session';
 import { seeOtherInApp, toSignIn } from '@/server/redirects';
 import { AuthorizationError } from '@/server/policy/authorize';
-import { ConflictError, NotFoundError } from '@/server/errors';
+import { NotFoundError } from '@/server/errors';
 import { PayLinkBusyError, PayLinkUnavailableError, payForMyBooking } from '@/server/services/payments';
 
 export const dynamic = 'force-dynamic';
@@ -23,8 +23,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ bookingI
       return new Response('Not found', { status: 404 });
     if (e instanceof PayLinkBusyError) return seeOtherInApp('/account/bookings?payment=preparing');
     if (e instanceof PayLinkUnavailableError) return seeOtherInApp('/account/bookings?payment=unavailable');
-    // Any other conflict means the places were released (or nothing is left to pay): say so, not "still held".
-    if (e instanceof ConflictError) return seeOtherInApp('/account/bookings?payment=expired');
     throw e;
   }
 }

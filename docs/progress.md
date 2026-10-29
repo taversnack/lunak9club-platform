@@ -131,6 +131,7 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Web-form consent as “written consent” not yet confirmed by the Owner and council (D71).
 - Register answers are overwritten (with when/who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72, brief recommendation 1).
 - D85: trial requests via approve-then-pay are confirmed; the sub-defaults (unapproved dogs only, one dog-day per request, ad hoc trial price) are Proposed – confirm with the Owner.
+- D95: one trial day per dog (requested, approved or taken counts; withdrawn, declined or cancelled don't), enforced in `createMyBookings` under a dog-row lock; branch `dev2/book-page-fixes` (PR #72).
 
 - Follow-ups from the vaccination compliance work: (1) licence guidance 23.1 / brief D42 note – require a screening (meet-and-greet) record at check-in, not built yet; (2) titre certificates for DHP not supported (O16); (3) the retention job clears the reminder log after 90 days, so an "expired" reminder can be sent again ~90 days later – assigned to Developer 3; (4) the customer data download doesn't include vaccination record details.
 - `storage.test.ts` now skips cleanly when `moto_server` (local S3) isn't installed (PR #1, merged into main and into this branch's base); it no longer fails `pnpm test:int` on the shared build box.

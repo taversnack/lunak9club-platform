@@ -4,6 +4,7 @@ import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Alert, buttonClass, Card, Muted, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, SubmitButton } from '@/ui/form';
+import { FocusOnShow } from '@/ui/focus-on-show';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { myBookings } from '@/server/services/bookings';
@@ -102,58 +103,62 @@ export default async function BookingsPage({
               : 'No charge for this cancellation.'}
         </Alert>
       ) : null}
-      {sp.payment === 'paid' ? (
-        <Alert tone="success" title="Payment received – you’re booked">
-          Thank you. We’ve emailed your receipt; you can also find it under Invoices.
-        </Alert>
-      ) : null}
-      {sp.payment === 'already-paid' ? (
-        <Alert tone="success" title="This booking is already paid">
-          <p>There’s nothing more to pay – your places are booked. They’re listed below.</p>
-          {receipt ? (
-            <>
-              <p data-testid="already-paid-summary">
-                {pounds(receipt.bal.paidPence)} paid{paidOn ? ` on ${formatUkDate(paidOn)}` : ''}. Reference{' '}
-                {receipt.inv.number}.
-              </p>
-              <p>
-                <Link href={`/account/invoices/${receipt.inv.id}` as Route}>View the receipt</Link>
-              </p>
-            </>
+      {sp.payment ? (
+        <FocusOnShow key={sp.payment} testId="payment-notice">
+          {sp.payment === 'paid' ? (
+            <Alert tone="success" title="Payment received – you’re booked">
+              Thank you. We’ve emailed your receipt; you can also find it under Invoices.
+            </Alert>
           ) : null}
-        </Alert>
-      ) : null}
-      {sp.payment === 'booking-cancelled' ? (
-        <Alert tone="info" title="This booking was cancelled">
-          There’s nothing to pay for it. You can book again whenever you like.
-        </Alert>
-      ) : null}
-      {sp.payment === 'processing' ? (
-        <Alert tone="info" title="Checking your payment">
-          We haven’t had confirmation from the card company yet. This page will show your booking as soon as it arrives
-          – please don’t pay twice.
-        </Alert>
-      ) : null}
-      {sp.payment === 'cancelled' ? (
-        <Alert tone="warning" title="Payment not finished">
-          Your places are still held for a short while. Pay below to keep them, or cancel them.
-        </Alert>
-      ) : null}
-      {sp.payment === 'expired' ? (
-        <Alert tone="info" title="That payment link has ended">
-          The time to pay ran out, so the places were released. You can book again.
-        </Alert>
-      ) : null}
-      {sp.payment === 'preparing' ? (
-        <Alert tone="info" title="Your payment link is being prepared">
-          That only takes a moment. Your places are still held – press “Pay now” again in a few seconds.
-        </Alert>
-      ) : null}
-      {sp.payment === 'unavailable' ? (
-        <Alert tone="warning" title="We couldn’t create your payment link">
-          Sorry – we couldn’t create your payment link just now. Your places are still held. Please try again in a few
-          minutes.
-        </Alert>
+          {sp.payment === 'already-paid' ? (
+            <Alert tone="success" title="This booking is already paid">
+              <p>There’s nothing more to pay – your places are booked. They’re listed below.</p>
+              {receipt ? (
+                <>
+                  <p data-testid="already-paid-summary">
+                    {pounds(receipt.bal.paidPence)} paid{paidOn ? ` on ${formatUkDate(paidOn)}` : ''}. Reference{' '}
+                    {receipt.inv.number}.
+                  </p>
+                  <p>
+                    <Link href={`/account/invoices/${receipt.inv.id}` as Route}>View the receipt</Link>
+                  </p>
+                </>
+              ) : null}
+            </Alert>
+          ) : null}
+          {sp.payment === 'booking-cancelled' ? (
+            <Alert tone="info" title="This booking was cancelled">
+              There’s nothing to pay for it. You can book again whenever you like.
+            </Alert>
+          ) : null}
+          {sp.payment === 'processing' ? (
+            <Alert tone="info" title="Checking your payment">
+              We haven’t had confirmation from the card company yet. This page will show your booking as soon as it
+              arrives – please don’t pay twice.
+            </Alert>
+          ) : null}
+          {sp.payment === 'cancelled' ? (
+            <Alert tone="warning" title="Payment not finished">
+              Your places are still held for a short while. Pay below to keep them, or cancel them.
+            </Alert>
+          ) : null}
+          {sp.payment === 'expired' ? (
+            <Alert tone="info" title="That payment link has ended">
+              The time to pay ran out, so the places were released. You can book again.
+            </Alert>
+          ) : null}
+          {sp.payment === 'preparing' ? (
+            <Alert tone="info" title="Your payment link is being prepared">
+              That only takes a moment. Your places are still held – press “Pay now” again in a few seconds.
+            </Alert>
+          ) : null}
+          {sp.payment === 'unavailable' ? (
+            <Alert tone="warning" title="We couldn’t create your payment link">
+              Sorry – we couldn’t create your payment link just now. Your places are still held. Please try again in a
+              few minutes.
+            </Alert>
+          ) : null}
+        </FocusOnShow>
       ) : null}
       {unlinked.map((u) => (
         <Alert key={u.bookingId} tone="warning" title={`Waiting for payment: ${pounds(u.amountPence)}`}>

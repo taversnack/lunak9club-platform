@@ -81,6 +81,35 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
     }
   });
 
+  test('payment notices take focus; the permanent booking notice is not a live region', async ({ page }) => {
+    await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+    await expect(page).toHaveURL(/\/account$/);
+    for (const [payment, title] of [
+      ['expired', 'That payment link has ended'],
+      ['unavailable', 'We couldn’t create your payment link'],
+    ] as const) {
+      await page.goto(`/account/bookings?payment=${payment}`);
+      const notice = page.getByTestId('payment-notice');
+      await expect(notice).toContainText(title);
+      await expect(notice).toHaveAttribute('tabindex', '-1');
+      await expect(notice).toBeFocused();
+      await scan(page);
+    }
+    await page.goto('/account/bookings');
+    await expect(page.getByTestId('payment-notice')).toHaveCount(0);
+
+    await page.goto('/account/book');
+    const how = page
+      .getByTestId('book-request-not-secured')
+      .locator('xpath=ancestor::*[.//*[normalize-space()="How booking works"]][1]');
+    await expect(how).toBeVisible();
+    await expect(how).not.toHaveAttribute('role', /.+/);
+    await expect(how).not.toHaveAttribute('aria-live', /.+/);
+    await expect(
+      page.locator('[role=status], [role=alert], [aria-live]').filter({ hasText: 'How booking works' }),
+    ).toHaveCount(0);
+  });
+
   test('owner pages', async ({ page }) => {
     await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
     await expect(page).toHaveURL(/\/admin$/);

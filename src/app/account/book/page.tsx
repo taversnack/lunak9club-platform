@@ -7,7 +7,7 @@ import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
-import { bookPageState } from '@/domain/booking/book-page';
+import { bookPageState, dogCantBookReason, nothingToBookReasons } from '@/domain/booking/book-page';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
@@ -47,7 +47,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
         <Link href="/account/faq#faq-extra">How extra days work</Link>
       </p>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      <Alert tone="info" title="How booking works">
+      <Alert tone="info" title="How booking works" live={false}>
         <p data-testid="book-request-not-secured">{REQUEST_NOT_SECURED}</p>
       </Alert>
       {state !== 'form' ? (
@@ -58,7 +58,16 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
           </Alert>
         ) : (
           <Alert tone="info" title="Nothing to book yet">
-            Your dog needs to be approved before you can book. <Link href="/account">See what’s left to do</Link>.
+            <ul data-testid="book-nothing-reasons">
+              {nothingToBookReasons(dogs).map((r) => (
+                <li key={r.name}>
+                  {r.name}: {r.reason}
+                </li>
+              ))}
+            </ul>
+            <p>
+              <Link href="/account">See what’s left to do</Link>.
+            </p>
           </Alert>
         )
       ) : (
@@ -83,7 +92,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                       {d.canRequestTrial ? (
                         <span className={s.hint}> – not approved yet: you can ask for a trial day</span>
                       ) : !d.canBook ? (
-                        <span className={s.hint}> – {d.blockers[0]}</span>
+                        <span className={s.hint}> – {dogCantBookReason(d)}</span>
                       ) : null}
                     </span>
                   </label>
