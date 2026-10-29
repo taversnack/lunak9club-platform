@@ -19,6 +19,8 @@ export async function GET(req: Request) {
       actor,
       url.searchParams.get('attempt') ?? '',
       url.searchParams.get('cancelled') === '1',
+      new Date(),
+      { again: url.searchParams.get('again') === '1' },
     );
     return seeOtherInApp(target);
   } catch (e) {
