@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Card, Stack } from '@/ui/components';
-import { ActionForm, Checkbox, RadioGroup, SubmitButton, TextField } from '@/ui/form';
-import { DayPicker, SESSION_OPTIONS } from '@/ui/day-picker';
+import { ActionForm, Checkbox, SubmitButton, TextField } from '@/ui/form';
+import { DayPicker } from '@/ui/day-picker';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { loadSettings } from '@/server/services/booking-shared';
@@ -45,7 +45,7 @@ export default async function NewCustomerPage() {
               hint={i === 0 ? undefined : 'Leave blank if there isn’t another dog.'}
             />
             <DayPicker name={`dogs.${i}.weekdays`} open={settings.openWeekdays} legend="Agreed days (optional)" />
-            <RadioGroup name={`dogs.${i}.session`} label="Session" options={SESSION_OPTIONS} defaultValue="full" />
+            <input type="hidden" name={`dogs.${i}.session`} value="full" />
             <Checkbox name={`dogs.${i}.taxi`} label="Uses the dog taxi" />
             <TextField
               name={`dogs.${i}.startsOn`}

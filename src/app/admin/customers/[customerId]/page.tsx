@@ -14,8 +14,8 @@ import { formatPounds } from '@/domain/booking/rules';
 import { formatUkDate, londonDate } from '@/domain/time';
 import { addCustomerRateAction, endCustomerRateAction } from '../../actions';
 import { Alert } from '@/ui/components';
-import { Checkbox, RadioGroup } from '@/ui/form';
-import { DayPicker, SESSION_OPTIONS } from '@/ui/day-picker';
+import { Checkbox } from '@/ui/form';
+import { DayPicker } from '@/ui/day-picker';
 import { loadSettings } from '@/server/services/booking-shared';
 import { describeWeekdays } from '@/server/services/memberships';
 import { inviteStatus, ownerMembershipOverview } from '@/server/services/membership-workflow';
@@ -171,12 +171,7 @@ export default async function CustomerPage({
                     </p>
                   ) : null}
                   <DayPicker open={settings.openWeekdays} checked={d.membership?.weekdays ?? []} />
-                  <RadioGroup
-                    name="session"
-                    label="Session"
-                    options={SESSION_OPTIONS}
-                    defaultValue={d.membership?.session ?? 'full'}
-                  />
+                  <input type="hidden" name="session" value="full" />
                   <Checkbox name="taxi" label="Uses the dog taxi" defaultChecked={d.membership?.taxi ?? false} />
                   {d.membership ? null : (
                     <TextField
@@ -273,12 +268,6 @@ export default async function CustomerPage({
             defaultValue="all"
           />
           <TextField name="fullDay" label="Full day (£)" inputMode="decimal" required />
-          <TextField
-            name="halfDay"
-            label="Half day (£)"
-            inputMode="decimal"
-            hint="Leave blank to use the usual half-day percentage"
-          />
           <TextField name="startsOn" label="From" type="date" required defaultValue={today} />
           <TextField name="endsOn" label="Until" type="date" hint="Leave blank for no end date" />
           <TextField name="reason" label="Reason (the customer sees this on their booking)" required />
