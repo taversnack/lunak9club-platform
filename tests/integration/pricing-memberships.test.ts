@@ -158,7 +158,11 @@ describe('scheduled price changes (D44, D45)', () => {
     expect(p.totalPence).toBe(5500);
     // A preview books nothing, so the day needn't be unique; it must just fall before the new book starts.
     // (weekdayAhead skips days other files have claimed, and near Christmas that could push it past `from`.)
-    const soon = firstOpenWeekday(5);
+    // Not a day Scout already holds: previewing a day the dog already has is priced at £0.
+    const danDays = new Set(
+      (await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, danDog))).map((b) => b.serviceDate),
+    );
+    const soon = [5, 6, 7, 8, 9, 10].map(firstOpenWeekday).find((d) => !danDays.has(d))!;
     expect(soon < from, `${soon} should be before ${from}`).toBe(true);
     expect(
       (await previewMyBookings(db(), dan, { dogIds: [danDog], dates: [soon], session: 'full', taxi: false }))

@@ -904,7 +904,7 @@ describe('One trial day per dog (D96)', () => {
         overrideReason: 'Trial went well',
       });
       expect((await rowOf(dog, dayD)).kind).toBe('standard');
-      await ownerCreateBooking(db(), owner, { dogId: aliceDog, date: dayD, session: 'am' });
+      await ownerCreateBooking(db(), owner, { dogId: aliceDog, date: dayD, session: 'full' });
       expect((await rowOf(aliceDog, dayD)).kind).toBe('standard');
     });
 
