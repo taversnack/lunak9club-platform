@@ -733,4 +733,40 @@ describe('Owner inbox (D77)', () => {
       await withdrawMyApprovalRequest(db(), alice, r.requestId!);
     }
   });
+  const soonDay = weekdayPicker({ base: 0 });
+  const inboxWaitlist = async (id: string) =>
+    (await ownerInbox(db(), owner)).find((i) => i.key === `waitlist_place:${id}`);
+
+  it('shows a waitlisted dog only once the day has room, with the day as its deadline', async () => {
+    const date = soonDay(2);
+    await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
+    const a = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'full', taxi: false });
+    await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
+    const waiting = await rowOf(bobDog, date);
+    expect(waiting.status).toBe('waitlisted');
+    expect(await inboxWaitlist(waiting.id)).toBeUndefined(); // day is full
+    await withdrawMyApprovalRequest(db(), alice, a.requestId!);
+    await runTick(db(), system);
+    const item = (await inboxWaitlist(waiting.id))!;
+    expect(item.kind).toBe('waitlist_place');
+    expect(item.dueAt).toEqual(londonInstant(date, '07:30'));
+    expect(item.ref).toEqual({ type: 'waitlist_place', id: waiting.id, date });
+  });
+
+  it('hides a waitlisted dog that fails the vaccination check even when the day has room', async () => {
+    const date = soonDay(4);
+    const pip = await onboardedDog(bob, 'Pip');
+    await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
+    await createMyBookings(db(), bob, { dogIds: [pip], dates: [date], session: 'full', taxi: false });
+    const waiting = await rowOf(pip, date);
+    expect(waiting.status).toBe('waitlisted');
+    await db()
+      .update(complianceSubmissions)
+      .set({ expiresOn: addDays(date, -1) })
+      .where(
+        and(eq(complianceSubmissions.dogId, pip), eq(complianceSubmissions.requirementKey, 'vaccination_kennel_cough')),
+      );
+    await setDayCapacity(db(), owner, { date, sessionCapacity: 5, taxiCapacity: 20 });
+    expect(await inboxWaitlist(waiting.id)).toBeUndefined();
+  });
 });
