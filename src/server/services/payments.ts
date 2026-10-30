@@ -19,6 +19,7 @@ import {
 import { getPaymentProvider } from '@/infra/payments';
 import { holdReleasedMessage, paymentLinkMessage, paymentReceivedMessage } from '@/infra/email/templates';
 import { fits, sessionTimes, type Session } from '@/domain/booking/rules';
+import { HOLD_LAPSED_NOTE } from '@/domain/booking/ended-reason';
 import { lineDescription, monthOf } from '@/domain/billing/rules';
 import { pounds } from '@/domain/pricing/engine';
 import { londonDate, londonInstant } from '@/domain/time';
@@ -579,7 +580,7 @@ async function releaseOrphanHolds(db: Db, now: Date) {
           cancelledAt: now,
           cancelledBy: null,
           lateCancellation: false,
-          internalNote: 'Not paid in time',
+          internalNote: HOLD_LAPSED_NOTE,
           version: sql`${bookingDogs.version} + 1`,
         })
         .where(
@@ -937,9 +938,8 @@ export async function releaseExpiredCheckouts(db: Db, now = new Date()) {
   for (const a of due) {
     // One checkout the provider can't answer for mustn't stop the others being released (#10).
     try {
-      released += (
-        await releaseCheckout(db, a.id, { reason: 'Not paid in time', notify: a.purpose === 'booking' }, now)
-      ).released;
+      released += (await releaseCheckout(db, a.id, { reason: HOLD_LAPSED_NOTE, notify: a.purpose === 'booking' }, now))
+        .released;
     } catch (err) {
       errors++;
       logger.error({ attempt: a.id, err: err instanceof Error ? err.name : 'unknown' }, 'releasing checkout failed');
@@ -1222,7 +1222,7 @@ export async function handleWebhook(db: Db, rawBody: string, signature: string |
           await releaseCheckout(
             db,
             attempt.id,
-            { reason: 'Not paid in time', notify: attempt.purpose === 'booking' },
+            { reason: HOLD_LAPSED_NOTE, notify: attempt.purpose === 'booking' },
             now,
           );
       }
