@@ -39,7 +39,7 @@ export default async function WeekPage({ searchParams }: { searchParams: Promise
                     <th scope="col">Afternoon (existing half days)</th>
                   </>
                 ) : (
-                  <th scope="col">Dogs</th>
+                  <th scope="col">Places taken</th>
                 )}
                 <th scope="col">Taxi</th>
                 <th scope="col">Waitlist</th>

@@ -99,7 +99,7 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
       <Grid>
         {day.used.am === day.used.pm && day.left.am === day.left.pm ? (
           <Card aria-labelledby="full-count">
-            <h2 id="full-count">Dogs</h2>
+            <h2 id="full-count">Places taken</h2>
             <p className={s.bigNumber}>
               {day.used.am} / {day.capacity.session}
             </p>
