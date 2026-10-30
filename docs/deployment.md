@@ -52,6 +52,7 @@ Never commit real values. Secrets live in the host's secret store.
 Daily and monthly jobs (nightly membership drafts and book-ahead, month-end sends, reminders, hold expiry, retention, payment reconciliation) run from one tick endpoint: `POST /api/jobs/tick` with `Authorization: Bearer $CRON_SECRET`. A wrong or missing secret gives 404.
 
 - Call it **every 10 minutes** (invoice sends are 09:00 and reminders 15:30 London time). Jobs are idempotent: unique run keys mean a repeated or overlapping call does nothing twice.
+- Tick interval: 10 minutes or less is preferred, but a 15-minute tick works. Every job runs at the first tick at or after its time (once only), so at worst a job runs up to one interval late: the 09:00 invoice send, the 15:30 reminder, the 08:00 and 17:00 reminders and lapsed payment holds. The booking-request cut-off (23:59 the day before) closes requests at the first tick after midnight, so up to one interval late.
 - On a VPS or container host, any scheduler on the same machine or network works, for example a crontab line (the secret read from a root-only file, never typed into the crontab):
   `*/10 * * * * curl -fsS -m 60 -X POST -H "Authorization: Bearer $(cat /etc/lunak9/cron-secret)" https://<APP_URL>/api/jobs/tick > /dev/null`
   or a systemd timer, or the container platform's scheduled-job feature. Call the public https address (through the proxy) or the app's internal address; either is fine.
