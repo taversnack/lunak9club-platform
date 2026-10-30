@@ -153,9 +153,9 @@ export default async function BookingsPage({
             </Alert>
           ) : null}
           {sp.payment === 'unavailable' ? (
-            <Alert tone="warning" title="We couldn’t create your payment link">
-              Sorry – we couldn’t create your payment link just now. Your places are still held. Please try again in a
-              few minutes.
+            <Alert tone="warning" title="We couldn’t take your payment">
+              We couldn’t take your payment just now. Please check your bookings or try again, and contact us if it
+              keeps happening.
             </Alert>
           ) : null}
         </FocusOnShow>

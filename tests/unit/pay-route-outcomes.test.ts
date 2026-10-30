@@ -1,9 +1,9 @@
 /**
  * Pay-link routes (pay-booking/[bookingId] and pay/[attemptId]): which bookings page notice each
  * service outcome lands on. A link whose places have gone comes back from the service as
- * `?payment=expired` (no error); a card-service failure with the places still held is
- * PayLinkUnavailableError → `?payment=unavailable`. Any other conflict also lands on the
- * `?payment=unavailable` notice, never a server error page.
+ * `?payment=expired` (no error); a card-service failure is PayLinkUnavailableError →
+ * `?payment=unavailable`. Any other conflict also lands on that notice, never a server error page. The
+ * notice's wording is neutral (it doesn't say the places are held), as it covers both cases.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -46,7 +46,7 @@ const call = async (load: () => Promise<Get>, params: Record<string, string>) =>
   (await load())(new Request(`http://localhost:3000/api/payments/x/${ID}`), { params: Promise.resolve(params) });
 
 describe.each(routes)('%s', (_label, load, params) => {
-  it('card service down, places still held → ?payment=unavailable', async () => {
+  it('card service down → ?payment=unavailable', async () => {
     const { PayLinkUnavailableError } = await import('@/server/services/payments');
     service.next = () => {
       throw new PayLinkUnavailableError('10:00 on Monday 2 November');
@@ -71,7 +71,7 @@ describe.each(routes)('%s', (_label, load, params) => {
     expect((await call(load, params)).headers.get('location')).toBe('/account/bookings?payment=preparing');
   });
 
-  it('any other conflict shows the "couldn’t create your payment link" notice, not a server error', async () => {
+  it('any other conflict shows the neutral "couldn’t take your payment" notice, not a server error', async () => {
     const { ConflictError } = await import('@/server/errors');
     service.next = () => {
       throw new ConflictError('something else');

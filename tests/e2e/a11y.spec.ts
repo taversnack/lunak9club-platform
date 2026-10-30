@@ -86,7 +86,7 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
     await expect(page).toHaveURL(/\/account$/);
     for (const [payment, title] of [
       ['expired', 'That payment link has ended'],
-      ['unavailable', 'We couldn’t create your payment link'],
+      ['unavailable', 'We couldn’t take your payment just now. Please check your bookings or try again'],
     ] as const) {
       await page.goto(`/account/bookings?payment=${payment}`);
       const notice = page.getByTestId('payment-notice');
