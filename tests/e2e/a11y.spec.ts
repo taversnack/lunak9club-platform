@@ -110,6 +110,21 @@ test.describe('@a11y WCAG 2.2 AA automated checks', () => {
     ).toHaveCount(0);
   });
 
+  test('a refused trial day on the review page takes focus', async ({ page }) => {
+    await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto('/account/book');
+    const dogId = await page.locator('input[name=dog]').first().getAttribute('value');
+    // The demo dog is approved, so a trial day for it is refused (D85).
+    const day = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+    await page.goto(`/account/book/review?dog=${dogId}&date=${day}&session=full&trial=1`);
+    const notice = page.getByTestId('review-error');
+    await expect(notice).toContainText('This can’t be booked as it is');
+    await expect(notice).toHaveAttribute('tabindex', '-1');
+    await expect(notice).toBeFocused();
+    await scan(page);
+  });
+
   test('owner pages', async ({ page }) => {
     await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
     await expect(page).toHaveURL(/\/admin$/);
