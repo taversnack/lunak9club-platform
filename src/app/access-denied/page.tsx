@@ -15,7 +15,7 @@ export default async function AccessDenied() {
       <Card as="div">
         <div className={p.error}>
           <Stack>
-            <h1>You don’t have access to this page</h1>
+            <h1>You don&apos;t have access to this page</h1>
             <p className={s.muted}>
               This page is for a different type of account
               {who ? <> from the one you’re signed in with ({who})</> : null}. If you think this is a mistake, please
