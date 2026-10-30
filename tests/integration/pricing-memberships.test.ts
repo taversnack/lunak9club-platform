@@ -78,16 +78,21 @@ const snapshotFor = async (bookingDogId: string) =>
   (await db().select().from(priceSnapshots).where(eq(priceSnapshots.bookingDogId, bookingDogId)))[0];
 
 describe('prices on bookings', () => {
-  it('ad hoc bookings are priced at £50 full day and £25 half day, and the price is stored', async () => {
+  it('ad hoc bookings are priced at £50 a full day, and the price is stored', async () => {
     const d1 = weekdayAhead(3);
-    const d2 = weekdayAhead(3);
+    const d2 = weekdayAhead(4);
     const preview = await previewMyBookings(db(), dan, { dogIds: [danDog], dates: [d1], session: 'full', taxi: true });
     expect(preview.totalPence).toBe(5000);
     expect(preview.lines[0]!.price!.explanation).toBe('Ad hoc rate, full day: £50.00; dog taxi included');
     const r = await requestAndApprove(db(), dan, { dogIds: [danDog], dates: [d1], session: 'full', taxi: true }, owner);
     expect(r.totalPence).toBe(5000);
-    const h = await requestAndApprove(db(), dan, { dogIds: [danDog], dates: [d2], session: 'am', taxi: false }, owner);
-    expect(h.totalPence).toBe(2500);
+    const h = await requestAndApprove(
+      db(),
+      dan,
+      { dogIds: [danDog], dates: [d2], session: 'full', taxi: false },
+      owner,
+    );
+    expect(h.totalPence).toBe(5000);
     const rows = await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, danDog));
     for (const row of rows) expect(await snapshotFor(row.id)).toBeTruthy();
   });
@@ -227,7 +232,7 @@ async function legacyRequest(user: TestUser, dogId: string, weekdays: number[]) 
       customerId: c!.id,
       dogId,
       weekdays,
-      session: 'am',
+      session: 'full',
       status: 'requested',
       startsOn: nextMonday(),
       requestedBy: user.userId,

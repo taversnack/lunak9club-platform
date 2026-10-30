@@ -132,7 +132,7 @@ export async function bookingCalendar(db: Db, actor: Actor, now = new Date()) {
 export const CreateBookingInput = z.object({
   dogIds: z.array(z.string()).min(1, 'Choose at least one dog'),
   dates: z.array(isoDate('the date')).min(1, 'Choose at least one date').max(30, 'Book up to 30 days at a time'),
-  session: z.enum(['full', 'am', 'pm'], { message: 'Choose full day, morning or afternoon' }),
+  session: z.literal('full', { message: 'We only offer full days' }).default('full'),
   taxi: z.boolean(),
   ifFull: z.enum(['waitlist', 'skip']).default('waitlist'),
   customerNote: optionalText(500),

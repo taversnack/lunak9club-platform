@@ -215,7 +215,7 @@ describe('pay at booking (D6)', () => {
 
   it('cancelling an unpaid booking just releases it', async () => {
     const date = weekdayAhead(43);
-    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'am', taxi: false }, owner);
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const [held] = await db()
       .select()
       .from(bookingDogs)
@@ -662,7 +662,7 @@ describe('paying an invoice by card (D59)', () => {
 describe('webhooks (non-negotiable 3)', () => {
   it('rejects bad signatures, completes checkouts, and ignores repeats', async () => {
     const date = weekdayAhead(47);
-    await requestAndApprove(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'pm', taxi: false }, owner);
+    await requestAndApprove(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'full', taxi: false }, owner);
     const [a] = await attemptsFor(quinn.userId);
     stripe.pay(a!.providerSessionId!);
     const body = JSON.stringify({

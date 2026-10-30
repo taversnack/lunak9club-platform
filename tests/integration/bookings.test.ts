@@ -159,7 +159,7 @@ describe('customer booking', () => {
     const again = await requestAndApprove(
       db(),
       alice,
-      { dogIds: [aliceDog], dates: [d1], session: 'am', taxi: false },
+      { dogIds: [aliceDog], dates: [d1], session: 'full', taxi: false },
       owner,
     );
     expect(again.outcomes[0]).toMatchObject({ outcome: 'skipped', reason: 'Already booked' });
@@ -169,7 +169,7 @@ describe('customer booking', () => {
     for (let i = 0; i < 4; i++) {
       const date = weekdayAhead(21 + i);
       const [booked, closed] = await Promise.allSettled([
-        createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'am', taxi: false }),
+        createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'full', taxi: false }),
         addClosure(db(), owner, { date, reason: 'Race test' }),
       ]);
       const [c] = await db().select().from(closures).where(eq(closures.serviceDate, date));
@@ -293,11 +293,11 @@ describe('capacity and concurrency', () => {
     expect(count!.n).toBe(2);
   });
 
-  it('a full day needs both a morning and an afternoon place', async () => {
+  it('a full day takes one place; a second dog is waitlisted or skipped when the day is full', async () => {
     const date = weekdayAhead(7);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
     expect(
-      (await requestAndApprove(db(), bob, { dogIds: [bobDog], dates: [date], session: 'am', taxi: false }, owner))
+      (await requestAndApprove(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false }, owner))
         .outcomes[0]!.outcome,
     ).toBe('confirmed');
     expect(
@@ -305,21 +305,51 @@ describe('capacity and concurrency', () => {
         await requestAndApprove(
           db(),
           alice,
-          {
-            dogIds: [aliceDog],
-            dates: [date],
-            session: 'full',
-            taxi: false,
-            ifFull: 'skip',
-          },
+          { dogIds: [aliceDog], dates: [date], session: 'full', taxi: false, ifFull: 'skip' },
           owner,
         )
       ).outcomes[0],
     ).toMatchObject({ outcome: 'skipped', reason: 'Full' });
-    expect(
-      (await requestAndApprove(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'pm', taxi: false }, owner))
-        .outcomes[0]!.outcome,
-    ).toBe('confirmed');
+  });
+
+  it('half days are no longer offered: customers can only request full days', async () => {
+    const date = weekdayAhead(8);
+    for (const session of ['am', 'pm']) {
+      await expect(
+        createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session, taxi: false }),
+      ).rejects.toMatchObject({ fields: { session: 'We only offer full days' } });
+    }
+  });
+
+  it('a form that leaves the session out is treated as a full day', async () => {
+    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [weekdayAhead(11)], taxi: false });
+    expect(r.outcomes[0]!.outcome).toBe('requested');
+  });
+
+  it('the Owner can’t book half days either', async () => {
+    await expect(
+      ownerCreateBooking(db(), owner, { dogId: aliceDog, date: weekdayAhead(9), session: 'pm' }),
+    ).rejects.toMatchObject({ fields: { session: 'We only offer full days' } });
+  });
+
+  it('the database refuses new half-day rows but keeps updating older ones', async () => {
+    const date = weekdayAhead(10);
+    await requestAndApprove(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false }, owner);
+    const [row] = await db()
+      .select()
+      .from(bookingDogs)
+      .where(and(eq(bookingDogs.dogId, bobDog), eq(bookingDogs.serviceDate, date)));
+    await expect(db().update(bookingDogs).set({ session: 'am' }).where(eq(bookingDogs.id, row!.id))).rejects.toThrow();
+    // A booking made before the change (created_at in the past) may stay a half day and keep moving through its life.
+    await db()
+      .update(bookingDogs)
+      .set({ session: 'am', createdAt: new Date('2026-01-05T10:00:00Z') })
+      .where(eq(bookingDogs.id, row!.id));
+    await db().update(bookingDogs).set({ customerNote: 'still updatable' }).where(eq(bookingDogs.id, row!.id));
+    await db()
+      .update(bookingDogs)
+      .set({ session: 'full', createdAt: row!.createdAt })
+      .where(eq(bookingDogs.id, row!.id));
   });
 
   it('won’t lower capacity below places already taken', async () => {

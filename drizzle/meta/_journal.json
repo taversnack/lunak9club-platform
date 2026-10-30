@@ -155,6 +155,13 @@
       "when": 1792414474946,
       "tag": "0023_membership_workflow",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793358896361,
+      "tag": "0024_full_days_only",
+      "breakpoints": true
     }
   ]
 }
