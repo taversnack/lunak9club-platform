@@ -188,7 +188,7 @@ export function cancellationTerms(
 ): { late: boolean; deadline: Date } {
   const start = londonInstant(date, sessionTimes(s, session).start);
   const deadline = new Date(start.getTime() - s.freeCancellationHours * 3_600_000);
-  return { late: now >= deadline, deadline };
+  return { late: now > deadline, deadline };
 }
 
 export function formatPounds(pence: number): string {
