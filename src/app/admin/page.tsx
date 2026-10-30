@@ -235,7 +235,7 @@ export default async function AdminHome({
       </Grid>
       <Grid>
         <Card aria-labelledby="today">
-          <h2 id="today">Today</h2>
+          <h2 id="today">Dogs today</h2>
           {today.closedReason ? (
             <Muted>Closed – {today.closedReason}</Muted>
           ) : (
