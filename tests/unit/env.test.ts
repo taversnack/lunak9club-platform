@@ -32,6 +32,11 @@ describe('env', () => {
     vi.stubEnv('APP_URL', 'https://app.lunak9club.example');
     vi.stubEnv('EMAIL_TRANSPORT', 'smtp');
     vi.stubEnv('EMAIL_SANDBOX', '0');
+    vi.stubEnv('SMTP_HOST', 'smtp.mail-provider.example');
+    vi.stubEnv('SMTP_PORT', '587');
+    vi.stubEnv('SMTP_TLS', 'starttls');
+    vi.stubEnv('SMTP_USER', 'mailer');
+    vi.stubEnv('SMTP_PASSWORD', 'p'.repeat(20));
     vi.stubEnv('PAYMENTS_DRIVER', 'stripe');
     // Built from parts so secret scanners don't mistake these fakes for real keys.
     vi.stubEnv('STRIPE_SECRET_KEY', ['sk', 'live', 'abc123'].join('_'));
@@ -149,5 +154,55 @@ describe('env', () => {
     expect(exit).not.toHaveBeenCalled();
     exit.mockRestore();
     logged.mockRestore();
+  });
+
+  describe('SMTP settings', () => {
+    it('keeps the local Mailpit defaults valid', async () => {
+      base();
+      const { env } = await import('@/infra/env');
+      expect(env()).toMatchObject({ SMTP_HOST: 'localhost', SMTP_PORT: 1025, SMTP_TLS: 'off' });
+      expect(env().SMTP_USER).toBeUndefined();
+    });
+
+    it('wants SMTP_USER and SMTP_PASSWORD together, in any environment, without echoing values', async () => {
+      base();
+      vi.stubEnv('SMTP_USER', 'mailer');
+      const { env } = await import('@/infra/env');
+      expect(() => env()).toThrow(/SMTP_USER and SMTP_PASSWORD must be set together/);
+      vi.resetModules();
+      vi.stubEnv('SMTP_USER', '');
+      vi.stubEnv('SMTP_PASSWORD', 'topsecretvalue');
+      const again = await import('@/infra/env');
+      try {
+        again.env();
+        throw new Error('expected env() to throw');
+      } catch (e) {
+        expect((e as Error).message).not.toContain('topsecretvalue');
+      }
+    });
+
+    it('rejects an unknown SMTP_TLS value', async () => {
+      base();
+      vi.stubEnv('SMTP_TLS', 'maybe');
+      const { env } = await import('@/infra/env');
+      expect(() => env()).toThrow(/SMTP_TLS/);
+    });
+
+    it.each([
+      ['a local host', { SMTP_HOST: 'localhost' }, /SMTP_HOST must be/],
+      ['no TLS', { SMTP_TLS: 'off' }, /SMTP_TLS must be starttls or tls/],
+      ['no login', { SMTP_USER: '', SMTP_PASSWORD: '' }, /SMTP_USER and SMTP_PASSWORD are required/],
+    ])('refuses production with %s', async (_name, change, message) => {
+      productionReady();
+      for (const [k, v] of Object.entries(change)) vi.stubEnv(k, v);
+      const { env } = await import('@/infra/env');
+      expect(() => env()).toThrow(message);
+    });
+
+    it('accepts a production SMTP provider with TLS and a login', async () => {
+      productionReady();
+      const { env } = await import('@/infra/env');
+      expect(env()).toMatchObject({ SMTP_HOST: 'smtp.mail-provider.example', SMTP_TLS: 'starttls' });
+    });
   });
 });
