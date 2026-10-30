@@ -192,6 +192,7 @@ describe('pay at booking (D6)', () => {
     const mine = (await myBookings(db(), pia)).past.filter((b) => rows.some((x) => x.id === b.id));
     expect(mine.length).toBeGreaterThan(0);
     expect(mine.every((b) => b.endedReason === 'payment_expired')).toBe(true);
+    expect(mine.every((b) => b.paymentState === 'none')).toBe(true); // never paid
     for (const b of mine) {
       expect(b).not.toHaveProperty('internalNote');
       expect(b).not.toHaveProperty('cancelledBy');
@@ -340,9 +341,11 @@ describe('automatic refunds (D20, D58)', () => {
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     const before = stripe.refunds.length;
     mail.sent.length = 0;
+    expect((await myBookings(db(), pia)).upcoming.find((b) => b.id === bd!.id)!.paymentState).toBe('paid');
     expect(await cancelMyBooking(db(), pia, bd!.id)).toEqual({ late: false, refundedPence: 5000 });
     expect(stripe.refunds.length).toBe(before + 1);
     expect((await myBookings(db(), pia)).past.find((b) => b.id === bd!.id)!.endedReason).toBe('cancelled_by_customer');
+    expect((await myBookings(db(), pia)).past.find((b) => b.id === bd!.id)!.paymentState).toBe('refunded');
     const [paidAttempt] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, a.id));
     const inv = await myInvoice(db(), pia, paidAttempt!.resultInvoiceId!);
     expect(inv.creditNotes).toHaveLength(1);
@@ -388,6 +391,7 @@ describe('automatic refunds (D20, D58)', () => {
     expect(inv.creditNotes).toHaveLength(0);
     const [row] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, l.bd.id));
     expect(row).toMatchObject({ status: 'cancelled', lateCancellation: true });
+    expect((await myBookings(db(), pia)).past.find((b) => b.id === l.bd.id)!.paymentState).toBe('charged_no_refund');
   });
 
   it('a refund the provider rejects can be retried by the Owner', async () => {

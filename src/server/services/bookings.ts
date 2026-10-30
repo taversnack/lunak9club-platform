@@ -1,5 +1,6 @@
 import 'server-only';
 import { endedReason } from '@/domain/booking/ended-reason';
+import { paymentState } from '@/domain/booking/payment-state';
 import { formatPounds, LIVE_STATUSES, OPEN_STATUSES, PRICED_PLACE_STATUSES } from '@/domain/booking/rules';
 import { trialAlreadyUsed } from '@/domain/booking/wording';
 import { raiseRefundRequests } from './billing';
@@ -10,7 +11,20 @@ import { BOOKING_REQUEST, bookingSubjectKey, pendingRequestFor, requestedLeft } 
 import { and, asc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
-import { bookingDogs, bookings, customers, dogPermissions, dogs, priceSnapshots, users } from '@/infra/db/schema';
+import {
+  bookingDogs,
+  bookings,
+  creditNoteLines,
+  creditNotes,
+  customers,
+  dogPermissions,
+  dogs,
+  invoiceLines,
+  invoices,
+  priceSnapshots,
+  refundRequests,
+  users,
+} from '@/infra/db/schema';
 import {
   availabilityLabel,
   calendarDates,
@@ -473,23 +487,42 @@ export async function myBookings(db: Db, actor: Actor, now = new Date()) {
       // Used only to derive endedReason below; never returned to the customer.
       cancelledBy: bookingDogs.cancelledBy,
       internalNote: bookingDogs.internalNote,
+      // Used only to derive paymentState below; never returned.
+      invoiceStatus: invoices.status,
+      creditRefundState: creditNotes.refundState,
+      refundRequestStatus: refundRequests.status,
     })
     .from(bookingDogs)
     .innerJoin(dogs, eq(dogs.id, bookingDogs.dogId))
     .leftJoin(priceSnapshots, eq(priceSnapshots.bookingDogId, bookingDogs.id))
+    .leftJoin(invoiceLines, eq(invoiceLines.bookingDogId, bookingDogs.id))
+    .leftJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
+    .leftJoin(creditNoteLines, eq(creditNoteLines.invoiceLineId, invoiceLines.id))
+    .leftJoin(creditNotes, eq(creditNotes.id, creditNoteLines.creditNoteId))
+    .leftJoin(refundRequests, eq(refundRequests.bookingDogId, bookingDogs.id))
     .where(and(eq(bookingDogs.customerId, customer.id), gte(bookingDogs.serviceDate, addDays(today, -30))))
     .orderBy(asc(bookingDogs.serviceDate), asc(dogs.name));
-  const withTerms = rows.map(({ cancelledBy, internalNote, ...r }) => ({
-    ...r,
-    /** Why a day ended without being attended, for the timeline: a lapsed hold shows as payment_expired. */
-    endedReason: endedReason({ status: r.status, cancelledBy, internalNote }, customer.userId),
-    /** Booked or held for payment: cancel (with the 48-hour rule). Requested: withdraw at no charge. */
-    cancellable: (r.status === 'confirmed' || r.status === 'pending_payment') && r.serviceDate > today,
-    withdrawable: r.status === 'requested',
-    /** On the waitlist: the customer can leave at any time (D81). */
-    leavable: r.status === 'waitlisted',
-    late: cancellationTerms(now, r.serviceDate, r.session, settings).late,
-  }));
+  const withTerms = rows.map(
+    ({ cancelledBy, internalNote, invoiceStatus, creditRefundState, refundRequestStatus, ...r }) => ({
+      ...r,
+      /** What happened to the money for this day (see domain/booking/payment-state). */
+      paymentState: paymentState({
+        status: r.status,
+        lateCancellation: r.lateCancellation,
+        invoiceStatus,
+        creditRefundState,
+        refundRequestStatus,
+      }),
+      /** Why a day ended without being attended, for the timeline: a lapsed hold shows as payment_expired. */
+      endedReason: endedReason({ status: r.status, cancelledBy, internalNote }, customer.userId),
+      /** Booked or held for payment: cancel (with the 48-hour rule). Requested: withdraw at no charge. */
+      cancellable: (r.status === 'confirmed' || r.status === 'pending_payment') && r.serviceDate > today,
+      withdrawable: r.status === 'requested',
+      /** On the waitlist: the customer can leave at any time (D81). */
+      leavable: r.status === 'waitlisted',
+      late: cancellationTerms(now, r.serviceDate, r.session, settings).late,
+    }),
+  );
   return {
     upcoming: withTerms.filter((r) => r.serviceDate >= today && r.status !== 'cancelled' && r.status !== 'rejected'),
     past: withTerms
