@@ -1,4 +1,5 @@
 import 'server-only';
+import { endedReason, noteKeepingLapseMarker } from '@/domain/booking/ended-reason';
 import { BOOKED_STATUSES, isStatusIn, LIVE_STATUSES, OPEN_STATUSES } from '@/domain/booking/rules';
 import { raiseRefundRequests } from './billing';
 import { csvCell } from '../csv';
@@ -85,6 +86,7 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
         checkedOutAt: bookingDogs.checkedOutAt,
         customerNote: bookingDogs.customerNote,
         internalNote: bookingDogs.internalNote,
+        cancelledBy: bookingDogs.cancelledBy,
         kind: bookingDogs.kind,
         overrideReason: bookingDogs.overrideReason,
         lateCancellation: bookingDogs.lateCancellation,
@@ -93,6 +95,7 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
         dogId: dogs.id,
         dogName: dogs.name,
         customerId: customers.id,
+        customerUserId: customers.userId,
         customerName: users.name,
         customerPhone: customers.phone,
         postcode: customers.postcode,
@@ -116,6 +119,8 @@ export async function ownerDay(db: Db, actor: Actor, date: IsoDate, now = new Da
     const warning = !e ? null : (vacc ?? (e.canBook ? null : (e.bookingBlockers[0] ?? null)));
     return {
       ...r,
+      /** Why this day ended, for the timeline (derived; see domain/booking/ended-reason). */
+      endedReason: endedReason(r, r.customerUserId),
       warning,
       /** D82: a dog failing the vaccination check for this date can't be given a place. */
       giveBlock: vacc
@@ -522,7 +527,7 @@ export async function setInternalNote(db: Db, actor: Actor, rawId: string, input
   await db.transaction(async (tx) => {
     const updated = await tx
       .update(bookingDogs)
-      .set({ internalNote: d.internalNote, version: bd.version + 1 })
+      .set({ internalNote: noteKeepingLapseMarker(bd, d.internalNote ?? null), version: bd.version + 1 })
       .where(and(eq(bookingDogs.id, bd.id), eq(bookingDogs.version, d.version)))
       .returning({ id: bookingDogs.id });
     if (!updated.length) throw new ConflictError('This booking changed. Please reload.');

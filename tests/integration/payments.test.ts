@@ -18,8 +18,13 @@ import {
   payments,
   webhookEvents,
 } from '@/infra/db/schema';
-import { cancelMyBooking, createMyBookings } from '@/server/services/bookings';
-import { giveWaitlistPlace, ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
+import { cancelMyBooking, createMyBookings, myBookings } from '@/server/services/bookings';
+import {
+  giveWaitlistPlace,
+  ownerCreateBooking,
+  setDayCapacity,
+  setInternalNote,
+} from '@/server/services/owner-bookings';
 import { issueTx, markCreditRefunded, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
@@ -183,6 +188,20 @@ describe('pay at booking (D6)', () => {
     expect(r.released).toBeGreaterThanOrEqual(1);
     const rows = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, open!.bookingId!));
     expect(rows.every((x) => x.status === 'cancelled')).toBe(true);
+    // The timeline can tell a lapsed hold from a cancellation, and never sees the internal note (B14).
+    const mine = (await myBookings(db(), pia)).past.filter((b) => rows.some((x) => x.id === b.id));
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((b) => b.endedReason === 'payment_expired')).toBe(true);
+    for (const b of mine) {
+      expect(b).not.toHaveProperty('internalNote');
+      expect(b).not.toHaveProperty('cancelledBy');
+    }
+    // An Owner note on that day can't wipe the reason.
+    const target = rows[0]!;
+    await setInternalNote(db(), owner, target.id, { version: target.version, internalNote: 'rang her, no answer' });
+    const [after] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, target.id));
+    expect(after!.internalNote).toBe('Not paid in time\nrang her, no answer');
+    expect((await myBookings(db(), pia)).past.find((b) => b.id === target.id)!.endedReason).toBe('payment_expired');
     expect(mail.sent.some((m) => m.template === 'payment.hold-released' && m.to === pia.email)).toBe(true);
     expect((await resumeCheckoutUrl(db(), pia, open!.id)).url).toBeNull();
   });
@@ -323,6 +342,7 @@ describe('automatic refunds (D20, D58)', () => {
     mail.sent.length = 0;
     expect(await cancelMyBooking(db(), pia, bd!.id)).toEqual({ late: false, refundedPence: 5000 });
     expect(stripe.refunds.length).toBe(before + 1);
+    expect((await myBookings(db(), pia)).past.find((b) => b.id === bd!.id)!.endedReason).toBe('cancelled_by_customer');
     const [paidAttempt] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, a.id));
     const inv = await myInvoice(db(), pia, paidAttempt!.resultInvoiceId!);
     expect(inv.creditNotes).toHaveLength(1);
