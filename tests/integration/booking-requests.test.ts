@@ -726,7 +726,8 @@ describe('One trial day per dog (D95)', () => {
   // Its own picker: the file's main one starts 40 days out and has few weekdays left by now.
   // Two days only (refused requests write nothing; ended trial days free their place), so the shared
   // day ledger stays free for the later files.
-  const trialDay = weekdayPicker();
+  // Starts 10 days out: other files expect the first open days to be empty (e.g. the calendar test).
+  const trialDay = weekdayPicker({ base: 10 });
   let dayA = '';
   let dayB = '';
   beforeAll(() => {
