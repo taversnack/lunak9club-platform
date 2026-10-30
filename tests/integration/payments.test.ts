@@ -331,8 +331,8 @@ describe('automatic refunds (D20, D58)', () => {
     expect(refunds.map((r) => r.status)).toEqual(['succeeded']);
   });
 
-  it('refunds exactly up to 48 h before the session starts, and not from that moment (D20, D39)', async () => {
-    const deadline = (date: string) => new Date(londonInstant(date, '07:30').getTime() - 48 * 3_600_000);
+  it('refunds a card-paid day cancelled 48 h or more ahead, and not inside 48 h (D20, D39)', async () => {
+    const exactly48 = (date: string) => new Date(londonInstant(date, '07:30').getTime() - 48 * 3_600_000);
     const paidDay = async (date: string) => {
       await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
       const a = await payLatest(pia.userId);
@@ -340,23 +340,32 @@ describe('automatic refunds (D20, D58)', () => {
       return { bd: bd!, attempt: a };
     };
 
-    const early = weekdayAhead(46);
-    const e = await paidDay(early);
-    const refundsBefore = stripe.refunds.length;
-    expect(await cancelMyBooking(db(), pia, e.bd.id, new Date(deadline(early).getTime() - 60_000))).toEqual({
-      late: false,
-      refundedPence: 5000,
-    });
-    expect(stripe.refunds.length).toBe(refundsBefore + 1);
+    // 48 h 01 min ahead and exactly 48 h ahead: free and refunded to the card.
+    for (const [day, offsetMs] of [
+      [weekdayAhead(46), -60_000],
+      [weekdayAhead(47), 0],
+    ] as const) {
+      const p = await paidDay(day);
+      const refundsBefore = stripe.refunds.length;
+      expect(await cancelMyBooking(db(), pia, p.bd.id, new Date(exactly48(day).getTime() + offsetMs))).toEqual({
+        late: false,
+        refundedPence: 5000,
+      });
+      expect(stripe.refunds.length).toBe(refundsBefore + 1);
+    }
 
-    const lateDay = weekdayAhead(47);
+    // 47 h 59 min ahead: late, nothing goes back to the card and the day stays charged.
+    const lateDay = weekdayAhead(50);
     const l = await paidDay(lateDay);
     const refundsMid = stripe.refunds.length;
-    expect(await cancelMyBooking(db(), pia, l.bd.id, deadline(lateDay))).toEqual({ late: true, refundedPence: 0 });
-    expect(stripe.refunds.length).toBe(refundsMid); // nothing sent to the card
+    expect(await cancelMyBooking(db(), pia, l.bd.id, new Date(exactly48(lateDay).getTime() + 60_000))).toEqual({
+      late: true,
+      refundedPence: 0,
+    });
+    expect(stripe.refunds.length).toBe(refundsMid);
     const [paid] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, l.attempt.id));
     const inv = await myInvoice(db(), pia, paid!.resultInvoiceId!);
-    expect(inv.creditNotes).toHaveLength(0); // the day stays charged
+    expect(inv.creditNotes).toHaveLength(0);
     const [row] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, l.bd.id));
     expect(row).toMatchObject({ status: 'cancelled', lateCancellation: true });
   });
