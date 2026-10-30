@@ -195,7 +195,7 @@ describe('booking requests (D76)', () => {
     expect(confirm.html).toContain(REQUEST_NOT_SECURED_KEY);
     expect(mail.sent.some((m) => m.to === owner.email && m.template === 'approval.owner-new')).toBe(true);
     // The place is held: Bob goes on the waitlist.
-    const b = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'am', taxi: false });
+    const b = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
     expect(b.outcomes[0]!.outcome).toBe('waitlisted');
     expect(b.requestId).toBeNull();
     const day = await ownerDay(db(), owner, date);
@@ -292,7 +292,12 @@ describe('booking requests (D76)', () => {
   it('the customer withdraws a request, or one day of it, at no charge', async () => {
     const d1 = weekdayAhead(14);
     const d2 = weekdayAhead(15);
-    const r = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [d1, d2], session: 'am', taxi: false });
+    const r = await createMyBookings(db(), alice, {
+      dogIds: [aliceDog],
+      dates: [d1, d2],
+      session: 'full',
+      taxi: false,
+    });
     const [first] = (await rowsOf(r.bookingId)).filter((x) => x.serviceDate === d1);
     await cancelMyBooking(db(), alice, first!.id);
     expect((await rowOf(aliceDog, d1)).status).toBe('cancelled');
@@ -340,7 +345,7 @@ describe('booking requests (D76)', () => {
 
   it('only one pending request per subject', async () => {
     const d = weekdayAhead(19);
-    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'pm', taxi: false });
+    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'full', taxi: false });
     const [c] = await db().select().from(customers).where(eq(customers.userId, bob.userId));
     await expect(
       createApprovalRequest(db(), bob, {
@@ -386,10 +391,10 @@ describe('booking requests (D76)', () => {
 
   it('unpaid holds lapse through releaseExpiredCheckouts with the "booking not completed" email', async () => {
     const d = weekdayAhead(24);
-    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [d], session: 'am', taxi: false });
+    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [d], session: 'full', taxi: false });
     await db().update(bookingDogs).set({ kind: 'standard' }).where(eq(bookingDogs.bookingId, r.bookingId));
     // Carol's £0 rate means no payment; use Alice for a priced hold.
-    const a = await createMyBookings(db(), alice, { dogIds: [aliceDog2], dates: [d], session: 'am', taxi: false });
+    const a = await createMyBookings(db(), alice, { dogIds: [aliceDog2], dates: [d], session: 'full', taxi: false });
     await approveApprovalRequest(db(), owner, a.requestId!);
     mail.sent.length = 0;
     await releaseExpiredCheckouts(db(), new Date(Date.now() + 25 * 3_600_000));
@@ -429,7 +434,7 @@ describe('Owner context on Requests (Developer 1 gap c)', () => {
   it('lists the other dogs already booked that day, with links to them and the day view', async () => {
     const date = weekdayAhead(11);
     await ownerCreateBooking(db(), owner, { dogId: bobDog, date, session: 'full' });
-    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [date], session: 'am', taxi: false });
+    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [date], session: 'full', taxi: false });
     const item = (await ownerApprovalList(db(), owner)).find((x) => x.id === r.requestId)!;
     const day = item.context.find((c) => c.heading.includes('dogs already booked'))!;
     expect(day.lines.join(' ')).toMatch(/Already booked: Rex \(Full day, awaiting payment\)/);
@@ -697,7 +702,7 @@ describe('manual waitlist (D81, D82)', () => {
 describe('approvals authorisation', () => {
   it('only the Owner decides; customers only see their own requests', async () => {
     const d = weekdayAhead(34);
-    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'am', taxi: false });
+    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'full', taxi: false });
     await expect(approveApprovalRequest(db(), bob, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(rejectApprovalRequest(db(), alice, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(ownerApprovalList(db(), alice)).rejects.toBeInstanceOf(AuthorizationError);

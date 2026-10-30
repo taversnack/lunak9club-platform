@@ -524,7 +524,7 @@ export async function setInternalNote(db: Db, actor: Actor, rawId: string, input
 export const OwnerBookingInput = z.object({
   dogId: z.string(),
   date: isoDate('the date'),
-  session: z.enum(['full', 'am', 'pm'], { message: 'Choose a session' }),
+  session: z.literal('full', { message: 'We only offer full days' }),
   taxi: checkbox,
   overrideReason: optionalText(300),
   trial: checkbox,
