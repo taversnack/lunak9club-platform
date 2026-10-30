@@ -6,6 +6,13 @@ import { runAction, type ActionState } from '@/server/action';
 import { requirePermission } from '@/server/session';
 import { approveApprovalRequest, rejectApprovalRequest } from '@/server/services/approvals';
 
+// Only the Today inbox may ask to come back to it; anything else goes to the Requests page.
+const backTo = (fd: FormData, done: 'approved' | 'declined') => {
+  const today = fd.get('from') === 'today';
+  if (done === 'approved') return today ? '/admin?approved=1' : '/admin/approvals?approved=1';
+  return today ? '/admin?declined=1' : '/admin/approvals?declined=1';
+};
+
 const note = (fd: FormData) => {
   const v = fd.get('reason');
   return { reason: typeof v === 'string' ? v : undefined };
@@ -16,7 +23,8 @@ export async function approveRequestAction(_: ActionState, fd: FormData): Promis
     const actor = await requirePermission('approvals.manage');
     await approveApprovalRequest(getDb(), actor, String(fd.get('id') ?? ''), note(fd));
     revalidatePath('/admin/approvals');
-    redirect('/admin/approvals?approved=1');
+    revalidatePath('/admin');
+    redirect(backTo(fd, 'approved'));
   });
 }
 
@@ -25,6 +33,7 @@ export async function declineRequestAction(_: ActionState, fd: FormData): Promis
     const actor = await requirePermission('approvals.manage');
     await rejectApprovalRequest(getDb(), actor, String(fd.get('id') ?? ''), note(fd));
     revalidatePath('/admin/approvals');
-    redirect('/admin/approvals?declined=1');
+    revalidatePath('/admin');
+    redirect(backTo(fd, 'declined'));
   });
 }
