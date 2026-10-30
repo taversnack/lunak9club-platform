@@ -733,12 +733,12 @@ describe('Owner inbox (D77)', () => {
       await withdrawMyApprovalRequest(db(), alice, r.requestId!);
     }
   });
-  const soonDay = weekdayPicker({ base: 0 });
+  const soonDay = weekdayPicker({ base: 7 });
   const inboxWaitlist = async (id: string) =>
     (await ownerInbox(db(), owner)).find((i) => i.key === `waitlist_place:${id}`);
 
   it('shows a waitlisted dog only once the day has room, with the day as its deadline', async () => {
-    const date = soonDay(2);
+    const date = soonDay(0);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
     const a = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'full', taxi: false });
     await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
@@ -754,7 +754,7 @@ describe('Owner inbox (D77)', () => {
   });
 
   it('hides a waitlisted dog that fails the vaccination check even when the day has room', async () => {
-    const date = soonDay(4);
+    const date = soonDay(2);
     const pip = await onboardedDog(bob, 'Pip');
     await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), bob, { dogIds: [pip], dates: [date], session: 'full', taxi: false });
