@@ -722,7 +722,7 @@ describe('approvals authorisation', () => {
   });
 });
 
-describe('One trial day per dog (D95)', () => {
+describe('One trial day per dog (D96)', () => {
   // Its own picker: the file's main one starts 40 days out and has few weekdays left by now.
   // Two days only (refused requests write nothing; ended trial days free their place), so the shared
   // day ledger stays free for the later files.
@@ -798,7 +798,7 @@ describe('One trial day per dog (D95)', () => {
     expect(await trialRows(dog)).toHaveLength(1);
   });
 
-  describe('when the Owner books (D95 applies to the Owner too)', () => {
+  describe('when the Owner books (D96 applies to the Owner too)', () => {
     const ownerTrial = (dogId: string, date: string, as: Actor = owner) =>
       ownerCreateBooking(db(), as, { dogId, date, session: 'full', trial: 'on' });
     let dayC = '';

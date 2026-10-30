@@ -19,6 +19,7 @@ const LABELS: Record<string, string> = {
   'payment.card_received': 'Card payment received',
   'invoice.issued': 'Invoice issued',
   'invoice.sent': 'Invoice emailed',
+  'invoice.bulk_approved': 'Unchanged drafts approved together',
   'invoice.payment_recorded': 'Payment recorded',
   'invoice.credited': 'Credit note issued',
   'refund.requested': 'Refund requested',

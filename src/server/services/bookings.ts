@@ -66,9 +66,9 @@ export async function myBookableDogs(db: Db, actor: Actor) {
       name: r.name,
       taxiAllowed: Boolean(r.transport),
       canBook: e.canBook,
-      /** A dog not approved yet can be requested for a trial day (D85), once only (D95). */
+      /** A dog not approved yet can be requested for a trial day (D85), once only (D96). */
       canRequestTrial: notApproved && !trialUsed.has(r.id),
-      /** Set when the dog would need a trial day but already has one requested, approved or taken (D95). */
+      /** Set when the dog would need a trial day but already has one requested, approved or taken (D96). */
       trialUsed: notApproved && trialUsed.has(r.id),
       blockers: e.bookingBlockers,
       /** Facts for the vaccination rules per date (D40, D73, D74). */
@@ -272,7 +272,7 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
   await db.transaction(async (tx) => {
     const days = await lockDays(tx, dates, settings, now);
     if (d.trial) {
-      // One trial day per dog (D95). Lock the dog's row so two trial requests sent at the same time
+      // One trial day per dog (D96). Lock the dog's row so two trial requests sent at the same time
       // (for any dates) run one after the other, then check again: the second sees the first's day.
       const dog = chosen[0]!;
       if (await lockDogAndCheckTrialUsed(tx, dog.id))

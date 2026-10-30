@@ -52,3 +52,9 @@ UPDATE "booking_dogs" SET "status" = 'waitlisted', "offer_expires_at" = NULL WHE
 | Migration | Purpose | Data impact | Rollback / recovery | Destructive |
 |---|---|---|---|---|
 | 0023_membership_workflow | New tables `customer_invites` (hashed single-use 7-day invite tokens, D86), `membership_offers` (Owner-agreed days per dog at account creation, D86–D87), `membership_month_confirmations` (one row per customer and month, D88, with `late` boolean default false for confirmations after the confirm-by day, D94); `business_settings.confirm_by_day` (default 1, check 1–28) | Additive only: new empty tables and a column with a default | Drop the three tables and the column (loses invites, offers and confirmations recorded since 0017) | No |
+
+**No migration for month-end approve (Developer 1, dev1/month-end-approve, 27 Oct 2026):** D95 and the two Tester fixes use existing columns only; `pnpm db:generate` reports no schema changes. Main's last migration is still 0023.
+
+**Owner decisions relayed to Developer 1 (27 Oct 2026):**
+- **D77 one Owner inbox: approved.** Developer 1 owns the membership side (`membership.days` / `membership.move_once` on `approval_requests`) and the record-review side of the inbox; the inbox itself shows on Developer 4's **Today** screen. Not built in this branch.
+- **D59 auto-pay (Bacs) stays parked.** Members keep paying each invoice with **Pay by card**.

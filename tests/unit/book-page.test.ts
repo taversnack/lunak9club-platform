@@ -40,7 +40,7 @@ describe('Why a dog can’t be booked (Book page)', () => {
   it('a suspended dog is told bookings are paused, not to get approved', () => {
     expect(dogCantBookReasons(blocked('Bella', [PAUSED]))).toEqual([PAUSED]);
   });
-  it('a dog that has had its one trial day says so (D95), then, as a separate line, what is still needed', () => {
+  it('a dog that has had its one trial day says so (D96), then, as a separate line, what is still needed', () => {
     expect(dogCantBookReasons(blocked('Milo', [NOT_APPROVED], { trialUsed: true }))).toEqual([
       trialAlreadyUsed('Milo'),
       NOT_APPROVED,
@@ -60,7 +60,7 @@ describe('Why a dog can’t be booked (Book page)', () => {
   });
 });
 
-describe('One trial day per dog (D95)', () => {
+describe('One trial day per dog (D96)', () => {
   it('requested, approved and taken trial days count', () => {
     for (const s of ['requested', 'waitlisted', 'pending_payment', 'confirmed', 'attended', 'no_show'])
       expect(trialDayCounts(s)).toBe(true);

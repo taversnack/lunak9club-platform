@@ -17,7 +17,7 @@ type DogWithReasons = BookPageDog & { name: string; blockers: readonly string[];
 /**
  * Why a dog can't be chosen on the Book page, one sentence per entry so each shows on its own line
  * (empty when the dog can be booked or asked for as a trial day). A dog that has had its one trial
- * day (D95) says so first, then what is still needed.
+ * day (D96) says so first, then what is still needed.
  */
 export function dogCantBookReasons(dog: DogWithReasons): string[] {
   if (dog.canBook || dog.canRequestTrial) return [];

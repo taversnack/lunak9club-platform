@@ -17,6 +17,6 @@ export const PAY_TO_SECURE_KEY = 'pay to secure your booking';
 export const APPROVED_PAY_TO_SECURE =
   'Good news – your booking request has been approved. You now need to pay to secure your booking.';
 
-/** One trial day per dog (D95): shown on the Book page and when a second trial request is refused. */
+/** One trial day per dog (D96): shown on the Book page and when a second trial request is refused. */
 export const trialAlreadyUsed = (dogName: string) =>
   `${dogName} has already had a trial day requested or booked. Each dog can have one trial day.`;

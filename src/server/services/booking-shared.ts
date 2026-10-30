@@ -119,7 +119,7 @@ export const describeSession = (date: IsoDate, session: Session) => ({
 });
 
 /**
- * Dogs that already have a trial day that counts towards the one-per-dog limit (D95): any trial day
+ * Dogs that already have a trial day that counts towards the one-per-dog limit (D96): any trial day
  * not withdrawn, cancelled or declined, whoever booked it.
  */
 export async function dogsWithTrialDay(db: Pick<Db, 'select'>, dogIds: string[]) {
@@ -138,7 +138,7 @@ export async function dogsWithTrialDay(db: Pick<Db, 'select'>, dogIds: string[])
 }
 
 /**
- * One trial day per dog (D95), for the customer and the Owner alike. Call inside the booking
+ * One trial day per dog (D96), for the customer and the Owner alike. Call inside the booking
  * transaction: locks the dog's row so two trial bookings at once (for any dates) run one after the
  * other, then reports whether the dog already has a trial day that counts.
  */

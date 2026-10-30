@@ -79,7 +79,7 @@ export const OPEN_STATUSES = [
 export const ENDED_STATUSES = ['cancelled', 'rejected'] as const satisfies readonly BookingStatus[];
 
 /**
- * One trial day per dog (D95): a trial day that was requested, approved or taken counts – anything
+ * One trial day per dog (D96): a trial day that was requested, approved or taken counts – anything
  * except withdrawn or cancelled (`cancelled`) and declined (`rejected`).
  */
 export function trialDayCounts(status: string) {

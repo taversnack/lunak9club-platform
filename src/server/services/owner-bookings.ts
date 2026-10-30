@@ -586,7 +586,7 @@ export async function ownerCreateBooking(db: Db, actor: Actor, input: unknown, n
   let pricePence = 0;
   const id = await db.transaction(async (tx) => {
     const day = (await lockDays(tx, [d.date], settings, now)).get(d.date)!;
-    // One trial day per dog (D95), the same rule as on the customer's Book page. No reason overrides it.
+    // One trial day per dog (D96), the same rule as on the customer's Book page. No reason overrides it.
     if (d.trial && (await lockDogAndCheckTrialUsed(tx, dogId)))
       throw new ValidationError(trialAlreadyUsed(dog.name), { trial: trialAlreadyUsed(dog.name) });
     const [dup] = await tx

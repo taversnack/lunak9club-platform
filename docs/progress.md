@@ -114,6 +114,8 @@ Not yet run on the Owner's Mac — see README "First-time setup".
   - 13 Oct 2026 update: merged Developer 2's real 0016_booking_approvals and regenerated 0017 on top. Earlier gaps in the approvals interface are closed: customers withdraw any request (including membership.days and membership.move_once) from Your requests (`/account/requests`), and a failed approval attempt (e.g. a day now full) shows its reason to the Owner (`last_error`). The stopgap withdraw action was removed.
   - The `offered` booking status no longer exists (Developer 2, D84); membership clash checks now count `requested` days instead.
 
+- **Month-end in one tap (Developer 1, branch dev1/month-end-approve, 27 Oct 2026, local only):** “Approve all unchanged drafts” on Invoices, through the existing approval (D54 total check per draft); drafts that changed or need attention are listed separately and left out (D95, Proposed). Also: setting a dog's days again before its membership has started (same or earlier start date) now changes that membership in place, so no “ended” row that never ran is left covering its start date (it was still counted by pricing and the monthly confirmation), and an invoice's “email sent at” uses the app clock. No migration. D77 one Owner inbox approved (Dev1: membership and record-review side; shown on Dev4's Today screen); D59 auto-pay stays parked (see `drizzle/NOTES.md`).
+
 ## Decisions
 - See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed), D71 (web-form consent as written consent).
 
@@ -131,7 +133,7 @@ Not yet run on the Owner's Mac — see README "First-time setup".
 - Web-form consent as “written consent” not yet confirmed by the Owner and council (D71).
 - Register answers are overwritten (with when/who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72, brief recommendation 1).
 - D85: trial requests via approve-then-pay are confirmed; the sub-defaults (unapproved dogs only, one dog-day per request, ad hoc trial price) are Proposed – confirm with the Owner.
-- D95: one trial day per dog (requested, approved or taken counts; withdrawn, declined or cancelled don't), enforced in `createMyBookings` under a dog-row lock; branch `dev2/book-page-fixes` (PR #72).
+- D96: one trial day per dog (requested, approved or taken counts; withdrawn, declined or cancelled don't), enforced in `createMyBookings` under a dog-row lock; branch `dev2/book-page-fixes` (PR #72).
 
 - Follow-ups from the vaccination compliance work: (1) licence guidance 23.1 / brief D42 note – require a screening (meet-and-greet) record at check-in, not built yet; (2) titre certificates for DHP not supported (O16); (3) the retention job clears the reminder log after 90 days, so an "expired" reminder can be sent again ~90 days later – assigned to Developer 3; (4) the customer data download doesn't include vaccination record details.
 - `storage.test.ts` now skips cleanly when `moto_server` (local S3) isn't installed (PR #1, merged into main and into this branch's base); it no longer fails `pnpm test:int` on the shared build box.
