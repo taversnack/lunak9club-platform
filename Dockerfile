@@ -4,8 +4,9 @@
 # No secrets are baked in: every setting is read from the environment at run time.
 
 FROM node:22-bookworm-slim AS base
-ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH NEXT_TELEMETRY_DISABLED=1
-RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+# COREPACK_HOME is shared so the unprivileged `node` user finds the pinned pnpm (no download at run time).
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH NEXT_TELEMETRY_DISABLED=1 COREPACK_HOME=/usr/local/share/corepack
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate && chmod -R a+rX /usr/local/share/corepack
 WORKDIR /app
 
 FROM base AS deps
