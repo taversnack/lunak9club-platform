@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bookPageState, dogCantBookReason, nothingToBookReasons } from '@/domain/booking/book-page';
+import { bookPageState, dogCantBookReasons, nothingToBookReasons } from '@/domain/booking/book-page';
 import { trialDayCounts } from '@/domain/booking/rules';
 import { trialAlreadyUsed } from '@/domain/booking/wording';
 
@@ -35,26 +35,27 @@ describe('Why a dog can’t be booked (Book page)', () => {
   });
 
   it('an approved dog with an expired vaccination is told the vaccination has expired, not to get approved', () => {
-    expect(dogCantBookReason(blocked('Rex', [EXPIRED]))).toBe(EXPIRED);
+    expect(dogCantBookReasons(blocked('Rex', [EXPIRED]))).toEqual([EXPIRED]);
   });
   it('a suspended dog is told bookings are paused, not to get approved', () => {
-    expect(dogCantBookReason(blocked('Bella', [PAUSED]))).toBe(PAUSED);
+    expect(dogCantBookReasons(blocked('Bella', [PAUSED]))).toEqual([PAUSED]);
   });
-  it('a dog that has had its one trial day says so (D95), then what is still needed', () => {
-    expect(dogCantBookReason(blocked('Milo', [NOT_APPROVED], { trialUsed: true }))).toBe(
-      `${trialAlreadyUsed('Milo')} ${NOT_APPROVED}`,
-    );
+  it('a dog that has had its one trial day says so (D95), then, as a separate line, what is still needed', () => {
+    expect(dogCantBookReasons(blocked('Milo', [NOT_APPROVED], { trialUsed: true }))).toEqual([
+      trialAlreadyUsed('Milo'),
+      NOT_APPROVED,
+    ]);
   });
   it('a dog that can be chosen has no reason', () => {
-    expect(dogCantBookReason({ name: 'Ok', canBook: true, canRequestTrial: false, blockers: [] })).toBeNull();
-    expect(
-      dogCantBookReason({ name: 'Ok', canBook: false, canRequestTrial: true, blockers: [NOT_APPROVED] }),
-    ).toBeNull();
+    expect(dogCantBookReasons({ name: 'Ok', canBook: true, canRequestTrial: false, blockers: [] })).toEqual([]);
+    expect(dogCantBookReasons({ name: 'Ok', canBook: false, canRequestTrial: true, blockers: [NOT_APPROVED] })).toEqual(
+      [],
+    );
   });
   it('"Nothing to book yet" lists each dog with its own reason', () => {
     expect(nothingToBookReasons([blocked('Rex', [EXPIRED]), blocked('Bella', [PAUSED])])).toEqual([
-      { name: 'Rex', reason: EXPIRED },
-      { name: 'Bella', reason: PAUSED },
+      { name: 'Rex', reasons: [EXPIRED] },
+      { name: 'Bella', reasons: [PAUSED] },
     ]);
   });
 });

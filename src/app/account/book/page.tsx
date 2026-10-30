@@ -7,7 +7,7 @@ import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
-import { bookPageState, dogCantBookReason, nothingToBookReasons } from '@/domain/booking/book-page';
+import { bookPageState, dogCantBookReasons, nothingToBookReasons } from '@/domain/booking/book-page';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
@@ -61,7 +61,12 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
             <ul data-testid="book-nothing-reasons">
               {nothingToBookReasons(dogs).map((r) => (
                 <li key={r.name}>
-                  {r.name}: {r.reason}
+                  {r.name}: {r.reasons[0]}
+                  {r.reasons.slice(1).map((x) => (
+                    <span key={x} className={s.hintLine}>
+                      {x}
+                    </span>
+                  ))}
                 </li>
               ))}
             </ul>
@@ -92,7 +97,18 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                       {d.canRequestTrial ? (
                         <span className={s.hint}> – not approved yet: you can ask for a trial day</span>
                       ) : !d.canBook ? (
-                        <span className={s.hint}> – {dogCantBookReason(d)}</span>
+                        <span className={s.hint} data-testid="dog-hint">
+                          {' – '}
+                          {dogCantBookReasons(d).map((x, n) =>
+                            n === 0 ? (
+                              <span key={x}>{x}</span>
+                            ) : (
+                              <span key={x} className={s.hintLine}>
+                                {x}
+                              </span>
+                            ),
+                          )}
+                        </span>
                       ) : null}
                     </span>
                   </label>

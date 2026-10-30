@@ -192,6 +192,10 @@
   font-size: 0.9rem;
   color: var(--color-text-muted);
 }
+/* A further sentence of a hint or reason, on its own line. */
+.hintLine {
+  display: block;
+}
 .input {
   min-height: var(--target-min);
   padding: 0 var(--space-3);

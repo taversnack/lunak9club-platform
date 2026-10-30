@@ -15,21 +15,21 @@ export function bookPageState(dogs: readonly BookPageDog[]) {
 type DogWithReasons = BookPageDog & { name: string; blockers: readonly string[]; trialUsed?: boolean };
 
 /**
- * Why this dog can't be booked or asked for as a trial day, in the app's existing wording: the
- * compliance blocker (not approved yet, bookings paused, a vaccination has expired…) and, for a dog
- * that has already had its one trial day, the D95 message first. Null when the dog can be chosen.
+ * Why a dog can't be chosen on the Book page, one sentence per entry so each shows on its own line
+ * (empty when the dog can be booked or asked for as a trial day). A dog that has had its one trial
+ * day (D95) says so first, then what is still needed.
  */
-export function dogCantBookReason(dog: DogWithReasons): string | null {
-  if (dog.canBook || dog.canRequestTrial) return null;
+export function dogCantBookReasons(dog: DogWithReasons): string[] {
+  if (dog.canBook || dog.canRequestTrial) return [];
   const blocker = dog.blockers[0] ?? null;
-  if (dog.trialUsed) return blocker ? `${trialAlreadyUsed(dog.name)} ${blocker}` : trialAlreadyUsed(dog.name);
-  return blocker ?? 'Please contact us.';
+  if (dog.trialUsed) return blocker ? [trialAlreadyUsed(dog.name), blocker] : [trialAlreadyUsed(dog.name)];
+  return [blocker ?? 'Please contact us.'];
 }
 
 /** One line per dog for the "Nothing to book yet" notice, so each dog shows its own reason. */
 export function nothingToBookReasons(dogs: readonly DogWithReasons[]) {
   return dogs.flatMap((d) => {
-    const reason = dogCantBookReason(d);
-    return reason ? [{ name: d.name, reason }] : [];
+    const reasons = dogCantBookReasons(d);
+    return reasons.length ? [{ name: d.name, reasons }] : [];
   });
 }
