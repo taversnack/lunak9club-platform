@@ -6,6 +6,8 @@ import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
+import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
+import { bookPageState, dogCantBookReasons, nothingToBookReasons } from '@/domain/booking/book-page';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
@@ -28,6 +30,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
   const { error } = await searchParams;
   const bookable = dogs.filter((d) => d.canBook);
   const trialable = dogs.filter((d) => d.canRequestTrial);
+  const state = bookPageState(dogs);
   // Group into Monday-start weeks for a readable calendar.
   const weeks: (typeof cal.days)[] = [];
   for (const day of cal.days) {
@@ -44,15 +47,32 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
         <Link href="/account/faq#faq-extra">How extra days work</Link>
       </p>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {bookable.length === 0 ? (
-        dogs.length === 0 ? (
+      <Alert tone="info" title="How booking works" live={false}>
+        <p data-testid="book-request-not-secured">{REQUEST_NOT_SECURED}</p>
+      </Alert>
+      {state !== 'form' ? (
+        state === 'no-dogs' ? (
           <Alert tone="info" title="Add your dog to start booking">
             You haven’t added a dog yet. <Link href="/account/dogs/new">Add a dog</Link> and we’ll take you through the
             rest.
           </Alert>
         ) : (
           <Alert tone="info" title="Nothing to book yet">
-            Your dog needs to be approved before you can book. <Link href="/account">See what’s left to do</Link>.
+            <ul data-testid="book-nothing-reasons">
+              {nothingToBookReasons(dogs).map((r) => (
+                <li key={r.name}>
+                  {r.name}: {r.reasons[0]}
+                  {r.reasons.slice(1).map((x) => (
+                    <span key={x} className={s.hintLine}>
+                      {x}
+                    </span>
+                  ))}
+                </li>
+              ))}
+            </ul>
+            <p>
+              <Link href="/account">See what’s left to do</Link>.
+            </p>
           </Alert>
         )
       ) : (
@@ -77,7 +97,18 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                       {d.canRequestTrial ? (
                         <span className={s.hint}> – not approved yet: you can ask for a trial day</span>
                       ) : !d.canBook ? (
-                        <span className={s.hint}> – {d.blockers[0]}</span>
+                        <span className={s.hint} data-testid="dog-hint">
+                          {' – '}
+                          {dogCantBookReasons(d).map((x, n) =>
+                            n === 0 ? (
+                              <span key={x}>{x}</span>
+                            ) : (
+                              <span key={x} className={s.hintLine}>
+                                {x}
+                              </span>
+                            ),
+                          )}
+                        </span>
                       ) : null}
                     </span>
                   </label>

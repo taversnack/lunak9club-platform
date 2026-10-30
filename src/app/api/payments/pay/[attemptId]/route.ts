@@ -22,6 +22,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ attemptI
     if (e instanceof AuthorizationError || e instanceof NotFoundError)
       return new Response('Not found', { status: 404 });
     if (e instanceof PayLinkBusyError) return seeOtherInApp('/account/bookings?payment=preparing');
+    // Any other conflict (PayLinkUnavailableError or anything else) gets the "couldn't create your payment
+    // link" notice rather than a server error page.
     if (e instanceof ConflictError) return seeOtherInApp('/account/bookings?payment=unavailable');
     throw e;
   }
