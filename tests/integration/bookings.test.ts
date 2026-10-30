@@ -321,6 +321,11 @@ describe('capacity and concurrency', () => {
     }
   });
 
+  it('a form that leaves the session out is treated as a full day', async () => {
+    const r = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [weekdayAhead(11)], taxi: false });
+    expect(r.outcomes[0]!.outcome).toBe('requested');
+  });
+
   it('the Owner can’t book half days either', async () => {
     await expect(
       ownerCreateBooking(db(), owner, { dogId: aliceDog, date: weekdayAhead(9), session: 'pm' }),
