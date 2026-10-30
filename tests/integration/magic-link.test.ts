@@ -75,6 +75,35 @@ describe('magic-link sign-in', () => {
     expect(again.cookie).not.toMatch(/session_token=[^;]+/);
   });
 
+  it('“Send the link again” revokes the earlier link; only the newest works, and other people’s links are unaffected', async () => {
+    const other = await makeUser(db(), 'customer', 'Otto Other');
+    const otherLink = await linkFor(other.email);
+    const a = await linkFor(customer.email, '/account/bookings');
+    const b = await linkFor(customer.email, '/account/bookings');
+
+    const useA = await authRequest(authPath(a), { method: 'GET' });
+    expect(useA.res.status).toBe(302);
+    expect(new URL(useA.res.headers.get('location')!).searchParams.get('error')).toBe('INVALID_TOKEN');
+    expect(useA.cookie).not.toMatch(/session_token=[^;]+/);
+
+    const useB = await authRequest(authPath(b), { method: 'GET' });
+    expect(useB.res.status).toBe(302);
+    expect(new URL(useB.res.headers.get('location')!).pathname).toBe('/account/bookings');
+    expect(await sessionFor(useB.cookie)).toBe(customer.email);
+
+    const useOther = await authRequest(authPath(otherLink), { method: 'GET' });
+    expect(await sessionFor(useOther.cookie)).toBe(other.email);
+  });
+
+  it('a request for an unknown address revokes nothing', async () => {
+    const link = await linkFor(customer.email);
+    const { res } = await request(`nobody-${randomUUID()}@example.test`);
+    expect(res.status).toBe(200);
+    await settle();
+    const use = await authRequest(authPath(link), { method: 'GET' });
+    expect(await sessionFor(use.cookie)).toBe(customer.email);
+  });
+
   it(`expires after ${MAGIC_LINK_MINUTES} minutes`, async () => {
     const link = await linkFor(customer.email, '/account/bookings');
     const hashed = createHash('sha256').update(new URL(link).searchParams.get('token')!).digest('base64url');
