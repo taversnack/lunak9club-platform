@@ -97,20 +97,32 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
         </Alert>
       ) : null}
       <Grid>
-        <Card aria-labelledby="am">
-          <h2 id="am">Morning</h2>
-          <p className={s.bigNumber}>
-            {day.used.am} / {day.capacity.session}
-          </p>
-          <span className={s.hint}>{day.left.am} places left</span>
-        </Card>
-        <Card aria-labelledby="pm">
-          <h2 id="pm">Afternoon</h2>
-          <p className={s.bigNumber}>
-            {day.used.pm} / {day.capacity.session}
-          </p>
-          <span className={s.hint}>{day.left.pm} places left</span>
-        </Card>
+        {day.used.am === day.used.pm && day.left.am === day.left.pm ? (
+          <Card aria-labelledby="full-count">
+            <h2 id="full-count">Places taken</h2>
+            <p className={s.bigNumber}>
+              {day.used.am} / {day.capacity.session}
+            </p>
+            <span className={s.hint}>{day.left.am} places left</span>
+          </Card>
+        ) : (
+          <>
+            <Card aria-labelledby="am">
+              <h2 id="am">Morning (includes an existing half day)</h2>
+              <p className={s.bigNumber}>
+                {day.used.am} / {day.capacity.session}
+              </p>
+              <span className={s.hint}>{day.left.am} places left</span>
+            </Card>
+            <Card aria-labelledby="pm">
+              <h2 id="pm">Afternoon (includes an existing half day)</h2>
+              <p className={s.bigNumber}>
+                {day.used.pm} / {day.capacity.session}
+              </p>
+              <span className={s.hint}>{day.left.pm} places left</span>
+            </Card>
+          </>
+        )}
         <Card aria-labelledby="taxi-count">
           <h2 id="taxi-count">Taxi</h2>
           <p className={s.bigNumber}>
