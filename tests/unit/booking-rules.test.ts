@@ -136,10 +136,12 @@ describe('capacity', () => {
 });
 
 describe('cancellations', () => {
-  it('is free at exactly 48 hours before the session and late one minute after', () => {
-    // Full day 1 Oct 2026 starts 07:30 BST = 06:30Z; deadline 29 Sep 06:30Z.
-    expect(cancellationTerms(new Date('2026-09-29T06:29:00Z'), '2026-10-01', 'full', settings).late).toBe(false);
-    expect(cancellationTerms(new Date('2026-09-29T06:30:00Z'), '2026-10-01', 'full', settings).late).toBe(true);
+  it('is free at 48 hours or more before the session, late only inside 48 hours (D39)', () => {
+    // Full day 1 Oct 2026 starts 07:30 BST = 06:30Z; exactly 48 h before is 29 Sep 06:30Z.
+    const late = (iso: string) => cancellationTerms(new Date(iso), '2026-10-01', 'full', settings).late;
+    expect(late('2026-09-29T06:29:00Z')).toBe(false); // 48 h 01 min ahead
+    expect(late('2026-09-29T06:30:00Z')).toBe(false); // exactly 48 h ahead
+    expect(late('2026-09-29T06:31:00Z')).toBe(true); // 47 h 59 min ahead
   });
   it('uses the afternoon start for afternoon sessions', () => {
     expect(cancellationTerms(new Date('2026-09-29T10:59:00Z'), '2026-10-01', 'pm', settings).late).toBe(false);

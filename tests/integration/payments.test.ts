@@ -34,7 +34,7 @@ import { ownerCardRefunds, retryCardRefund, submitPendingRefunds } from '@/serve
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 
-import { londonDate } from '@/domain/time';
+import { londonDate, londonInstant } from '@/domain/time';
 import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
@@ -329,6 +329,45 @@ describe('automatic refunds (D20, D58)', () => {
     expect(inv.creditNotes[0]).toMatchObject({ refundDuePence: 5000, refundState: 'refunded' });
     const refunds = await db().select().from(cardRefunds).where(eq(cardRefunds.creditNoteId, inv.creditNotes[0]!.id));
     expect(refunds.map((r) => r.status)).toEqual(['succeeded']);
+  });
+
+  it('refunds a card-paid day cancelled 48 h or more ahead, and not inside 48 h (D20, D39)', async () => {
+    const exactly48 = (date: string) => new Date(londonInstant(date, '07:30').getTime() - 48 * 3_600_000);
+    const paidDay = async (date: string) => {
+      await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
+      const a = await payLatest(pia.userId);
+      const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+      return { bd: bd!, attempt: a };
+    };
+
+    // 48 h 01 min ahead and exactly 48 h ahead: free and refunded to the card.
+    for (const [day, offsetMs] of [
+      [weekdayAhead(46), -60_000],
+      [weekdayAhead(47), 0],
+    ] as const) {
+      const p = await paidDay(day);
+      const refundsBefore = stripe.refunds.length;
+      expect(await cancelMyBooking(db(), pia, p.bd.id, new Date(exactly48(day).getTime() + offsetMs))).toEqual({
+        late: false,
+        refundedPence: 5000,
+      });
+      expect(stripe.refunds.length).toBe(refundsBefore + 1);
+    }
+
+    // 47 h 59 min ahead: late, nothing goes back to the card and the day stays charged.
+    const lateDay = weekdayAhead(50);
+    const l = await paidDay(lateDay);
+    const refundsMid = stripe.refunds.length;
+    expect(await cancelMyBooking(db(), pia, l.bd.id, new Date(exactly48(lateDay).getTime() + 60_000))).toEqual({
+      late: true,
+      refundedPence: 0,
+    });
+    expect(stripe.refunds.length).toBe(refundsMid);
+    const [paid] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, l.attempt.id));
+    const inv = await myInvoice(db(), pia, paid!.resultInvoiceId!);
+    expect(inv.creditNotes).toHaveLength(0);
+    const [row] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, l.bd.id));
+    expect(row).toMatchObject({ status: 'cancelled', lateCancellation: true });
   });
 
   it('a refund the provider rejects can be retried by the Owner', async () => {
