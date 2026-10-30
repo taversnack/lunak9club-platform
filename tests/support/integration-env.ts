@@ -16,6 +16,10 @@ delete process.env.CLIENT_IP_HEADER;
 // keeps running from there in 1 ms steps, like the real one (the 20 ms default gave back-to-back rows
 // the same timestamp, so tests ordering by created_at flipped). Only Date is faked (timers stay real,
 // so the database driver is unaffected). Used to prove no test depends on the real date.
+// Postgres now() is NOT faked. When a test backdates a row for the app to compare (a lapsed hold, a stale
+// refund), use the JS clock (`new Date(Date.now() - …)`), never `now() - interval …`: a pin in the past
+// makes a DB-clock value look like the future to the app (it broke two payments tests at
+// TEST_NOW=2026-10-14). Postgres now() is fine where nothing compares it with the app's clock.
 if (process.env.TEST_NOW) {
   const { vi } = await import('vitest');
   vi.useFakeTimers({
