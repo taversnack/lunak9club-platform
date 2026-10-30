@@ -644,6 +644,32 @@ describe('webhooks (non-negotiable 3)', () => {
   });
 });
 
+describe('webhooks delivered at the same moment (non-negotiable 3)', () => {
+  it('five simultaneous deliveries of one event pay the booking exactly once', async () => {
+    const date = weekdayAhead(48);
+    await requestAndApprove(db(), quinn, { dogIds: [quinnDog], dates: [date], session: 'full', taxi: false }, owner);
+    const [a] = (await attemptsFor(quinn.userId)).filter((x) => x.status === 'open');
+    stripe.pay(a!.providerSessionId!);
+    const body = JSON.stringify({
+      id: 'evt_test_concurrent',
+      type: 'checkout.session.completed',
+      objectId: a!.providerSessionId,
+    });
+    const results = await Promise.allSettled(Array.from({ length: 5 }, () => handleWebhook(db(), body, 'valid')));
+    expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+    const [done] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, a!.id));
+    expect(done!.status).toBe('paid');
+    expect(await db().select().from(payments).where(eq(payments.checkoutAttemptId, a!.id))).toHaveLength(1);
+    const invoicesFor = await db().select().from(invoices).where(eq(invoices.id, done!.resultInvoiceId!));
+    expect(invoicesFor).toHaveLength(1);
+    const [evt] = await db().select().from(webhookEvents).where(eq(webhookEvents.eventId, 'evt_test_concurrent'));
+    expect(evt!.attempts).toBe(5);
+    expect(evt!.processedAt).not.toBeNull();
+    const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, done!.bookingId!));
+    expect(bd!.status).toBe('confirmed');
+  });
+});
+
 describe('a pay link for a booking that is already paid', () => {
   let rae: TestUser;
   let raeDog: string;
