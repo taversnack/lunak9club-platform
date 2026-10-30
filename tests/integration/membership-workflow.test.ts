@@ -10,6 +10,8 @@ import {
   jobRuns,
   bookingDogs,
   customers,
+  invoiceLines,
+  invoices,
   memberships,
   membershipOffers,
   users,
@@ -306,7 +308,7 @@ describe('setting days twice with the same start date (Tester, PR #45)', () => {
     await readyCustomer(db(), u);
     const dog = await approvedDog(db(), owner, u, 'Echo');
     await ownerSetMembershipDays(db(), owner, dog, { weekdays: [1], session: 'full', startsOn: addDays(today, 1) });
-    // A change starts from the first month not yet invoiced; twice in a row gives the same date.
+    // Not started yet, so no start date given keeps the pending one; twice in a row gives the same date.
     await ownerSetMembershipDays(db(), owner, dog, { weekdays: [3], session: 'full' });
     const before = await db().select().from(memberships).where(eq(memberships.dogId, dog));
     const change = before.find((m) => m.status === 'active' && m.endsOn === null)!;
@@ -334,6 +336,124 @@ describe('setting days twice with the same start date (Tester, PR #45)', () => {
         ),
       );
     expect(live.every((b) => [2, 4].includes(isoWeekday(b.date)))).toBe(true);
+  });
+});
+
+describe('a membership that has not started yet keeps its start date (D19, D89, D93)', () => {
+  // E.g. today 30 Oct, nothing invoiced: days set "from 16 Nov" must not become "from 1 Nov".
+  const nextMonth = addDays(`${today.slice(0, 7)}-28`, 7).slice(0, 7);
+  const start = nextOpenWeekday(2, `${nextMonth}-14`);
+  const freshDog = async (name: string) => {
+    const u = await makeUser(db(), 'customer', `${name} Future`);
+    await readyCustomer(db(), u);
+    const dog = await approvedDog(db(), owner, u, name);
+    const [c] = await db().select().from(customers).where(eq(customers.userId, u.userId));
+    return { u, dog, customerId: c!.id };
+  };
+  const expectStartKept = async (dog: string, customerId: string, weekdays: number[]) => {
+    const ms = await db()
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.dogId, dog), eq(memberships.status, 'active')));
+    expect(ms.map((m) => ({ startsOn: m.startsOn, weekdays: m.weekdays }))).toEqual([{ startsOn: start, weekdays }]);
+    const early = await db()
+      .select({ date: bookingDogs.serviceDate })
+      .from(bookingDogs)
+      .where(
+        and(
+          eq(bookingDogs.dogId, dog),
+          inArray(bookingDogs.status, ['confirmed', 'waitlisted']),
+          sql`${bookingDogs.serviceDate} < ${start}`,
+        ),
+      );
+    expect(early).toEqual([]);
+    const billed = await db()
+      .select({ date: invoiceLines.serviceDate })
+      .from(invoiceLines)
+      .innerJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
+      .where(and(eq(invoices.customerId, customerId), sql`${invoiceLines.serviceDate} < ${start}`));
+    expect(billed).toEqual([]);
+  };
+
+  it('Owner: set Tue/Thu from the 16th-ish, then Mon/Wed from the same day: the start stays put', async () => {
+    const { dog, customerId } = await freshDog('Tilly');
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 4], session: 'full', startsOn: start });
+    const r = await ownerSetMembershipDays(db(), owner, dog, { weekdays: [1, 3], session: 'full', startsOn: start });
+    expect(r.startsOn).toBe(start);
+    await expectStartKept(dog, customerId, [1, 3]);
+    // No date given: the pending start date is kept.
+    const again = await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 5], session: 'full' });
+    expect(again.startsOn).toBe(start);
+    await expectStartKept(dog, customerId, [2, 5]);
+  });
+
+  it('Owner: moving a pending start later changes it in place; the old start never runs', async () => {
+    const { dog, customerId } = await freshDog('Later');
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 4], session: 'full', startsOn: addDays(start, -7) });
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [1, 3], session: 'full', startsOn: start });
+    await expectStartKept(dog, customerId, [1, 3]);
+  });
+
+  it('customer: request, approve, then ask again with different days: the start stays put', async () => {
+    const { u, dog, customerId } = await freshDog('Mabel');
+    const first = await requestMyMembershipDays(db(), u, {
+      dogId: dog,
+      weekdays: [2, 4],
+      session: 'full',
+      startsOn: start,
+    });
+    await approveApprovalRequest(db(), owner, first.id);
+    const second = await requestMyMembershipDays(db(), u, {
+      dogId: dog,
+      weekdays: [1, 3],
+      session: 'full',
+      startsOn: start,
+    });
+    expect(second.startsOn).toBe(start);
+    await approveApprovalRequest(db(), owner, second.id);
+    await expectStartKept(dog, customerId, [1, 3]);
+  });
+
+  it('a start inside a month already invoiced is refused (Owner and customer)', async () => {
+    const { u, dog, customerId } = await freshDog('Inky');
+    await db()
+      .insert(invoices)
+      .values({
+        customerId,
+        kind: 'membership',
+        periodMonth: nextMonth,
+        status: 'scheduled',
+        scheduledFor: new Date(),
+      });
+    const owned = ownerSetMembershipDays(db(), owner, dog, { weekdays: [2], session: 'full', startsOn: start });
+    await expect(owned).rejects.toBeInstanceOf(ValidationError);
+    await expect(owned).rejects.toMatchObject({ fields: { startsOn: expect.stringMatching(/already been invoiced/) } });
+    await expect(
+      requestMyMembershipDays(db(), u, { dogId: dog, weekdays: [2], session: 'full', startsOn: start }),
+    ).rejects.toMatchObject({ fields: { startsOn: expect.stringMatching(/already been invoiced/) } });
+    expect(await db().select().from(memberships).where(eq(memberships.dogId, dog))).toEqual([]);
+  });
+
+  it('a membership that has already started still changes from the first month not yet invoiced (D89 kept)', async () => {
+    const { dog } = await freshDog('Started');
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 4], session: 'full', startsOn: start });
+    const later = addDays(start, 3);
+    const now = new Date(`${later}T09:00:00Z`);
+    const firstOfNext = `${addDays(`${later.slice(0, 7)}-28`, 7).slice(0, 7)}-01`;
+    const r = await ownerSetMembershipDays(
+      db(),
+      owner,
+      dog,
+      { weekdays: [1, 3], session: 'full', startsOn: addDays(later, 1) },
+      now,
+    );
+    expect(r.startsOn).toBe(firstOfNext);
+    const ms = await db()
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.dogId, dog), eq(memberships.status, 'active')));
+    expect(ms.find((m) => m.startsOn === start)?.endsOn).toBe(addDays(firstOfNext, -1));
+    expect(ms.find((m) => m.startsOn === firstOfNext)?.weekdays).toEqual([1, 3]);
   });
 });
 

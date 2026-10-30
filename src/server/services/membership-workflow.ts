@@ -42,6 +42,7 @@ import { checkMoveOnce, type MembershipDaysPayload, type MoveOncePayload } from 
 import {
   changeStartFor,
   currentMembership,
+  daysChangeStart,
   describePlan,
   fullDatesFor,
   fullDatesMessage,
@@ -441,20 +442,20 @@ export async function requestMyMembershipDays(db: Db, actor: Actor, input: unkno
   if (wd) fields.weekdays = wd;
   const dog = await loadMyDog(db, customer.id, d.dogId);
   const current = await currentMembership(db, dog.id, today);
-  let startsOn: IsoDate;
-  if (current) startsOn = await changeStartFor(db, customer.id, now);
-  else {
-    startsOn = d.startsOn ?? '';
-    const check = isoDate('the first day').safeParse(startsOn);
-    if (!check.success) fields.startsOn = 'Enter the first day as a real date';
-    else if (startsOn <= today) fields.startsOn = 'Choose tomorrow or later';
-    else if (startsOn > addDays(today, settings.maxAdvanceDays))
-      fields.startsOn = `Choose a date within ${settings.maxAdvanceDays} days`;
-  }
+  const start = await daysChangeStart(db, {
+    customerId: customer.id,
+    dogId: dog.id,
+    entered: d.startsOn,
+    now,
+    maxAdvanceDays: settings.maxAdvanceDays,
+  });
+  const startsOn: IsoDate = start.startsOn;
+  if (start.error) fields.startsOn = start.error;
   if (Object.keys(fields).length) throw new ValidationError('Please check the highlighted fields.', fields);
   const plan: DaysPlan = { weekdays: [...new Set(d.weekdays)].sort(), session: d.session as Session, taxi: d.taxi };
   if (
     current &&
+    (start.started || current.startsOn === startsOn) &&
     current.session === plan.session &&
     current.taxi === plan.taxi &&
     current.weekdays.join() === plan.weekdays.join()
@@ -556,18 +557,12 @@ export async function ownerSetMembershipDays(db: Db, actor: Actor, rawDogId: str
     .where(and(eq(dogs.id, idOrNotFound(rawDogId, 'Dog')), isNull(dogs.archivedAt)));
   if (!dog) throw new NotFoundError('Dog');
   const settings = await loadSettings(db);
-  const today = londonDate(now);
   const fields: Record<string, string> = {};
   const wd = validWeekdays(d.weekdays, settings.openWeekdays);
   if (wd) fields.weekdays = wd;
-  const current = await currentMembership(db, dog.id, today);
-  let startsOn: IsoDate;
-  if (current) startsOn = await changeStartFor(db, dog.customerId, now);
-  else {
-    startsOn = d.startsOn ?? '';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startsOn)) fields.startsOn = 'Enter the first day as a real date';
-    else if (startsOn <= today) fields.startsOn = 'Choose tomorrow or later';
-  }
+  const start = await daysChangeStart(db, { customerId: dog.customerId, dogId: dog.id, entered: d.startsOn, now });
+  const startsOn: IsoDate = start.startsOn;
+  if (start.error) fields.startsOn = start.error;
   if (Object.keys(fields).length) throw new ValidationError('Please check the highlighted fields.', fields);
   const plan: DaysPlan = { weekdays: [...new Set(d.weekdays)].sort(), session: d.session as Session, taxi: d.taxi };
   const [c] = await db.select({ userId: customers.userId }).from(customers).where(eq(customers.id, dog.customerId));
