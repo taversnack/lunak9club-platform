@@ -202,7 +202,6 @@ export async function setMembershipDaysTx(
   return { id: row!.id, replacedId };
 }
 
-/** The dog's membership that is running or due to start (latest start first). */
 /**
  * Where a change to a dog's regular days starts. Only a membership that has already started is a
  * "change" in the D89 sense (from the first month not yet invoiced). A dog whose membership is
@@ -244,6 +243,7 @@ export async function daysChangeStart(
   return { started: false, startsOn };
 }
 
+/** The dog's membership that is running or due to start (latest start first). */
 export async function currentMembership(q: Q, dogId: string, today: IsoDate) {
   const rows = await q
     .select()
