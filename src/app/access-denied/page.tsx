@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
-import { Card, Stack } from '@/ui/components';
+import p from '@/ui/public.module.css';
+import { buttonClass, Card, Stack } from '@/ui/components';
 import { getActor } from '@/server/session';
 
 export const metadata: Metadata = { title: 'No access' };
@@ -11,17 +12,25 @@ export default async function AccessDenied() {
   const who = actor.kind === 'user' ? actor.name : null;
   return (
     <div className={`${s.container} ${s.narrow}`}>
-      <Card>
-        <Stack>
-          <h1>You don&apos;t have access to this page</h1>
-          <p>
-            This page is for a different type of account{who ? <> from the one you’re signed in with ({who})</> : null}.
-            If you think this is a mistake, please contact Luna’s K9 Club.
-          </p>
-          <p>
-            <Link href="/dashboard">Go to your dashboard</Link> · <Link href="/account/book">Book day care</Link>
-          </p>
-        </Stack>
+      <Card as="div">
+        <div className={p.error}>
+          <Stack>
+            <h1>You don’t have access to this page</h1>
+            <p className={s.muted}>
+              This page is for a different type of account
+              {who ? <> from the one you’re signed in with ({who})</> : null}. If you think this is a mistake, please
+              contact Luna’s K9 Club.
+            </p>
+            <div className={p.errorActions}>
+              <Link href="/dashboard" className={buttonClass('primary')}>
+                Go to your dashboard
+              </Link>
+              <Link href="/account/book" className={buttonClass('secondary')}>
+                Book day care
+              </Link>
+            </div>
+          </Stack>
+        </div>
       </Card>
     </div>
   );
