@@ -3,6 +3,7 @@ import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Alert, Card, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, SubmitButton, TextArea } from '@/ui/form';
+import { FocusOnShow } from '@/ui/focus-on-show';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { previewMyBookings } from '@/server/services/bookings';
@@ -40,13 +41,15 @@ export default async function ReviewPage({
       return (
         <Stack>
           <h1>Check your booking</h1>
-          <Alert tone="danger" title="This can’t be booked as it is">
-            <ul>
-              {Object.values(e.fields).map((m) => (
-                <li key={m}>{m}</li>
-              ))}
-            </ul>
-          </Alert>
+          <FocusOnShow testId="review-error">
+            <Alert tone="danger" title="This can’t be booked as it is">
+              <ul>
+                {Object.values(e.fields).map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+            </Alert>
+          </FocusOnShow>
           <p>
             <Link href="/account/book">Go back and change your choices</Link>
           </p>
@@ -123,7 +126,7 @@ export default async function ReviewPage({
           Nothing here can be booked. <Link href="/account/book">Choose other dates</Link>.
         </Alert>
       ) : (
-        <ActionForm action={confirmBookingAction}>
+        <ActionForm action={confirmBookingAction} focusError>
           {request.dogIds.map((d) => (
             <input key={d} type="hidden" name="dog" value={d} />
           ))}
