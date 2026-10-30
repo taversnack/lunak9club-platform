@@ -94,7 +94,7 @@ async function once(
       .update(jobRuns)
       .set({
         status: 'failed',
-        summary: { error: err instanceof Error ? err.message.slice(0, 200) : 'unknown' },
+        summary: { error: err instanceof Error ? err.name : 'unknown' }, // name only: messages can hold a dog's name (rule 5)
         finishedAt: new Date(),
       })
       .where(eq(jobRuns.id, claimed.id));
