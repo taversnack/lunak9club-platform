@@ -149,27 +149,12 @@ const sellerSnapshot = (bs: BusinessSettings): SellerSnapshot => ({
 // ---- Drafts (D24, D52) --------------------------------------------------------------
 
 /**
- * Rebuild one customer's draft for a month from their billable member days that aren't on any
- * other invoice. Creates the draft if needed and deletes it if nothing is left. Serialised per
- * customer and month with an advisory lock so two runs can't bill a day twice.
+ * A customer's billable member days in a month that aren't on another invoice, at the locked
+ * price. `draftId` also counts the days already on that draft (a read-only check, D95).
  */
-async function rebuildDraft(tx: Tx, customerId: string, month: Month) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`invoice:${customerId}:${month}`}))`);
-  const [draft] = await tx
-    .select()
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.customerId, customerId),
-        eq(invoices.periodMonth, month),
-        eq(invoices.status, 'draft'),
-        eq(invoices.kind, 'membership'),
-      ),
-    )
-    .for('update');
-  if (draft) await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, draft.id));
+async function billableDays(q: Q, customerId: string, month: Month, draftId?: string) {
   const { first, last } = monthRange(month);
-  const days = await tx
+  return q
     .select({
       bookingDogId: bookingDogs.id,
       serviceDate: bookingDogs.serviceDate,
@@ -190,10 +175,33 @@ async function rebuildDraft(tx: Tx, customerId: string, month: Month) {
         gte(bookingDogs.serviceDate, first),
         lte(bookingDogs.serviceDate, last),
         BILLABLE,
-        isNull(invoiceLines.id),
+        draftId ? or(isNull(invoiceLines.id), eq(invoiceLines.invoiceId, draftId)) : isNull(invoiceLines.id),
       ),
     )
     .orderBy(asc(bookingDogs.serviceDate), asc(dogs.name));
+}
+
+/**
+ * Rebuild one customer's draft for a month from their billable member days that aren't on any
+ * other invoice. Creates the draft if needed and deletes it if nothing is left. Serialised per
+ * customer and month with an advisory lock so two runs can't bill a day twice.
+ */
+async function rebuildDraft(tx: Tx, customerId: string, month: Month) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`invoice:${customerId}:${month}`}))`);
+  const [draft] = await tx
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.customerId, customerId),
+        eq(invoices.periodMonth, month),
+        eq(invoices.status, 'draft'),
+        eq(invoices.kind, 'membership'),
+      ),
+    )
+    .for('update');
+  if (draft) await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, draft.id));
+  const days = await billableDays(tx, customerId, month);
   if (!days.length) {
     if (draft) await tx.delete(invoices).where(eq(invoices.id, draft.id));
     return { invoiceId: null, totalPence: 0, lines: 0, created: false, removed: Boolean(draft) };
@@ -376,6 +384,174 @@ export async function unapproveInvoice(db: Db, actor: Actor, rawId: string, inpu
   });
 }
 
+// ---- Month-end in one tap (D95) -------------------------------------------------------
+
+export type MonthEndDraft = {
+  id: string;
+  version: number;
+  customerName: string;
+  month: Month;
+  totalPence: number;
+  lines: number;
+  /** Why this draft needs the Owner's own check. Empty means it can be approved with the rest. */
+  reasons: string[];
+};
+
+/**
+ * Sort the membership drafts into those that can be approved together and those the Owner
+ * should open first (D95). Read-only: nothing is rebuilt or approved here.
+ */
+export async function monthEndDrafts(db: Db, actor: Actor) {
+  assertAuthorized(actor, 'invoices.manage');
+  const rows = await db
+    .select({ inv: invoices, customerName: users.name, anonymisedAt: customers.anonymisedAt })
+    .from(invoices)
+    .innerJoin(customers, eq(customers.id, invoices.customerId))
+    .innerJoin(users, eq(users.id, customers.userId))
+    .where(and(eq(invoices.status, 'draft'), eq(invoices.kind, 'membership')))
+    .orderBy(asc(invoices.periodMonth), asc(users.name))
+    .limit(500);
+  const ids = rows.map((r) => r.inv.id);
+  const [lines, others] = ids.length
+    ? await Promise.all([
+        db
+          .select({
+            invoiceId: invoiceLines.invoiceId,
+            bookingDogId: invoiceLines.bookingDogId,
+            amountPence: invoiceLines.amountPence,
+          })
+          .from(invoiceLines)
+          .where(inArray(invoiceLines.invoiceId, ids)),
+        db
+          .select({ customerId: invoices.customerId, month: invoices.periodMonth })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.kind, 'membership'),
+              inArray(invoices.status, ['scheduled', 'issued', 'paid']),
+              inArray(invoices.customerId, [...new Set(rows.map((r) => r.inv.customerId))]),
+            ),
+          ),
+      ])
+    : [[], []];
+  const key = (l: { bookingDogId: string | null; amountPence: number }) => `${l.bookingDogId}:${l.amountPence}`;
+  const already = new Set(others.map((o) => `${o.customerId}:${o.month}`));
+  const ready: MonthEndDraft[] = [];
+  const toCheck: MonthEndDraft[] = [];
+  for (const r of rows) {
+    const reasons: string[] = [];
+    const stored = lines
+      .filter((l) => l.invoiceId === r.inv.id)
+      .map(key)
+      .sort();
+    const fresh = await billableDays(db, r.inv.customerId, r.inv.periodMonth, r.inv.id);
+    const freshKeys = fresh.map((d) => key({ bookingDogId: d.bookingDogId, amountPence: d.totalPence })).sort();
+    const freshTotal = fresh.reduce((a, d) => a + d.totalPence, 0);
+    if (!fresh.length) reasons.push('All its days have been cancelled since it was made.');
+    else if (freshTotal !== r.inv.totalPence || freshKeys.join() !== stored.join())
+      reasons.push(`Its days changed since it was made (now ${pounds(freshTotal)}).`);
+    if (r.inv.totalPence === 0) reasons.push('The total is £0.00.');
+    if (r.anonymisedAt) reasons.push('The customer’s account has been closed.');
+    if (already.has(`${r.inv.customerId}:${r.inv.periodMonth}`))
+      reasons.push('There’s already an invoice for this month, so this one is extra.');
+    const item: MonthEndDraft = {
+      id: r.inv.id,
+      version: r.inv.version,
+      customerName: r.customerName,
+      month: r.inv.periodMonth,
+      totalPence: r.inv.totalPence,
+      lines: stored.length,
+      reasons,
+    };
+    (reasons.length ? toCheck : ready).push(item);
+  }
+  return { ready, toCheck, readyTotalPence: ready.reduce((a, d) => a + d.totalPence, 0) };
+}
+
+const DraftSeen = z
+  .string()
+  .regex(/^[0-9a-f-]{36}:\d{1,9}:\d{1,9}$/i, 'This list is out of date. Please reload the page.')
+  .transform((v) => {
+    const [id, version, total] = v.split(':');
+    return { id: id!, version: Number(version), expectedTotalPence: Number(total) };
+  });
+
+export const ApproveAllInput = z.object({
+  drafts: z
+    .array(DraftSeen)
+    .min(1, 'There are no drafts to approve.')
+    .max(500)
+    .refine((d) => new Set(d.map((x) => x.id)).size === d.length, 'This list is out of date. Please reload the page.'),
+});
+
+/**
+ * Approve, in one go, the drafts the Owner saw in the "ready" list (D95). Each draft is checked
+ * again and goes through approveInvoice with the version and total the Owner saw, so anything
+ * that changed in the meantime is left as a draft and reported. Safe to repeat: drafts already
+ * approved are skipped.
+ */
+export async function approveUnchangedDrafts(db: Db, actor: Actor, input: unknown, now = new Date()) {
+  assertAuthorized(actor, 'invoices.manage');
+  const d = parseInput(ApproveAllInput, input);
+  const bs = await loadBusinessSettings(db);
+  const missing = missingBusinessDetails(bs);
+  if (missing.length)
+    throw new ConflictError(`Add your ${missing.join(', ')} in Settings → Business before sending invoices.`);
+  const review = await monthEndDrafts(db, actor);
+  const ready = new Map(review.ready.map((r) => [r.id, r]));
+  const result = {
+    approved: 0,
+    sentNow: 0,
+    approvedPence: 0,
+    alreadyApproved: 0,
+    notApproved: [] as { id: string; customerName: string; month: Month; reason: string }[],
+  };
+  for (const seen of d.drafts) {
+    const item = ready.get(seen.id);
+    if (!item) {
+      const [inv] = await db
+        .select({ status: invoices.status, customerName: users.name, month: invoices.periodMonth })
+        .from(invoices)
+        .innerJoin(customers, eq(customers.id, invoices.customerId))
+        .innerJoin(users, eq(users.id, customers.userId))
+        .where(eq(invoices.id, seen.id));
+      if (inv && inv.status !== 'draft') result.alreadyApproved++;
+      else {
+        const check = review.toCheck.find((c) => c.id === seen.id);
+        result.notApproved.push({
+          id: seen.id,
+          customerName: inv?.customerName ?? 'Unknown',
+          month: inv?.month ?? '',
+          reason: check?.reasons[0] ?? 'This draft has gone. Please reload the page.',
+        });
+      }
+      continue;
+    }
+    try {
+      const r = await approveInvoice(db, actor, seen.id, seen, now);
+      result.approved++;
+      result.approvedPence += seen.expectedTotalPence;
+      if (r.sentNow) result.sentNow++;
+    } catch (e) {
+      if (!(e instanceof ConflictError)) throw e;
+      result.notApproved.push({ id: seen.id, customerName: item.customerName, month: item.month, reason: e.message });
+    }
+  }
+  await recordAudit(db, {
+    actor,
+    action: 'invoice.bulk_approved',
+    entityType: 'invoice',
+    metadata: {
+      approved: result.approved,
+      sentNow: result.sentNow,
+      totalPence: result.approvedPence,
+      notApproved: result.notApproved.length,
+      alreadyApproved: result.alreadyApproved,
+    },
+  });
+  return result;
+}
+
 /**
  * Assign the next number and lock the invoice (inside the caller's transaction). Booking invoices
  * (paid at checkout) are issued even if business details are incomplete – the payment has happened.
@@ -474,7 +650,7 @@ async function sendInvoice(db: Db, actor: Actor, id: string, now: Date) {
         ),
       ),
     );
-    await db.update(invoices).set({ emailSentAt: new Date() }).where(eq(invoices.id, id));
+    await db.update(invoices).set({ emailSentAt: now }).where(eq(invoices.id, id));
   }
   await recordAudit(db, {
     actor,

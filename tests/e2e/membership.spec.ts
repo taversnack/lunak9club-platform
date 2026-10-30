@@ -87,6 +87,13 @@ test('Owner checks the membership invoice draft and sends it', async ({ page }, 
   await page.getByRole('button', { name: 'Update drafts and send anything due now' }).click();
   await expect(page.getByText(/Billing updated/)).toBeVisible();
   await axe(page);
+  // Month-end in one tap (D95): the card lists the drafts it would approve together. The click itself is
+  // covered by integration tests – here it would also approve the other project's draft.
+  const monthEnd = page.getByRole('region', { name: 'Approve drafts' });
+  await expect(monthEnd).toBeVisible();
+  await expect(
+    monthEnd.getByRole('button', { name: /^Approve all unchanged drafts \(\d+\) – £[\d,]+\.\d{2}$/ }),
+  ).toBeVisible();
   await page
     .getByRole('link', { name: customerName(info.project.name) })
     .first()

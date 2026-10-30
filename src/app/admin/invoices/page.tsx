@@ -6,11 +6,11 @@ import { ActionForm, SubmitButton } from '@/ui/form';
 import { InvoiceState } from '@/ui/invoice-state';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
-import { billingOverview, ownerInvoices, type InvoiceFilter } from '@/server/services/billing';
+import { billingOverview, monthEndDrafts, ownerInvoices, type InvoiceFilter } from '@/server/services/billing';
 import { formatMonth } from '@/domain/billing/rules';
 import { pounds } from '@/domain/pricing/engine';
 import { formatUkDate } from '@/domain/time';
-import { runBillingNowAction } from '../actions';
+import { approveUnchangedDraftsAction, runBillingNowAction } from '../actions';
 
 export const metadata: Metadata = { title: 'Invoices' };
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,12 @@ export default async function OwnerInvoicesPage({
   const actor = await requirePermission('invoices.manage');
   const filter = (FILTERS.find((f) => f.key === sp.filter)?.key ?? 'draft') as InvoiceFilter;
   const db = getDb();
-  const [overview, rows] = await Promise.all([billingOverview(db, actor), ownerInvoices(db, actor, filter)]);
+  const [overview, rows, monthEnd] = await Promise.all([
+    billingOverview(db, actor),
+    ownerInvoices(db, actor, filter),
+    monthEndDrafts(db, actor),
+  ]);
+  const num = (v: string | undefined) => (v && /^\d{1,9}$/.test(v) ? Number(v) : 0);
   const exportMonths = [...overview.months].reverse();
   return (
     <Stack>
@@ -41,6 +46,16 @@ export default async function OwnerInvoicesPage({
       {sp.ran ? (
         <Alert tone="success">
           Billing updated: {sp.drafts} drafts, {sp.sent} invoices sent, {sp.reminders} reminders sent.
+        </Alert>
+      ) : null}
+      {sp.bulk ? (
+        <Alert tone={num(sp.skipped) ? 'warning' : 'success'} title="Drafts approved">
+          {num(sp.approved)} approved ({pounds(num(sp.total))}), {num(sp.sent)} emailed now and the rest wait for the
+          send day.
+          {num(sp.already) ? ` ${num(sp.already)} were already approved.` : ''}
+          {num(sp.skipped)
+            ? ` ${num(sp.skipped)} weren’t approved because they changed or need a check. They’re still drafts, listed below.`
+            : ''}
         </Alert>
       ) : null}
       {overview.missingDetails.length ? (
@@ -65,6 +80,47 @@ export default async function OwnerInvoicesPage({
           </p>
         </Card>
       </Grid>
+      {monthEnd.ready.length || monthEnd.toCheck.length ? (
+        <Card aria-labelledby="month-end">
+          <h2 id="month-end">Approve drafts</h2>
+          {monthEnd.ready.length ? (
+            <ActionForm action={approveUnchangedDraftsAction}>
+              <p>
+                {monthEnd.ready.length} {monthEnd.ready.length === 1 ? 'draft hasn’t' : 'drafts haven’t'} changed since
+                {monthEnd.ready.length === 1 ? ' it was' : ' they were'} made and{' '}
+                {monthEnd.ready.length === 1 ? 'needs' : 'need'} nothing else. Each is checked again as it’s approved;
+                any that changed in the meantime stay as drafts.
+              </p>
+              {monthEnd.ready.map((d) => (
+                <input key={d.id} type="hidden" name="draft" value={`${d.id}:${d.version}:${d.totalPence}`} />
+              ))}
+              <div>
+                <SubmitButton pendingText="Approving…" disabled={overview.missingDetails.length > 0}>
+                  {`Approve all unchanged drafts (${monthEnd.ready.length}) – ${pounds(monthEnd.readyTotalPence)}`}
+                </SubmitButton>
+              </div>
+            </ActionForm>
+          ) : (
+            <Muted>No drafts can be approved together right now.</Muted>
+          )}
+          {monthEnd.toCheck.length ? (
+            <>
+              <h3>Check these first ({monthEnd.toCheck.length})</h3>
+              <p>These aren’t included. Open each one, check it and approve it on its own.</p>
+              <ul className={s.list}>
+                {monthEnd.toCheck.map((d) => (
+                  <li key={d.id}>
+                    <Link href={`/admin/invoices/${d.id}`}>
+                      {d.customerName}, {formatMonth(d.month)}
+                    </Link>{' '}
+                    ({pounds(d.totalPence)}): {d.reasons.join(' ')}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </Card>
+      ) : null}
       <Card aria-labelledby="how">
         <h2 id="how">How membership billing works</h2>
         <p>

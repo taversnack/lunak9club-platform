@@ -21,6 +21,7 @@ import { redirect } from 'next/navigation';
 import { resendPayLink } from '@/server/services/payments';
 import {
   approveInvoice,
+  approveUnchangedDrafts,
   decideRefund,
   issueCreditNote,
   markCreditRefunded,
@@ -294,6 +295,24 @@ export async function approveInvoiceAction(_: ActionState, fd: FormData): Promis
     const r = await approveInvoice(getDb(), actor, id, obj(fd));
     revalidatePath('/admin/invoices');
     redirect(`/admin/invoices/${id}?done=${r.sentNow ? 'sent' : 'scheduled'}`);
+  });
+}
+
+export async function approveUnchangedDraftsAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(fd, async () => {
+    const actor = await requirePermission('invoices.manage');
+    const drafts = fd.getAll('draft').map(String);
+    const r = await approveUnchangedDrafts(getDb(), actor, { drafts });
+    revalidatePath('/admin/invoices');
+    const q = new URLSearchParams({
+      bulk: '1',
+      approved: String(r.approved),
+      sent: String(r.sentNow),
+      total: String(r.approvedPence),
+      skipped: String(r.notApproved.length),
+      already: String(r.alreadyApproved),
+    });
+    redirect(`/admin/invoices?${q}`);
   });
 }
 

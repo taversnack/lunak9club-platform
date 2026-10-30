@@ -213,6 +213,8 @@ describe('approve, send and remind (D24, D25)', () => {
     const [row] = await db().select().from(invoices).where(eq(invoices.id, invoiceId));
     expect(row!.number).toBe(invoiceNo);
     expect(invoiceNo).toMatch(/^LK9DOUGIE-\d{2,}$/);
+    // The app clock, not the wall clock (Tester, PR #45).
+    expect(row!.emailSentAt?.toISOString()).toBe(afterSend.toISOString());
     expect(row!.issueDate).toBe(`${M0}-28`);
     expect(row!.dueDate).toBe(addDays(`${M0}-28`, 5));
     expect(row!.reminderDueAt!.toISOString()).toBe(londonInstant(addDays(`${M0}-28`, 4), '15:30').toISOString());
