@@ -4,7 +4,7 @@ Status: **not deployed.** Hosting direction (Owner, D107): a **Node container or
 
 ## 1. Known gaps to close before go-live
 
-1. **Outbound email has no SMTP login.** `src/infra/email/providers.ts` creates the SMTP transport with host, port and `secure: false` only. Production requires `EMAIL_TRANSPORT=smtp`, but a real mail provider needs a username, password and usually TLS. `RESEND_API_KEY` appears in `.env.example` but nothing reads it. This needs a small code change (SMTP user/password/secure settings, or a Resend adapter) and a provider choice (possible cost: Owner approval).
+1. **No production email provider is chosen (D102).** The SMTP transport is provider-neutral and production-capable: set `EMAIL_TRANSPORT=smtp`, `EMAIL_SANDBOX=0`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` (`starttls` or `tls`), `SMTP_USER` and `SMTP_PASSWORD`; production refuses to start without them. What is missing is the Owner's choice of a provider (it may cost money, so ask first), a verified sender domain for `EMAIL_FROM`, and a real test send from a safe address. Until then email stays local-only (Mailpit).
 2. Which container host or VPS, which managed Postgres and which S3-compatible bucket: not chosen (all cost money; see section 7).
 3. No virus scanning on uploads (D30).
 
@@ -22,7 +22,9 @@ Status: **not deployed.** Hosting direction (Owner, D107): a **Node container or
 | `EMAIL_TRANSPORT` | console | `smtp` | `file` and `console` are for tests and development. |
 | `EMAIL_FROM` | test address | set | Sender shown to customers; domain must be verified with the mail provider. |
 | `EMAIL_SANDBOX` | 1 | `0` | 1 = never send to real addresses. |
-| `SMTP_HOST` / `SMTP_PORT` | localhost / 1025 | set | See gap 1 about credentials. |
+| `SMTP_HOST` / `SMTP_PORT` | localhost / 1025 | set; host must not be local | Your provider's SMTP host and port. |
+| `SMTP_TLS` | off | `starttls` or `tls` | `starttls` usually port 587, `tls` port 465. |
+| `SMTP_USER` / `SMTP_PASSWORD` | none | required, set together | Never logged. Keep in the secret store. |
 | `MAIL_DIR` | .tmp/mail | n/a | `file` transport only. |
 | `AUTH_RATE_LIMIT` | on | keep `on` | Off only in automated tests. |
 | `TRUSTED_PROXIES` | empty | one of these two required when rate limit is on | Own proxies' IPs/CIDRs. See README "Deploying: client addresses and rate limits". |
@@ -71,7 +73,7 @@ Daily and monthly jobs (nightly membership drafts and book-ahead, month-end send
 1. Create the managed Postgres (EU region, TLS, automated backups on, see section 6) and the private bucket. Create the Stripe test-mode webhook endpoint `https://<APP_URL>/api/webhooks/stripe` (events the app handles; keep its signing secret).
 2. Put every variable from section 2 in the host's secret store or a root-only env file that is not in the repository.
 3. Build: `docker build -t lunak9-club . && docker build --target tools -t lunak9-club-tools .` (or `pnpm install --frozen-lockfile && pnpm build` on a VPS).
-4. Apply migrations with the tools image: `docker run --rm --env-file <env file> lunak9-club-tools pnpm db:migrate` (refuses a database whose migration history does not match the journal; on an empty database it applies everything from zero).
+4. Apply migrations with the tools image: `docker run --rm --env-file <env file> lunak9-club-tools pnpm db:migrate` (refuses a database whose migration history does not match the journal; on an empty database it applies everything from zero). The scripts also refuse a database host that is not local unless the database name contains `test`, so against a real managed database this step stops with "Refusing to run against non-local database host". Setting `ALLOW_REMOTE_DB=yes-i-have-owner-approval` for that one command overrides the guard: **set it only with the Owner's explicit approval** (CLAUDE.md rule 7), never in the saved env file, and never for a staging copy of production data.
 5. Create the first Owner: `docker run --rm -it --env-file <env file> lunak9-club-tools pnpm owner:create`.
 6. Start the runtime image with the same env file and port 3000 published only to the proxy. Check `/api/health` returns 200.
 7. Add the scheduler (section 4) and confirm one manual tick returns 200 JSON.

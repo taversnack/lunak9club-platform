@@ -16,6 +16,11 @@
 .header a {
   color: var(--color-brand-navy-text);
 }
+.header a.headerCta,
+.header a.headerCta:hover {
+  color: var(--color-cta-text);
+  text-decoration: none;
+}
 .header a:hover {
   color: var(--color-brand-sand);
 }

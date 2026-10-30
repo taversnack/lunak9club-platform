@@ -13,6 +13,11 @@ const EnvSchema = z.object({
   EMAIL_SANDBOX: z.enum(['0', '1']).default('1'),
   SMTP_HOST: z.string().default('localhost'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  /** off: plain (Mailpit locally); starttls: upgrade on the usual submission port; tls: TLS from the start (port 465). */
+  SMTP_TLS: z.enum(['off', 'starttls', 'tls']).default('off'),
+  // Blank (as copied from .env.example) means not set.
+  SMTP_USER: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  SMTP_PASSWORD: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   MAIL_DIR: z.string().default('.tmp/mail'),
   AUTH_RATE_LIMIT: z.enum(['on', 'off']).default('on'),
   /**
@@ -58,6 +63,10 @@ const EnvSchema = z.object({
 
 export type Env = z.infer<typeof EnvSchema>;
 
+/** Hosts that only make sense on a developer's machine (the same list the sandbox allows). */
+export const LOCAL_SMTP_HOSTS = ['localhost', '127.0.0.1', 'mailpit'];
+export const isLocalSmtpHost = (host: string) => LOCAL_SMTP_HOSTS.includes(host);
+
 /** "203.0.113.7", "10.0.0.0/8", "2001:db8::/32". */
 export function isIpOrCidr(entry: string): boolean {
   const [addr, prefix, extra] = entry.split('/');
@@ -79,6 +88,8 @@ export function env(): Env {
     throw new Error('APP_ENV must be set when running a production build (production, or test for e2e).');
   }
   const parsed = EnvSchema.safeParse(process.env);
+  if (parsed.success && !!parsed.data.SMTP_USER !== !!parsed.data.SMTP_PASSWORD)
+    throw new Error('Invalid environment configuration: SMTP_USER and SMTP_PASSWORD must be set together');
   if (!parsed.success) {
     const fields = parsed.error.issues.map((i) => i.path.join('.')).join(', ');
     throw new Error(`Invalid environment configuration: ${fields}`);
@@ -96,6 +107,11 @@ function productionProblems(e: Env): string[] {
   const out: string[] = [];
   if (e.EMAIL_TRANSPORT !== 'smtp') out.push('Production requires a real email transport (EMAIL_TRANSPORT=smtp)');
   if (e.EMAIL_SANDBOX !== '0') out.push('EMAIL_SANDBOX must be 0');
+  if (e.EMAIL_TRANSPORT === 'smtp') {
+    if (isLocalSmtpHost(e.SMTP_HOST)) out.push('SMTP_HOST must be your mail provider’s host, not a local one');
+    if (e.SMTP_TLS === 'off') out.push('SMTP_TLS must be starttls or tls');
+    if (!e.SMTP_USER || !e.SMTP_PASSWORD) out.push('SMTP_USER and SMTP_PASSWORD are required');
+  }
   if (!e.APP_URL.startsWith('https://')) out.push('APP_URL must be an https:// address');
   if (e.PAYMENTS_DRIVER !== 'stripe') out.push('PAYMENTS_DRIVER must be stripe');
   else if (!e.STRIPE_SECRET_KEY || !e.STRIPE_WEBHOOK_SECRET)
