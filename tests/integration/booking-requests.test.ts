@@ -55,7 +55,8 @@ import {
 } from '@/server/services/payments';
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError, type Actor } from '@/server/policy/authorize';
-import { addDays, londonDate } from '@/domain/time';
+import { addDays, londonDate, londonInstant } from '@/domain/time';
+import { ownerInbox } from '@/server/services/owner-inbox';
 
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '@/domain/booking/wording';
 import { formatDateTimeLondon } from '@/ui/format';
@@ -708,5 +709,28 @@ describe('approvals authorisation', () => {
     );
     expect(n.rows[0]!.n).toBeGreaterThan(0);
     await withdrawMyApprovalRequest(db(), bob, r.requestId!);
+  });
+});
+
+describe('Owner inbox (D77)', () => {
+  it('lists a pending request with its first service date as the deadline, Owner only, and honours the limit', async () => {
+    const date = weekdayAhead(30);
+    const r = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'full', taxi: false });
+    try {
+      await expect(ownerInbox(db(), alice)).rejects.toBeInstanceOf(AuthorizationError);
+      const items = await ownerInbox(db(), owner);
+      const mine = items.find((i) => i.key === `approval:${r.requestId}`)!;
+      expect(mine.kind).toBe('approval');
+      expect(mine.dueAt).toEqual(londonInstant(date, '07:30'));
+      expect(mine.dueLabel).toBe('later');
+      // Titles never carry contact or payment detail.
+      expect(JSON.stringify(mine)).not.toContain(alice.email);
+      expect(await ownerInbox(db(), owner, { limit: 1 })).toHaveLength(1);
+      // Items with a deadline come before items without one.
+      const firstUndated = items.findIndex((i) => !i.dueAt);
+      if (firstUndated >= 0) expect(items.slice(firstUndated).every((i) => !i.dueAt)).toBe(true);
+    } finally {
+      await withdrawMyApprovalRequest(db(), alice, r.requestId!);
+    }
   });
 });
