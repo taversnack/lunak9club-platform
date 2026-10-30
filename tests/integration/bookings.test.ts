@@ -195,9 +195,14 @@ describe('customer booking', () => {
     ).rejects.toMatchObject({ fields: { dates: expect.stringMatching(/closed/) } });
     const closedDay = weekdayAhead(20);
     await addClosure(db(), owner, { date: closedDay, reason: 'Staff training' });
-    await expect(
-      requestAndApprove(db(), alice, { dogIds: [aliceDog], dates: [closedDay], session: 'full', taxi: false }, owner),
-    ).rejects.toMatchObject({ fields: { dates: expect.stringMatching(/Staff training/) } });
+    try {
+      await expect(
+        requestAndApprove(db(), alice, { dogIds: [aliceDog], dates: [closedDay], session: 'full', taxi: false }, owner),
+      ).rejects.toMatchObject({ fields: { dates: expect.stringMatching(/Staff training/) } });
+    } finally {
+      // Reopen it: when the booking window is crowded, other files' pickers can share this day.
+      await removeClosure(db(), owner, closedDay);
+    }
     // Vaccinations expire in 200 days; the booking window is 90, so shorten one expiry to test D40.
     const soon = weekdayAhead(10);
     await db()
