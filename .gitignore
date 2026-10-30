@@ -16,3 +16,7 @@ next-env.d.ts
 *.pem
 .data/
 Claude outputs/
+
+# Cloudflare spike build output
+.open-next/
+.wrangler/

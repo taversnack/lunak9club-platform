@@ -7,6 +7,8 @@ const config = [
   {
     ignores: [
       '.next/**',
+      '.open-next/**',
+      '.wrangler/**',
       'node_modules/**',
       'drizzle/**',
       'playwright-report/**',
