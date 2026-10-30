@@ -25,7 +25,7 @@ test('customer sees prices and chooses 2 membership days for approval', async ({
   await expect(prices).toContainText('£50.00');
   await expect(prices).toContainText('£48.00');
   await expect(prices).toContainText('£45.00');
-  await expect(prices).toContainText('£22.50');
+  await expect(prices).not.toContainText('£22.50'); // half days are no longer offered (D100)
   await axe(page);
 
   const yours = page.getByRole('region', { name: 'Your dogs’ regular days' });
