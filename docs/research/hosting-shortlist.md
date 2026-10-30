@@ -15,9 +15,10 @@ Author: Researcher agent. Pages fetched: **30 Oct 2026**. **Advice only, not a d
 | Database price | Smallest PostgreSQL Standard plan (1 vCPU, 1 GiB) $15.15/mo; storage 10-30 GiB at $0.215/GiB/mo. Not stated whether the minimum storage is included in $15.15 | https://www.digitalocean.com/pricing/managed-databases |
 | Approx total | About $25-26/mo (about £20 at a rough rate; **unverified conversion**) | derived |
 | Do not use | The $7 App Platform "development database" is not backed up by default | pricing page above |
-| DPA | Covers EU GDPR and UK data protection; SCCs and a UK addendum / IDTA | https://www.digitalocean.com/legal/data-processing-agreement |
+| DPA | Re-read 30 Oct 2026 (last updated 14 Oct 2026). It applies to data protected by laws including those of the United Kingdom, and includes the EU SCCs and the ICO's UK Addendum, but only as the fallback if the EU-US Data Privacy Framework becomes unavailable. It does not name "UK GDPR" explicitly (it defines data protection law by reference to the EU GDPR). Have the Owner or a solicitor confirm this is sufficient | https://www.digitalocean.com/legal/data-processing-agreement |
 | Backups | Daily, kept 7 days; restore to latest transaction or a chosen point in time; creates a **new** cluster; destroying a cluster destroys its backups | https://docs.digitalocean.com/products/databases/postgresql/how-to/restore-from-backups/ |
-| Unverified | PITR window length; scheduled-job minimum interval (needed for the 10-minute tick, D57); VAT | |
+| Cron | Scheduled jobs: docs say the expression must run "minimum every 15 minutes", so a 10-minute tick is **not possible**; a 15-minute tick is. Check D57 (jobs run on a 5-15 minute tick) is satisfied, notably the 15:30 reminder | https://docs.digitalocean.com/products/app-platform/how-to/manage-jobs/ |
+| Unverified | PITR window length; VAT | |
 
 ## 2. Render: web service + Render Postgres
 
@@ -53,13 +54,17 @@ Author: Researcher agent. Pages fetched: **30 Oct 2026**. **Advice only, not a d
 | EU region confirmed | Yes | Yes | Unverified | Yes |
 | Managed Postgres | Yes | Yes | Yes | No |
 | Prices verified | Yes (USD) | No | Partly (US prices) | From-price only |
-| UK-GDPR DPA with UK addendum | Confirmed | Unverified | Unverified | Unverified |
+| DPA includes UK Addendum | Yes (as fallback; no explicit "UK GDPR" wording) | Unverified | Unverified | Unverified |
 | Backup/restore documented | Yes (7 days, new cluster) | Yes (3 or 7 days PITR) | Partly | Self-managed |
 
 ## 6. Opinion (not a recommendation)
 
-DigitalOcean London is the only option where I could confirm a UK region, a UK-addendum DPA and a restore path, at roughly $25-26 a month. Render and Fly.io may be viable but need the unverified items above checked.
+DigitalOcean London is the only option where I could confirm a UK region, a DPA that includes the UK Addendum (as a fallback) and a restore path, at roughly $25-26 a month. Render and Fly.io may be viable but need the unverified items above checked.
 
 ## 7. Before committing
 
-Confirm: cron interval for the 10-minute tick, PITR window, VAT, Postgres minimum storage cost, a tested restore (Phase 8), and that the tick endpoint stays authorised and idempotent (D57).
+Confirm: that a 15-minute tick (DigitalOcean's minimum) is acceptable, PITR window, VAT, Postgres minimum storage cost, a tested restore (Phase 8), and that the tick endpoint stays authorised and idempotent (D57).
+
+## 8. Self-check log (30 Oct 2026)
+
+Re-fetched DigitalOcean app, database and DPA pages, the DigitalOcean jobs doc, and Fly.io pricing. Prices re-confirmed unchanged. Corrections made: DigitalOcean DPA wording softened (no explicit UK GDPR mention; UK Addendum is a fallback); DigitalOcean cron minimum is 15 minutes, not 10.
