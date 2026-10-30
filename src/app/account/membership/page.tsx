@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import { Alert, Card, Muted, Stack, StatusBadge } from '@/ui/components';
-import { ActionForm, Checkbox, RadioGroup, SelectField, SubmitButton, TextField } from '@/ui/form';
-import { DayPicker, SESSION_OPTIONS } from '@/ui/day-picker';
+import { ActionForm, Checkbox, SelectField, SubmitButton, TextField } from '@/ui/form';
+import { DayPicker } from '@/ui/day-picker';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { describeWeekdays, myMemberships } from '@/server/services/memberships';
@@ -139,7 +139,7 @@ export default async function MembershipPage() {
                           defaultValue={dogsFree.find((d) => d.name.toLowerCase() === o.dogName.toLowerCase())?.id}
                         />
                         <DayPicker open={settings.openWeekdays} checked={o.weekdays} />
-                        <RadioGroup name="session" label="Session" options={SESSION_OPTIONS} defaultValue={o.session} />
+                        <input type="hidden" name="session" value="full" />
                         <Checkbox name="taxi" label="Use the dog taxi (included)" defaultChecked={o.taxi} />
                         <TextField
                           name="startsOn"
@@ -208,12 +208,7 @@ export default async function MembershipPage() {
                         </p>
                       ) : null}
                       <DayPicker open={settings.openWeekdays} checked={m?.weekdays ?? []} />
-                      <RadioGroup
-                        name="session"
-                        label="Session"
-                        options={SESSION_OPTIONS}
-                        defaultValue={m?.session ?? 'full'}
-                      />
+                      <input type="hidden" name="session" value="full" />
                       <Checkbox name="taxi" label="Use the dog taxi (included)" defaultChecked={m?.taxi ?? false} />
                       {m ? null : (
                         <TextField
@@ -307,24 +302,20 @@ export default async function MembershipPage() {
                 <tr>
                   <th scope="col">Plan</th>
                   <th scope="col">Full day</th>
-                  <th scope="col">Half day</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>Ad hoc (no membership)</td>
                   <td>{formatPounds(book.adHocFullPence)}</td>
-                  <td>{formatPounds(Math.floor((book.adHocFullPence * book.halfDayPercent + 50) / 100))}</td>
                 </tr>
                 <tr>
                   <td>1–{book.memberHighFromDays - 1} days a week</td>
                   <td>{formatPounds(book.memberLowFullPence)}</td>
-                  <td>{formatPounds(Math.floor((book.memberLowFullPence * book.halfDayPercent + 50) / 100))}</td>
                 </tr>
                 <tr>
                   <td>{book.memberHighFromDays}–5 days a week</td>
                   <td>{formatPounds(book.memberHighFullPence)}</td>
-                  <td>{formatPounds(Math.floor((book.memberHighFullPence * book.halfDayPercent + 50) / 100))}</td>
                 </tr>
               </tbody>
             </table>
