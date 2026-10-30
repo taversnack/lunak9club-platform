@@ -416,15 +416,13 @@ describe('a membership that has not started yet keeps its start date (D19, D89, 
 
   it('a start inside a month already invoiced is refused (Owner and customer)', async () => {
     const { u, dog, customerId } = await freshDog('Inky');
-    await db()
-      .insert(invoices)
-      .values({
-        customerId,
-        kind: 'membership',
-        periodMonth: nextMonth,
-        status: 'scheduled',
-        scheduledFor: new Date(),
-      });
+    await db().insert(invoices).values({
+      customerId,
+      kind: 'membership',
+      periodMonth: nextMonth,
+      status: 'scheduled',
+      scheduledFor: new Date(),
+    });
     const owned = ownerSetMembershipDays(db(), owner, dog, { weekdays: [2], session: 'full', startsOn: start });
     await expect(owned).rejects.toBeInstanceOf(ValidationError);
     await expect(owned).rejects.toMatchObject({ fields: { startsOn: expect.stringMatching(/already been invoiced/) } });
