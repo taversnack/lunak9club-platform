@@ -13,7 +13,7 @@ import {
   refundRequests,
 } from '@/infra/db/schema';
 import { ownerSetMembershipDays } from '@/server/services/membership-workflow';
-import { cancelMyBooking } from '@/server/services/bookings';
+import { cancelMyBooking, myBookings } from '@/server/services/bookings';
 import {
   approveInvoice,
   decideRefund,
@@ -304,6 +304,7 @@ describe('refunds and credit notes (D18, D54, D55)', () => {
     const reqs = await db().select().from(refundRequests).where(eq(refundRequests.bookingDogId, day!.id));
     expect(reqs).toHaveLength(1);
     expect(reqs[0]!.amountPence).toBe(4800);
+    expect((await myBookings(db(), mia)).past.find((b) => b.id === day!.id)!.paymentState).toBe('refund_requested');
   });
 
   it('a late cancellation raises no refund (the day stays charged)', async () => {
@@ -311,6 +312,7 @@ describe('refunds and credit notes (D18, D54, D55)', () => {
     const r = await cancelMyBooking(db(), mia, day!.id, londonInstant(addDays(day!.serviceDate, -1), '10:00'));
     expect(r.late).toBe(true);
     expect(await db().select().from(refundRequests).where(eq(refundRequests.bookingDogId, day!.id))).toHaveLength(0);
+    expect((await myBookings(db(), mia)).past.find((b) => b.id === day!.id)!.paymentState).toBe('charged_no_refund');
   });
 
   it('a no-show on an invoiced member day stays charged and raises no refund (D20)', async () => {
