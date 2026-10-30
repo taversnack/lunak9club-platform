@@ -34,7 +34,7 @@ import { ownerCardRefunds, retryCardRefund, submitPendingRefunds } from '@/serve
 import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 
-import { londonDate } from '@/domain/time';
+import { londonDate, londonInstant } from '@/domain/time';
 import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
@@ -329,6 +329,36 @@ describe('automatic refunds (D20, D58)', () => {
     expect(inv.creditNotes[0]).toMatchObject({ refundDuePence: 5000, refundState: 'refunded' });
     const refunds = await db().select().from(cardRefunds).where(eq(cardRefunds.creditNoteId, inv.creditNotes[0]!.id));
     expect(refunds.map((r) => r.status)).toEqual(['succeeded']);
+  });
+
+  it('refunds exactly up to 48 h before the session starts, and not from that moment (D20, D39)', async () => {
+    const deadline = (date: string) => new Date(londonInstant(date, '07:30').getTime() - 48 * 3_600_000);
+    const paidDay = async (date: string) => {
+      await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
+      const a = await payLatest(pia.userId);
+      const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+      return { bd: bd!, attempt: a };
+    };
+
+    const early = weekdayAhead(46);
+    const e = await paidDay(early);
+    const refundsBefore = stripe.refunds.length;
+    expect(await cancelMyBooking(db(), pia, e.bd.id, new Date(deadline(early).getTime() - 60_000))).toEqual({
+      late: false,
+      refundedPence: 5000,
+    });
+    expect(stripe.refunds.length).toBe(refundsBefore + 1);
+
+    const lateDay = weekdayAhead(47);
+    const l = await paidDay(lateDay);
+    const refundsMid = stripe.refunds.length;
+    expect(await cancelMyBooking(db(), pia, l.bd.id, deadline(lateDay))).toEqual({ late: true, refundedPence: 0 });
+    expect(stripe.refunds.length).toBe(refundsMid); // nothing sent to the card
+    const [paid] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, l.attempt.id));
+    const inv = await myInvoice(db(), pia, paid!.resultInvoiceId!);
+    expect(inv.creditNotes).toHaveLength(0); // the day stays charged
+    const [row] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, l.bd.id));
+    expect(row).toMatchObject({ status: 'cancelled', lateCancellation: true });
   });
 
   it('a refund the provider rejects can be retried by the Owner', async () => {
