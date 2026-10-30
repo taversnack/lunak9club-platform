@@ -322,7 +322,7 @@ describe('capacity and concurrency', () => {
   });
 
   it('a form that leaves the session out is treated as a full day', async () => {
-    const r = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [weekdayAhead(11)], taxi: false });
+    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [weekdayAhead(11)], taxi: false });
     expect(r.outcomes[0]!.outcome).toBe('requested');
   });
 
