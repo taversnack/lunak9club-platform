@@ -4,7 +4,7 @@ Status: **not deployed.** Hosting is undecided (O6, O12) and anything that costs
 
 ## 1. Known gaps to close before go-live
 
-1. **Outbound email has no SMTP login.** `src/infra/email/providers.ts` creates the SMTP transport with host, port and `secure: false` only. Production requires `EMAIL_TRANSPORT=smtp`, but a real mail provider needs a username, password and usually TLS. `RESEND_API_KEY` appears in `.env.example` but nothing reads it. This needs a small code change (SMTP user/password/secure settings, or a Resend adapter) and a provider choice (possible cost: Owner approval).
+1. **No production email provider is chosen (D102).** The SMTP transport is provider-neutral and production-capable: set `EMAIL_TRANSPORT=smtp`, `EMAIL_SANDBOX=0`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` (`starttls` or `tls`), `SMTP_USER` and `SMTP_PASSWORD`; production refuses to start without them. What is missing is the Owner's choice of a provider (it may cost money, so ask first), a verified sender domain for `EMAIL_FROM`, and a real test send from a safe address. Until then email stays local-only (Mailpit).
 2. Hosting and scheduler (O6, O12) undecided.
 3. No virus scanning on uploads (D30).
 
@@ -22,7 +22,9 @@ Status: **not deployed.** Hosting is undecided (O6, O12) and anything that costs
 | `EMAIL_TRANSPORT` | console | `smtp` | `file` and `console` are for tests and development. |
 | `EMAIL_FROM` | test address | set | Sender shown to customers; domain must be verified with the mail provider. |
 | `EMAIL_SANDBOX` | 1 | `0` | 1 = never send to real addresses. |
-| `SMTP_HOST` / `SMTP_PORT` | localhost / 1025 | set | See gap 1 about credentials. |
+| `SMTP_HOST` / `SMTP_PORT` | localhost / 1025 | set; host must not be local | Your provider's SMTP host and port. |
+| `SMTP_TLS` | off | `starttls` or `tls` | `starttls` usually port 587, `tls` port 465. |
+| `SMTP_USER` / `SMTP_PASSWORD` | none | required, set together | Never logged. Keep in the secret store. |
 | `MAIL_DIR` | .tmp/mail | n/a | `file` transport only. |
 | `AUTH_RATE_LIMIT` | on | keep `on` | Off only in automated tests. |
 | `TRUSTED_PROXIES` | empty | one of these two required when rate limit is on | Own proxies' IPs/CIDRs. See README "Deploying: client addresses and rate limits". |
