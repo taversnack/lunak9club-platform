@@ -16,6 +16,11 @@
 .header a {
   color: var(--color-brand-navy-text);
 }
+.header a.headerCta,
+.header a.headerCta:hover {
+  color: var(--color-cta-text);
+  text-decoration: none;
+}
 .header a:hover {
   color: var(--color-brand-sand);
 }
@@ -191,6 +196,10 @@
 .hint {
   font-size: 0.9rem;
   color: var(--color-text-muted);
+}
+/* A further sentence of a hint or reason, on its own line. */
+.hintLine {
+  display: block;
 }
 .input {
   min-height: var(--target-min);
