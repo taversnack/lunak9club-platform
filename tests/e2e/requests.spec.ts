@@ -9,6 +9,7 @@ import {
   signIn,
   signOut,
 } from './helpers';
+import { REQUEST_NOT_SECURED_KEY } from '../../src/domain/booking/wording';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -22,6 +23,8 @@ async function axe(page: Page) {
 /** Request one dog on one day through the booking pages. */
 async function request(page: Page, dog: string, iso: string) {
   await page.goto('/account/book');
+  // D76: the Book page says up front that a request doesn't secure the booking.
+  await expect(page.getByTestId('book-request-not-secured')).toContainText(REQUEST_NOT_SECURED_KEY);
   await page.getByRole('checkbox', { name: dog, exact: true }).check();
   await page.locator(`input[name="date"][value="${iso}"]`).check();
   await page.getByRole('button', { name: 'Check price and availability' }).click();
@@ -138,6 +141,9 @@ test('Give place: a full day, the waitlist and the Owner choosing the dog', asyn
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
   await page.goto(`/admin/bookings?date=${dayIso}`);
+  // D82: a full day can't be given away – the button is disabled up front with the reason.
+  await expect(page.getByRole('button', { name: 'Give place to Biscuit' })).toBeDisabled();
+  await expect(page.getByText('Can’t give a place: no free place in this session')).toBeVisible();
   const req = page.getByRole('listitem').filter({ hasText: 'Requested' }).first();
   await req.getByText(/^Decline this day/).click();
   await req.getByLabel(/Reason for declining/).fill('Keeping numbers low');
@@ -147,12 +153,16 @@ test('Give place: a full day, the waitlist and the Owner choosing the dog', asyn
   const dayBefore = new Date(Date.parse(`${dayIso}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
   const was = await setVaccinationExpiry('Biscuit', 'vaccination_kennel_cough', dayBefore);
   expect(was).not.toBeNull();
-  await page.reload();
   const give = page.getByRole('button', { name: 'Give place to Biscuit' });
-  await expect(give).toBeDisabled();
-  await expect(page.getByText(/Can’t give a place: .*runs out before this date/)).toBeVisible();
-  await expect(page.getByRole('heading', { name: /Waitlist \(1\)/ })).toBeVisible();
-  await setVaccinationExpiry('Biscuit', 'vaccination_kennel_cough', was!);
+  try {
+    await page.reload();
+    await expect(give).toBeDisabled();
+    await expect(page.getByText(/Can’t give a place: .*runs out before this date/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Waitlist \(1\)/ })).toBeVisible();
+  } finally {
+    // Always put the real expiry back, even if an assertion above failed.
+    await setVaccinationExpiry('Biscuit', 'vaccination_kennel_cough', was!);
+  }
   await page.reload();
   await expect(give).toBeEnabled();
   await give.click();
