@@ -63,8 +63,9 @@ export function describeBookingRequest(p: BookingRequestSummary): string {
   const dates = [...new Set(p.dates ?? [])].sort() as IsoDate[];
   const names = [...new Set((p.dogNames ?? []).map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean))];
   const phrases = datePhrases(dates);
-  const when =
-    phrases.find((w) => `${what}${w}${tail}`.length + (names.length ? 6 : 0) <= SUMMARY_MAX) ?? phrases.at(-1)!;
+  // Shorten the dates first (when the full names and full dates don't fit together), then the names.
+  const namesRoom = names.length ? listOf(names).length + 2 : 0;
+  const when = phrases.find((w) => namesRoom + `${what}${w}${tail}`.length <= SUMMARY_MAX) ?? phrases.at(-1)!;
   const body = `${what}${when}${tail}`;
   if (!names.length) return body;
   return `${fitNames(names, SUMMARY_MAX - body.length - 2)}: ${body}`;

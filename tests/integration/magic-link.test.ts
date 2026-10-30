@@ -77,9 +77,17 @@ describe('magic-link sign-in', () => {
 
   it(`expires after ${MAGIC_LINK_MINUTES} minutes`, async () => {
     const link = await linkFor(customer.email, '/account/bookings');
-    const hashed = createHash('sha256').update(new URL(link).searchParams.get('token')!).digest('base64url');
+    const token = new URL(link).searchParams.get('token')!;
+    // better-auth ≥1.7.7 namespaces the key (GHSA-965c-763c-88jm) so OAuth state can't be used as a Magic Link token.
+    const hashed = `magic-link:${createHash('sha256').update(token).digest('base64url')}`;
     const [row] = await db().select().from(verifications).where(eq(verifications.identifier, hashed));
     expect(row, 'token is stored hashed, not in plain text').toBeTruthy();
+    expect(
+      await db()
+        .select()
+        .from(verifications)
+        .where(eq(verifications.identifier, `magic-link:${token}`)),
+    ).toEqual([]);
     const minutes = (row!.expiresAt.getTime() - Date.now()) / 60_000;
     expect(minutes).toBeGreaterThan(MAGIC_LINK_MINUTES - 1);
     expect(minutes).toBeLessThanOrEqual(MAGIC_LINK_MINUTES);
