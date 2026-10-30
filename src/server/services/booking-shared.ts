@@ -1,8 +1,8 @@
 import 'server-only';
-import { PLACE_STATUSES } from '@/domain/booking/rules';
-import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { ENDED_STATUSES, PLACE_STATUSES } from '@/domain/booking/rules';
+import { and, asc, eq, gte, inArray, lte, notInArray } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
-import { bookingDogs, bookingSettings, closures, serviceDays } from '@/infra/db/schema';
+import { bookingDogs, bookingSettings, closures, dogs, serviceDays } from '@/infra/db/schema';
 import { usage, type Capacity, type Settings } from '@/domain/booking/rules';
 import { formatUkDate, type IsoDate } from '@/domain/time';
 import { SESSION_LABELS, type Session } from '@/domain/booking/rules';
@@ -117,3 +117,32 @@ export const describeSession = (date: IsoDate, session: Session) => ({
   dateText: formatUkDate(date),
   sessionText: SESSION_LABELS[session],
 });
+
+/**
+ * Dogs that already have a trial day that counts towards the one-per-dog limit (D95): any trial day
+ * not withdrawn, cancelled or declined, whoever booked it.
+ */
+export async function dogsWithTrialDay(db: Pick<Db, 'select'>, dogIds: string[]) {
+  if (!dogIds.length) return new Set<string>();
+  const rows = await db
+    .select({ dogId: bookingDogs.dogId })
+    .from(bookingDogs)
+    .where(
+      and(
+        inArray(bookingDogs.dogId, dogIds),
+        eq(bookingDogs.kind, 'trial'),
+        notInArray(bookingDogs.status, [...ENDED_STATUSES]),
+      ),
+    );
+  return new Set(rows.map((r) => r.dogId));
+}
+
+/**
+ * One trial day per dog (D95), for the customer and the Owner alike. Call inside the booking
+ * transaction: locks the dog's row so two trial bookings at once (for any dates) run one after the
+ * other, then reports whether the dog already has a trial day that counts.
+ */
+export async function lockDogAndCheckTrialUsed(tx: Pick<Db, 'select'>, dogId: string) {
+  await tx.select({ id: dogs.id }).from(dogs).where(eq(dogs.id, dogId)).for('no key update');
+  return (await dogsWithTrialDay(tx, [dogId])).has(dogId);
+}

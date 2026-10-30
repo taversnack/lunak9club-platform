@@ -1,18 +1,12 @@
 import 'server-only';
-import {
-  ENDED_STATUSES,
-  formatPounds,
-  LIVE_STATUSES,
-  OPEN_STATUSES,
-  PRICED_PLACE_STATUSES,
-} from '@/domain/booking/rules';
+import { formatPounds, LIVE_STATUSES, OPEN_STATUSES, PRICED_PLACE_STATUSES } from '@/domain/booking/rules';
 import { trialAlreadyUsed } from '@/domain/booking/wording';
 import { raiseRefundRequests } from './billing';
 import { submitPendingRefunds } from './card-refunds';
 import { refundBookingDayTx, releaseBookingHold } from './payments';
 import { createApprovalRequest, withdrawMyApprovalRequest } from './approvals';
 import { BOOKING_REQUEST, bookingSubjectKey, pendingRequestFor, requestedLeft } from './booking-requests';
-import { and, asc, eq, gte, inArray, isNull, notInArray } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import { bookingDogs, bookings, customers, dogPermissions, dogs, priceSnapshots, users } from '@/infra/db/schema';
@@ -33,7 +27,16 @@ import { idOrNotFound, isoDate, optionalText, parseInput } from '../validation';
 import { asUser, getMyCustomer, isProfileComplete } from './customers';
 import { evaluateDogs } from './compliance-facts';
 import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
-import { closuresBetween, consume, daysOverview, describeSession, loadSettings, lockDays } from './booking-shared';
+import {
+  dogsWithTrialDay,
+  lockDogAndCheckTrialUsed,
+  closuresBetween,
+  consume,
+  daysOverview,
+  describeSession,
+  loadSettings,
+  lockDays,
+} from './booking-shared';
 import { loadPricingContext, priceWith, writeSnapshot } from './pricing';
 import type { Price } from '@/domain/pricing/engine';
 import { appUrl, firstNameOf, sendSafely } from '../notify';
@@ -75,25 +78,6 @@ export async function myBookableDogs(db: Db, actor: Actor) {
       },
     };
   });
-}
-
-/**
- * Dogs that already have a trial day that counts towards the one-per-dog limit (D95): any trial day
- * not withdrawn, cancelled or declined, whoever booked it.
- */
-async function dogsWithTrialDay(db: Pick<Db, 'select'>, dogIds: string[]) {
-  if (!dogIds.length) return new Set<string>();
-  const rows = await db
-    .select({ dogId: bookingDogs.dogId })
-    .from(bookingDogs)
-    .where(
-      and(
-        inArray(bookingDogs.dogId, dogIds),
-        eq(bookingDogs.kind, 'trial'),
-        notInArray(bookingDogs.status, [...ENDED_STATUSES]),
-      ),
-    );
-  return new Set(rows.map((r) => r.dogId));
 }
 
 /** Calendar for the booking page: availability per session and the customer's own bookings. */
@@ -291,8 +275,7 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
       // One trial day per dog (D95). Lock the dog's row so two trial requests sent at the same time
       // (for any dates) run one after the other, then check again: the second sees the first's day.
       const dog = chosen[0]!;
-      await tx.select({ id: dogs.id }).from(dogs).where(eq(dogs.id, dog.id)).for('no key update');
-      if ((await dogsWithTrialDay(tx, [dog.id])).has(dog.id))
+      if (await lockDogAndCheckTrialUsed(tx, dog.id))
         throw new ValidationError('Some of these can’t be booked.', { dogIds: trialAlreadyUsed(dog.name) });
     }
     // Closing a day takes the same lock, so a closure added since the check above is visible now.

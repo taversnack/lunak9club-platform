@@ -797,6 +797,57 @@ describe('One trial day per dog (D95)', () => {
     expect(await trialRows(dog)).toHaveLength(1);
   });
 
+  describe('when the Owner books (D95 applies to the Owner too)', () => {
+    const ownerTrial = (dogId: string, date: string, as: Actor = owner) =>
+      ownerCreateBooking(db(), as, { dogId, date, session: 'full', trial: 'on' });
+
+    it('a second trial day is refused with the same plain-English reason', async () => {
+      const dog = await onboardedDog(alice, 'Owner Trial One', false);
+      await ownerTrial(dog, dayA);
+      const err = await ownerTrial(dog, dayB).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).message).toBe(trialAlreadyUsed('Owner Trial One'));
+      expect(await trialRows(dog)).toHaveLength(1);
+      // …and a customer request after an Owner-booked trial day is refused too.
+      await refused(dog, 'Owner Trial One');
+    });
+
+    it('a trial day after a withdrawn, declined or cancelled one is allowed', async () => {
+      const dog = await onboardedDog(alice, 'Owner Trial Two', false);
+      const withdrawn = await trial(dog, dayA);
+      await withdrawMyApprovalRequest(db(), alice, withdrawn.requestId!);
+      const declined = await trial(dog, dayA);
+      await rejectApprovalRequest(db(), owner, declined.requestId!, {});
+      const first = await ownerTrial(dog, dayA);
+      const [held] = (await trialRows(dog)).filter((x) => x.bookingId === first);
+      await cancelMyBooking(db(), alice, held!.id);
+      await ownerTrial(dog, dayA);
+      expect(
+        (await trialRows(dog)).map((x) => x.status).filter((x) => x !== 'cancelled' && x !== 'rejected'),
+      ).toHaveLength(1);
+    });
+
+    it('normal days are still bookable for a dog that has had its trial day', async () => {
+      const dog = await onboardedDog(alice, 'Owner Trial Three', false);
+      await ownerTrial(dog, dayA);
+      await ownerCreateBooking(db(), owner, {
+        dogId: dog,
+        date: dayB,
+        session: 'full',
+        overrideReason: 'Trial went well',
+      });
+      expect((await rowOf(dog, dayB)).kind).toBe('standard');
+      await ownerCreateBooking(db(), owner, { dogId: aliceDog, date: dayB, session: 'am' });
+      expect((await rowOf(aliceDog, dayB)).kind).toBe('standard');
+    });
+
+    it('still checks the caller is allowed to book for others', async () => {
+      const dog = await onboardedDog(alice, 'Owner Trial Four', false);
+      await expect(ownerTrial(dog, dayA, alice)).rejects.toBeInstanceOf(AuthorizationError);
+      expect(await trialRows(dog)).toHaveLength(0);
+    });
+  });
+
   it('the Owner approval rule is unchanged: an approved dog still can’t ask for a trial day', async () => {
     const err = await trial(aliceDog, dayB).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ValidationError);
