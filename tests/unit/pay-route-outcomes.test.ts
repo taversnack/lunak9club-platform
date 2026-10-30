@@ -2,8 +2,8 @@
  * Pay-link routes (pay-booking/[bookingId] and pay/[attemptId]): which bookings page notice each
  * service outcome lands on. A link whose places have gone comes back from the service as
  * `?payment=expired` (no error); a card-service failure with the places still held is
- * PayLinkUnavailableError → `?payment=unavailable`. No other conflict can come out of these two
- * services (payForMyBooking always keeps the hold on failure), so there is no catch-all mapping.
+ * PayLinkUnavailableError → `?payment=unavailable`. Any other conflict also lands on the
+ * `?payment=unavailable` notice, never a server error page.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -71,11 +71,20 @@ describe.each(routes)('%s', (_label, load, params) => {
     expect((await call(load, params)).headers.get('location')).toBe('/account/bookings?payment=preparing');
   });
 
-  it('any other conflict is not dressed up as "unavailable" or "expired"', async () => {
+  it('any other conflict shows the "couldn’t create your payment link" notice, not a server error', async () => {
     const { ConflictError } = await import('@/server/errors');
     service.next = () => {
       throw new ConflictError('something else');
     };
-    await expect(call(load, params)).rejects.toBeInstanceOf(ConflictError);
+    const res = await call(load, params);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('/account/bookings?payment=unavailable');
+  });
+
+  it('errors that aren’t conflicts are still not swallowed', async () => {
+    service.next = () => {
+      throw new Error('database down');
+    };
+    await expect(call(load, params)).rejects.toThrow('database down');
   });
 });
