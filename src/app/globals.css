@@ -143,6 +143,12 @@ a:hover {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+/* Chromium moves keyboard focus into the date/time fields inside these inputs, so :focus-visible doesn't match
+   the input itself and no ring showed (Tester v6: onboarding, availability, /admin/bookings, pricing). */
+input:is([type='date'], [type='time'], [type='datetime-local'], [type='month'], [type='week']):focus-within {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
 
 .skip-link {
   position: absolute;
