@@ -101,7 +101,7 @@ test('a return-to header sent by the client is ignored, even on paths that look 
 test('owner signs in to the owner dashboard and sees recent activity', async ({ page }) => {
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole('heading', { name: 'Owner dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
   // Plain-English activity, not raw event codes.
   await expect(page.getByRole('table')).toContainText('Signed in');
   await expect(page.getByRole('table')).not.toContainText('auth.signed_in');
