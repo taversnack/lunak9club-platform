@@ -7,8 +7,11 @@ import { requirePermission } from '@/server/session';
 import { approveApprovalRequest, rejectApprovalRequest } from '@/server/services/approvals';
 
 // Only the Today inbox may ask to come back to it; anything else goes to the Requests page.
-const backTo = (fd: FormData, done: 'approved' | 'declined') =>
-  fd.get('from') === 'today' ? `/admin?${done}=1` : `/admin/approvals?${done}=1`;
+const backTo = (fd: FormData, done: 'approved' | 'declined') => {
+  const today = fd.get('from') === 'today';
+  if (done === 'approved') return today ? '/admin?approved=1' : '/admin/approvals?approved=1';
+  return today ? '/admin?declined=1' : '/admin/approvals?declined=1';
+};
 
 const note = (fd: FormData) => {
   const v = fd.get('reason');
