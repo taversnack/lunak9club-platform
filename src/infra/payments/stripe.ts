@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import type { CheckoutRequest, CheckoutState, PaymentProvider, RefundResult, WebhookEvent } from './types';
+import { WebhookVerificationError } from './types';
 
 /** Stripe Checkout in GBP. Only ever constructed with a verified key (see ./index.ts). */
 export class StripePaymentProvider implements PaymentProvider {
@@ -137,9 +138,19 @@ export class StripePaymentProvider implements PaymentProvider {
   }
 
   parseWebhook(rawBody: string, signature: string | null): WebhookEvent {
-    if (!this.webhookSecret) throw new Error('STRIPE_WEBHOOK_SECRET is not set');
-    if (!signature) throw new Error('Missing Stripe-Signature header');
-    const e = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
+    if (!this.webhookSecret) throw new WebhookVerificationError('STRIPE_WEBHOOK_SECRET is not set');
+    if (!signature) throw new WebhookVerificationError('Missing Stripe-Signature header');
+    let e: Stripe.Event;
+    try {
+      e = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
+    } catch (err) {
+      // StripeSignatureVerificationError covers a bad signature, a stale timestamp ("Timestamp outside
+      // the tolerance zone") and an unreadable header; a body that isn't JSON fails to parse after it.
+      // None of these get better on a retry.
+      throw new WebhookVerificationError(err instanceof Error ? err.message : 'Webhook could not be verified', {
+        cause: err,
+      });
+    }
     const obj = e.data.object as { id: string; status?: string; metadata?: Record<string, string> | null };
     const refundStatus =
       e.type.startsWith('refund.') && obj.status

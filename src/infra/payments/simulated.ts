@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CheckoutRequest, CheckoutState, PaymentProvider, RefundResult, WebhookEvent } from './types';
+import { WebhookVerificationError } from './types';
 
 type Session = CheckoutRequest & { id: string; status: CheckoutState['status']; paymentId: string | null };
 
@@ -88,7 +89,7 @@ export class SimulatedPaymentProvider implements PaymentProvider {
   }
 
   parseWebhook(_rawBody: string, _signature: string | null): WebhookEvent {
-    throw new Error('The simulated provider has no webhooks; checkouts are confirmed on return.');
+    throw new WebhookVerificationError('The simulated provider has no webhooks; checkouts are confirmed on return.');
   }
 }
 
