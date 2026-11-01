@@ -51,6 +51,19 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   await expect(page).toHaveURL(/approved=1/);
   await page.goto('/admin/memberships');
   await axe(page);
+  // The membership starts tomorrow, so it hasn't started: the Owner sees its real start and can move it
+  // (#106 F1, F2), not "the first month not yet invoiced".
+  await page.goto('/admin/customers');
+  await page
+    .getByRole('link', { name: customerName(info.project.name) })
+    .first()
+    .click();
+  await page.getByText(`Change ${dog}’s days`).click();
+  const ownerForm = page.locator('details[open]').filter({ hasText: `Change ${dog}’s days` });
+  await expect(ownerForm).toContainText('Not started yet: starts');
+  await expect(ownerForm).not.toContainText('first month not yet invoiced');
+  await expect(ownerForm.getByLabel('First day')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  await axe(page);
   await page.goto('/admin/settings/pricing');
   await expect(page.getByText('In use')).toBeVisible();
   await axe(page);
@@ -63,7 +76,18 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   await expect(row).toContainText(dog);
   await expect(row).toContainText('£48.00');
   await page.goto('/account/membership');
-  await expect(page.getByRole('region', { name: 'Your dogs’ regular days' })).toContainText('Monday');
+  const regular = page.getByRole('region', { name: 'Your dogs’ regular days' });
+  await expect(regular).toContainText('Monday');
+  // Not started yet: the customer sees the real first day and can move it, not "New days start on …" (#106 F1).
+  await regular.getByText(`Change ${dog}’s days for all future months`).click();
+  await expect(regular).toContainText(`${dog}’s membership starts on`);
+  await expect(regular).not.toContainText('New days start on');
+  await expect(
+    regular
+      .locator('details[open]')
+      .filter({ hasText: `Change ${dog}’s days for all future months` })
+      .getByLabel('First day'),
+  ).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
   await axe(page);
 });
 

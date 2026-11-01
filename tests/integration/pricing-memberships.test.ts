@@ -341,11 +341,14 @@ describe('memberships', () => {
 
   it('an Owner change starts from the first month not yet invoiced and replaces later days (D89)', async () => {
     const [prev] = await db().select().from(memberships).where(eq(memberships.id, membershipId));
-    const r = await ownerSetMembershipDays(db(), owner, caraDog, { weekdays: [1, 2], session: 'full' });
-    const effective = firstUninvoicedMonthStart(today, []);
+    // D89 is for a membership that has started (one that hasn't keeps its own start date, D19/D93),
+    // so make the change on its second day if it starts in the future.
+    const now = prev!.startsOn > today ? new Date(`${addDays(prev!.startsOn, 1)}T09:00:00Z`) : new Date();
+    const r = await ownerSetMembershipDays(db(), owner, caraDog, { weekdays: [1, 2], session: 'full' }, now);
+    const effective = firstUninvoicedMonthStart(londonDate(now), []);
     expect(r.startsOn).toBe(effective);
     const [old] = await db().select().from(memberships).where(eq(memberships.id, membershipId));
-    if (prev!.startsOn > today && prev!.startsOn >= effective) {
+    if (prev!.startsOn > londonDate(now) && prev!.startsOn >= effective) {
       // It hadn't started, so it's changed in place: no "ended" row that never ran.
       expect(r.membershipId).toBe(membershipId);
       expect(old).toMatchObject({ status: 'active', startsOn: effective, endsOn: null, weekdays: [1, 2] });

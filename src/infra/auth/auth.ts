@@ -1,7 +1,8 @@
 import { betterAuth } from 'better-auth';
 import { createAuthMiddleware } from 'better-auth/api';
 import { magicLink } from 'better-auth/plugins/magic-link';
-import { eq } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
 import { getDb } from '../db/client';
@@ -208,6 +209,7 @@ export function createAuth(e: Env = env()) {
         // reveal whether an account exists either. Unknown addresses, non-customers and unconfirmed
         // addresses get nothing (verifying an unproven account here would revoke its other sign-ins).
         sendMagicLink: async ({ email, url }) => {
+          await revokeEarlierMagicLinks(db, email, url);
           const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email.toLowerCase()));
           if (!user || !user.emailVerified || !(await customerOnly(user.id))) {
             if (user) await audit('auth.magic_link_refused', user.id);
@@ -222,6 +224,32 @@ export function createAuth(e: Env = env()) {
       nextCookies(), // must stay last
     ],
   });
+}
+
+/**
+ * "Send the link again" replaces the earlier links for that address: only the newest one works.
+ * better-auth stores each link as a verification row whose identifier is the hashed token
+ * (`sha256` base64url; `magic-link:<hash>` from 1.7.7) and whose value is JSON with the email.
+ * The new row is written before sendMagicLink is called, so this deletes that email's other
+ * rows, but only if the new row is found: if better-auth ever stores links differently, nothing
+ * is revoked (tests/integration/magic-link.test.ts then fails) rather than the new link too.
+ * Runs for every request, known address or not, so the timing stays the same.
+ */
+async function revokeEarlierMagicLinks(db: ReturnType<typeof getDb>, email: string, url: string) {
+  const token = new URL(url).searchParams.get('token');
+  if (!token) return;
+  const hash = createHash('sha256').update(token).digest('base64url');
+  const current = [hash, `magic-link:${hash}`];
+  const v = schema.verifications;
+  await db
+    .delete(v)
+    .where(
+      and(
+        notInArray(v.identifier, current),
+        sql`case when pg_input_is_valid(${v.value}, 'jsonb') then lower(${v.value}::jsonb ->> 'email') = ${email.toLowerCase()} else false end`,
+        sql`exists (select 1 from ${v} as cur where ${inArray(sql`cur.identifier`, current)})`,
+      ),
+    );
 }
 
 type Auth = ReturnType<typeof createAuth>;
