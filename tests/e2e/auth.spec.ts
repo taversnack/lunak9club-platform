@@ -230,6 +230,8 @@ test('magic link: an unknown address gets exactly the same reply, and resend say
   await expect(page.getByTestId('resend-result')).toBeFocused();
   await page.getByRole('button', { name: 'Use a different email address' }).click();
   await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toBeVisible();
+  // Focus lands on the email field, not the page body (Tester, #113 F2).
+  await expect(page.getByLabel('Email address')).toBeFocused();
 });
 
 test('magic link: a made-up or expired token lands on sign-in with the expired-link message', async ({ page }) => {

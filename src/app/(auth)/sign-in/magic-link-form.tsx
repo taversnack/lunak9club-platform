@@ -37,6 +37,9 @@ export function MagicLinkForm({
   // Bumped after each "Send the link again", so focus moves to its outcome (the button is disabled
   // while sending, which would otherwise drop focus to the page body).
   const [resendDone, setResendDone] = useState(0);
+  // Bumped by "Use a different email address", so focus lands on the email field it brings back.
+  const [changeEmail, setChangeEmail] = useState(0);
+  const emailForm = useRef<HTMLFormElement>(null);
 
   // Move focus to whatever just changed, so keyboard and screen-reader users land on it.
   useEffect(() => {
@@ -48,6 +51,9 @@ export function MagicLinkForm({
   useEffect(() => {
     if (resendDone) resendResult.current?.focus();
   }, [resendDone]);
+  useEffect(() => {
+    if (changeEmail) emailForm.current?.querySelector<HTMLInputElement>('input[name="email"]')?.focus();
+  }, [changeEmail]);
 
   async function send(address: string): Promise<boolean> {
     setError(null);
@@ -113,6 +119,7 @@ export function MagicLinkForm({
               setSentTo(null);
               setResent(false);
               setError(null);
+              setChangeEmail((n) => n + 1);
             }}
           >
             Use a different email address
@@ -123,7 +130,7 @@ export function MagicLinkForm({
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate>
+    <form ref={emailForm} onSubmit={onSubmit} noValidate>
       <Stack>
         <h1>Sign in</h1>
         {linkError ? (
