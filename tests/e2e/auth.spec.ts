@@ -17,6 +17,9 @@ test('customer registers, confirms email and reaches their account', async ({ pa
 
   await page.goto(await latestLink(email, 'auth.verify-email'));
   await expect(page).toHaveURL(/\/account$/);
+  // No approved dog yet: the overview says when booking opens, with no Request a day button (Tester #102 finding 1).
+  await expect(page.getByText('Booking opens once your dog has been approved.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Request a day' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Hello, Riley' })).toBeVisible();
 
   // No dogs yet: Book says to add one first, not that a dog needs approving.
