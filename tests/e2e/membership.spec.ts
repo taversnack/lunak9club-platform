@@ -175,7 +175,7 @@ test('customer ends the membership and is told what happened (Tester #111 F-111b
   await expect(page).toHaveURL(/\/account$/);
   await page.goto('/account/membership');
   const regular = page.getByRole('region', { name: 'Your dogs’ regular days' });
-  await regular.getByText(`End ${dog}’s membership`).click();
+  await regular.getByText(`End ${dog}’s membership`, { exact: true }).click();
   const form = regular.locator('details[open]').filter({ hasText: `End ${dog}’s membership` });
   await form.getByRole('checkbox').check();
   await form.getByRole('button', { name: 'End membership' }).click();
