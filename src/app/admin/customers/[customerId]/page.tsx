@@ -164,7 +164,12 @@ export default async function CustomerPage({
                 <ActionForm action={ownerSetDaysAction}>
                   <input type="hidden" name="dogId" value={d.id} />
                   <input type="hidden" name="customerId" value={customerId} />
-                  {d.membership ? (
+                  {d.membership && !d.membership.started ? (
+                    <p className={s.hint}>
+                      Not started yet: starts {formatUkDate(d.membership.startsOn)}. Keep that first day or choose
+                      another below. No approval needed; the customer is emailed.
+                    </p>
+                  ) : d.membership ? (
                     <p className={s.hint}>
                       Starts {formatUkDate(membership.changeFrom)} (the first month not yet invoiced). No approval
                       needed; the customer is emailed.
@@ -173,14 +178,14 @@ export default async function CustomerPage({
                   <DayPicker open={settings.openWeekdays} checked={d.membership?.weekdays ?? []} />
                   <input type="hidden" name="session" value="full" />
                   <Checkbox name="taxi" label="Uses the dog taxi" defaultChecked={d.membership?.taxi ?? false} />
-                  {d.membership ? null : (
+                  {d.membership && d.membership.started ? null : (
                     <TextField
                       name="startsOn"
                       label="First day"
                       type="date"
                       required
                       min={addDays(today, 1)}
-                      defaultValue={addDays(today, 1)}
+                      defaultValue={d.membership ? d.membership.startsOn : addDays(today, 1)}
                     />
                   )}
                   <div>

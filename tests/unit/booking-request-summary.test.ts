@@ -119,6 +119,37 @@ describe('booking request summary (decline / withdrawn emails, Tester note on #6
     );
   });
 
+  it('only shortens the dates when that lets more names be shown (Tester, #73)', () => {
+    // 5 dogs with 40-character names on 16, 18 and 20 Nov: collapsing the dates would still cut
+    // names, and one more name besides, so the dates stay listed.
+    const names = ['A', 'B', 'C', 'D', 'E'].map((c) => c.repeat(40));
+    const out = describeBookingRequest({
+      bookingDogIds: ids(15),
+      kind: 'standard',
+      totalPence: 75000,
+      dogNames: names,
+      dates: ['2026-11-16', '2026-11-18', '2026-11-20'],
+    });
+    expect(out).toBe(
+      `${names[0]}, ${names[1]}, ${names[2]} and 2 more: Day care on 16, 18 and 20 November 2026 · 15 dog-days · £750.00`,
+    );
+    expect(out.length).toBeLessThanOrEqual(200);
+  });
+
+  it('does shorten the dates when that keeps a name whole', () => {
+    const name = 'L'.repeat(80);
+    const dates = Array.from({ length: 25 }, (_, i) => addDays('2026-11-02', i * 3));
+    const out = describeBookingRequest({
+      bookingDogIds: ids(25),
+      kind: 'standard',
+      totalPence: 125000,
+      dogNames: [name],
+      dates,
+    });
+    expect(out.startsWith(`${name}: Day care on 25 days between 2 November 2026 and `)).toBe(true);
+    expect(out.length).toBeLessThanOrEqual(200);
+  });
+
   it('says trial day for a trial', () => {
     expect(
       describeBookingRequest({
