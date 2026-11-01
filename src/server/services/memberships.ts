@@ -116,22 +116,28 @@ export async function leaveMembership(db: Db, actor: Actor, rawId: string, now =
   if (m.status !== 'active') throw new ConflictError('Only active memberships can be ended.');
   const lastDay = addDays(changeEffectiveDate(londonDate(now)), -1);
   if (m.endsOn && m.endsOn <= lastDay) throw new ConflictError('This membership already ends on or before that date.');
-  const endsOn = lastDay < m.startsOn ? m.startsOn : lastDay;
+  // Not started by the time leaving would take effect: it never runs. Ended on its start date with
+  // every booked day cancelled (as when a pending membership is replaced), rather than staying
+  // active with an end date the customer was never told.
+  const neverStarts = lastDay < m.startsOn;
+  const endsOn = neverStarts ? m.startsOn : lastDay;
   await db.transaction(async (tx) => {
-    await tx
+    const [updated] = await tx
       .update(memberships)
-      .set({ endsOn, version: m.version + 1 })
-      .where(and(eq(memberships.id, m.id), eq(memberships.version, m.version)));
-    const cancelled = await cancelDaysAfter(tx, m.id, endsOn, me.userId, now);
+      .set({ endsOn, version: m.version + 1, ...(neverStarts ? { status: 'ended' as const } : {}) })
+      .where(and(eq(memberships.id, m.id), eq(memberships.version, m.version)))
+      .returning({ id: memberships.id });
+    if (!updated) throw new ConflictError('This membership changed. Please reload.');
+    const cancelled = await cancelDaysAfter(tx, m.id, neverStarts ? addDays(m.startsOn, -1) : endsOn, me.userId, now);
     await recordAudit(tx, {
       actor: me,
       action: 'membership.leaving',
       entityType: 'membership',
       entityId: m.id,
-      metadata: { endsOn, cancelledDays: cancelled },
+      metadata: { endsOn, neverStarts, cancelledDays: cancelled },
     });
   });
-  return { endsOn };
+  return { endsOn, neverStarts };
 }
 
 // ---- Owner -------------------------------------------------------------------------
