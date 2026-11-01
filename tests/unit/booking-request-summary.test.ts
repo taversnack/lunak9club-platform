@@ -150,6 +150,30 @@ describe('booking request summary (decline / withdrawn emails, Tester note on #6
     expect(out.length).toBeLessThanOrEqual(200);
   });
 
+  it.each([
+    [150, 25, 1],
+    [400, 25, 1],
+    [120, 12, 1],
+    [250, 12, 3],
+  ])('when no name fits in full (%i chars, %i dates, %i dogs), shows more of the name (#108 F1)', (len, n, dogs) => {
+    const names = Array.from({ length: dogs }, (_, i) => String.fromCharCode(65 + i).repeat(len));
+    const dates = Array.from({ length: n }, (_, i) => addDays('2026-11-02', i * 3));
+    const out = describeBookingRequest({
+      bookingDogIds: ids(n * dogs),
+      kind: 'standard',
+      totalPence: 5000 * n * dogs,
+      dogNames: names,
+      dates,
+    });
+    expect(out).toContain(`Day care on ${n} days between 2 November 2026 and `);
+    expect(out.length).toBeLessThanOrEqual(200);
+    const shown = out.indexOf('…');
+    expect(shown).toBeGreaterThan(90);
+    expect(
+      out.endsWith(` · ${n * dogs} dog-days · £${(50 * n * dogs).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`),
+    ).toBe(true);
+  });
+
   it('says trial day for a trial', () => {
     expect(
       describeBookingRequest({

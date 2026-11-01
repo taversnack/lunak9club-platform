@@ -56,7 +56,8 @@ function fitNames(names: readonly string[], room: number): { text: string; kept:
  * "Biscuit: Day care on 4 November 2026 · 1 dog-day · £50.00", naming the dogs and dates like the
  * membership summaries do. Used in the approval emails (approved, declined, withdrawn, expired) and
  * the approvals list. Kept within SUMMARY_MAX so the dog-days and price at the end are never cut:
- * the dates are shortened only when that lets more names be shown in full, then the names are cut. Requests saved before names and dates were stored
+ * the dates are shortened only when that lets more names be shown in full (or, when no name fits in
+ * full, more of the first name), then the names are cut. Requests saved before names and dates were stored
  * keep the short form.
  */
 export function describeBookingRequest(p: BookingRequestSummary): string {
@@ -75,7 +76,10 @@ export function describeBookingRequest(p: BookingRequestSummary): string {
     const room = SUMMARY_MAX - body.length - 2;
     if (room < 1) continue;
     const fit = fitNames(names, room);
-    if (!best || fit.kept > best.kept) best = { ...fit, body };
+    // When no name fits in full either way, the dates that leave more of the name win (#108 F1).
+    const better =
+      !best || fit.kept > best.kept || (fit.kept === 0 && best.kept === 0 && fit.text.length > best.text.length);
+    if (better) best = { ...fit, body };
   }
   if (!best) {
     const body = bodies.at(-1)!;

@@ -1,6 +1,7 @@
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import Stripe from 'stripe';
-import { count } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, count, eq } from 'drizzle-orm';
 import { closeDb, getDb } from '@/infra/db/client';
 import { auditEvents, webhookEvents } from '@/infra/db/schema';
 import { setPaymentProvider } from '@/infra/payments';
@@ -58,6 +59,36 @@ describe('POST /api/webhooks/stripe', () => {
     expect(res.status).toBe(400);
     expect(await res.text()).toBe('Invalid signature');
     expect(await written()).toEqual(before);
+  });
+
+  it('accepts a correctly signed event, processes it once, and treats a redelivery as a duplicate', async () => {
+    setPaymentProvider(new StripePaymentProvider(KEY, SECRET));
+    // A fresh event id each run (the test database outlives one run). No checkout matches the
+    // session, so processing needs no call to Stripe: it is recorded and marked processed.
+    const id = `evt_route_ok_${randomUUID()}`;
+    const ok = JSON.stringify({
+      id,
+      object: 'event',
+      type: 'checkout.session.completed',
+      data: { object: { id: `cs_route_ok_${randomUUID()}`, object: 'checkout.session' } },
+    });
+    const res = await post(ok, sign(ok, SECRET));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ received: true, duplicate: false });
+    const rows = await getDb()
+      .select()
+      .from(webhookEvents)
+      .where(and(eq(webhookEvents.provider, 'stripe'), eq(webhookEvents.eventId, id)));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ type: 'checkout.session.completed', lastError: null });
+    expect(rows[0]!.processedAt).toBeInstanceOf(Date);
+
+    const again = await post(ok, sign(ok, SECRET));
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ received: true, duplicate: true });
+    expect(await getDb().select({ n: count() }).from(webhookEvents).where(eq(webhookEvents.eventId, id))).toEqual([
+      { n: 1 },
+    ]);
   });
 
   it('rejects everything with 400 when no webhook secret is configured', async () => {
