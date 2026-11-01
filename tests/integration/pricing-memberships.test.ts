@@ -423,7 +423,7 @@ describe('memberships', () => {
     expect(booked.length).toBeGreaterThan(0);
 
     const r = await leaveMembership(db(), u, m!.id);
-    expect(r).toEqual({ endsOn: start, neverStarts: true });
+    expect(r).toEqual({ endsOn: start, neverStarts: true, refundRequests: 0 });
     const [after] = await db().select().from(memberships).where(eq(memberships.id, m!.id));
     // Not left active with an end date nobody was told about: it never runs.
     expect(after).toMatchObject({ status: 'ended', endsOn: start });
@@ -474,6 +474,7 @@ describe('memberships', () => {
 
     const r = await leaveMembership(db(), u, m!.id);
     expect(r.neverStarts).toBe(true);
+    expect(r.refundRequests).toBe(lines.length); // shown to the customer
     // Each invoiced day cancelled free gets a refund request for the Owner to approve (-> credit note,
     // which reduces what is owed on the unpaid invoice), as for any other free cancellation (D56).
     const reqs = await db().select().from(refundRequests).where(eq(refundRequests.invoiceId, inv!.id));
