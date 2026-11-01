@@ -177,11 +177,26 @@ test('customer ends the membership and is told what happened (Tester #111 F-111b
   const regular = page.getByRole('region', { name: 'Your dogs’ regular days' });
   await regular.getByText(`End ${dog}’s membership`, { exact: true }).click();
   const form = regular.locator('details[open]').filter({ hasText: `End ${dog}’s membership` });
+  // A server-side error moves focus to its message, not the page body (Tester #114 F5).
+  await form.getByRole('button', { name: 'End membership' }).click();
+  await expect(form.getByTestId('form-error')).toContainText('Tick the box to confirm.');
+  await expect(form.getByTestId('form-error')).toBeFocused();
   await form.getByRole('checkbox').check();
   await form.getByRole('button', { name: 'End membership' }).click();
-  await expect(page).toHaveURL(/[?&]ended=(before|after)&on=\d{4}-\d{2}-\d{2}/);
-  await expect(
-    page.getByRole('status').filter({ hasText: /The membership (has been cancelled before it started|ends after)/ }),
-  ).toBeVisible();
+  // The notice comes from the membership itself, not the address (#114 F4), and takes focus (#114 F1).
+  await expect(page).toHaveURL(/\/account\/membership#ended$/);
+  const notice = page.getByTestId('ended-notice');
+  await expect(notice).toContainText(/The membership (has been cancelled before it started|ends after)/);
+  await expect(notice).toBeFocused();
   await axe(page);
+});
+
+test('a hand-made address shows no membership-ended notice (Tester #114 F4)', async ({ page }, info) => {
+  const { user } = who(info.project.name);
+  await signIn(page, user.email, user.password);
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto('/account/membership?ended=before&on=2030-01-01&refunds=9#ended');
+  await expect(page.getByRole('heading', { name: 'Membership', level: 1 })).toBeVisible();
+  await expect(page.getByTestId('ended-notice')).toHaveCount(0);
+  await expect(page.getByText(/cancelled before it started|ends after/)).toHaveCount(0);
 });

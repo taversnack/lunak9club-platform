@@ -137,14 +137,36 @@ export async function leaveMembership(db: Db, actor: Actor, rawId: string, now =
       metadata: { endsOn, neverStarts, cancelledDays: cancelled },
     });
   });
-  // Days already on an issued invoice get a refund request (D56): the Owner's approval issues the
-  // credit note. Counted so the customer is told, rather than seeing the invoice still owed.
+  return { id: m.id, endsOn, neverStarts, refundRequests: await requestedRefunds(db, m.id) };
+}
+
+/**
+ * Days already on an issued invoice get a refund request (D56): the Owner's approval issues the
+ * credit note. Counted so the customer is told, rather than seeing the invoice still owed.
+ */
+async function requestedRefunds(db: Db, membershipId: string) {
   const [r] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(refundRequests)
     .innerJoin(bookingDogs, eq(bookingDogs.id, refundRequests.bookingDogId))
-    .where(and(eq(bookingDogs.membershipId, m.id), eq(refundRequests.status, 'requested')));
-  return { endsOn, neverStarts, refundRequests: r?.n ?? 0 };
+    .where(and(eq(bookingDogs.membershipId, membershipId), eq(refundRequests.status, 'requested')));
+  return r?.n ?? 0;
+}
+
+/**
+ * What ending a membership did, for the notice shown after it (Tester #114 F4): read back from the
+ * membership itself, so it only ever describes one of the customer's own memberships that is
+ * really ending. Null for anything else (unknown, someone else's, not ending).
+ */
+export async function endedMembershipSummary(db: Db, actor: Actor, rawId: string) {
+  try {
+    const { m } = await loadMine(db, actor, rawId);
+    if (!m.endsOn || (m.status !== 'active' && m.status !== 'ended')) return null;
+    const neverStarts = m.status === 'ended' && m.endsOn === m.startsOn;
+    return { endsOn: m.endsOn, neverStarts, refundRequests: await requestedRefunds(db, m.id) };
+  } catch {
+    return null;
+  }
 }
 
 // ---- Owner -------------------------------------------------------------------------
