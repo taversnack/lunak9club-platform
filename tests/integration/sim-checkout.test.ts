@@ -8,7 +8,7 @@ import { setPaymentProvider } from '@/infra/payments';
 import { SimulatedPaymentProvider } from '@/infra/payments/simulated';
 import type { PaymentProvider } from '@/infra/payments/types';
 import { cancelMyBooking } from '@/server/services/bookings';
-import { payForMyBooking, resumeCheckoutUrl } from '@/server/services/payments';
+import { payForMyBooking, resumeCheckoutUrl, returnFromCheckout } from '@/server/services/payments';
 import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
@@ -203,5 +203,59 @@ describe('a pay link for a cancelled booking', () => {
     const to = '/account/bookings?payment=booking-cancelled';
     expect(await payForMyBooking(db(), casey, a.bookingId!)).toMatchObject({ url: null, to });
     expect(await resumeCheckoutUrl(db(), casey, a.id)).toMatchObject({ url: null, to });
+  });
+});
+
+describe('"Payment not finished" (cancel on the card page) only says the places are held when they are (Tester, #72)', () => {
+  const holdOf = async (bookingId: string) => {
+    const days = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, bookingId));
+    return days.map((d) => d.offerExpiresAt!).reduce((a, b) => (a < b ? a : b));
+  };
+
+  it('places still held: "still held" notice, right up to the end of the hold', async () => {
+    const a = await caseyCheckout(37);
+    expect(await returnFromCheckout(db(), casey, a.id, true)).toBe('/account/bookings?payment=cancelled');
+    const until = await holdOf(a.bookingId!);
+    expect(await returnFromCheckout(db(), casey, a.id, true, new Date(until.getTime() - 5_000))).toBe(
+      '/account/bookings?payment=cancelled',
+    );
+  });
+
+  it('the hold ended (even seconds ago): the places were released', async () => {
+    const a = await caseyCheckout(38);
+    const until = await holdOf(a.bookingId!);
+    for (const ms of [5_000, 60 * 60_000])
+      expect(await returnFromCheckout(db(), casey, a.id, true, new Date(until.getTime() + ms))).toBe(
+        '/account/bookings?payment=expired',
+      );
+  });
+
+  it('the booking was cancelled: says so', async () => {
+    const a = await caseyCheckout(39);
+    const [day] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
+    await cancelMyBooking(db(), casey, day!.id);
+    expect(await returnFromCheckout(db(), casey, a.id, true)).toBe('/account/bookings?payment=booking-cancelled');
+  });
+
+  it('paid through a newer checkout: already paid, with that receipt', async () => {
+    const a = await caseyCheckout(40);
+    // The first checkout failed; "Pay now" makes a new one, and that one is paid.
+    await db().update(checkoutAttempts).set({ status: 'failed' }).where(eq(checkoutAttempts.id, a.id));
+    const r = await payForMyBooking(db(), casey, a.bookingId!);
+    expect(r.url).toBeTruthy();
+    const [b] = await db()
+      .select()
+      .from(checkoutAttempts)
+      .where(eq(checkoutAttempts.bookingId, a.bookingId!))
+      .orderBy(desc(checkoutAttempts.createdAt))
+      .limit(1);
+    expect(b!.id).not.toBe(a.id);
+    signedIn = casey;
+    expect((await post(payPOST, b!.providerSessionId!, SAME)).status).toBe(303);
+    expect(await returnFromCheckout(db(), casey, b!.id, false)).toBe('/account/bookings?payment=paid');
+    const [paid] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, b!.id));
+    expect(await returnFromCheckout(db(), casey, a.id, true)).toBe(
+      `/account/bookings?payment=already-paid&receipt=${paid!.resultInvoiceId}`,
+    );
   });
 });
