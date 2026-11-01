@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
@@ -131,6 +131,14 @@ beforeAll(async () => {
   piaDog = await approvedDog(db(), owner, pia, 'Nutmeg');
   quinnDog = await approvedDog(db(), owner, quinn, 'Juniper');
 });
+// Each test starts with a well-behaved provider, whatever order tests run in or however one ended.
+beforeEach(() => {
+  stripe.failRefunds = false;
+  stripe.loseRefundAnswers = false;
+  stripe.refundsPending = false;
+  stripe.badKey = false;
+  stripe.delayMs = 0;
+});
 afterAll(async () => {
   setEmailProvider(undefined);
   setPaymentProvider(undefined);
@@ -192,6 +200,9 @@ describe('pay at booking (D6)', () => {
   });
 
   it('releases unpaid places when the time runs out, and tells the customer', async () => {
+    // Its own unpaid hold, so it does not depend on another test leaving one open.
+    const date = weekdayAhead(46);
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const [open] = await attemptsFor(pia.userId);
     expect(open!.status).toBe('open');
     mail.sent.length = 0;
@@ -393,9 +404,17 @@ describe('automatic refunds (D20, D58)', () => {
     const a = await payLatest(pia.userId);
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     stripe.failRefunds = true;
-    await cancelMyBooking(db(), pia, bd!.id);
-    stripe.failRefunds = false;
-    const [failed] = await db().select().from(cardRefunds).where(eq(cardRefunds.status, 'failed'));
+    try {
+      await cancelMyBooking(db(), pia, bd!.id);
+    } finally {
+      stripe.failRefunds = false;
+    }
+    // This test's own failed refund (other tests leave failed refunds of their own behind).
+    const [card] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    const [failed] = await db()
+      .select()
+      .from(cardRefunds)
+      .where(and(eq(cardRefunds.paymentId, card!.id), eq(cardRefunds.status, 'failed')));
     expect(failed).toBeDefined();
     await expect(retryCardRefund(db(), pia, failed!.id)).rejects.toBeInstanceOf(AuthorizationError);
     await retryCardRefund(db(), owner, failed!.id);
