@@ -19,6 +19,7 @@ import {
   decideRefund,
   issueCreditNote,
   loadBusinessSettings,
+  raiseRefundRequests,
   myInvoice,
   myInvoices,
   ownerInvoice,
@@ -310,6 +311,20 @@ describe('refunds and credit notes (D18, D54, D55)', () => {
     const r = await cancelMyBooking(db(), mia, day!.id, londonInstant(addDays(day!.serviceDate, -1), '10:00'));
     expect(r.late).toBe(true);
     expect(await db().select().from(refundRequests).where(eq(refundRequests.bookingDogId, day!.id))).toHaveLength(0);
+  });
+
+  it('a no-show on an invoiced member day stays charged and raises no refund (D20)', async () => {
+    const [day] = await lastMemberDay();
+    await db().update(bookingDogs).set({ status: 'no_show' }).where(eq(bookingDogs.id, day!.id));
+    // It can't be cancelled afterwards, and the refund routine finds nothing to refund for it.
+    await expect(
+      cancelMyBooking(db(), mia, day!.id, londonInstant(addDays(day!.serviceDate, -5), '10:00')),
+    ).rejects.toThrow();
+    await raiseRefundRequests(db(), { bookingDogIds: [day!.id] });
+    expect(await db().select().from(refundRequests).where(eq(refundRequests.bookingDogId, day!.id))).toHaveLength(0);
+    // The invoice line for the day is still there at the full price.
+    const lines = await db().select().from(invoiceLines).where(eq(invoiceLines.bookingDogId, day!.id));
+    expect(lines.map((l) => l.amountPence)).toEqual([4800]);
   });
 
   it('approving the refund issues a credit note that reduces what’s owed', async () => {

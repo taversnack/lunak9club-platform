@@ -78,6 +78,14 @@ export const OPEN_STATUSES = [
 /** Finished without taking place. */
 export const ENDED_STATUSES = ['cancelled', 'rejected'] as const satisfies readonly BookingStatus[];
 
+/**
+ * One trial day per dog (D96): a trial day that was requested, approved or taken counts – anything
+ * except withdrawn or cancelled (`cancelled`) and declined (`rejected`).
+ */
+export function trialDayCounts(status: string) {
+  return !isStatusIn(status, ENDED_STATUSES);
+}
+
 export function isStatusIn<T extends BookingStatus>(status: string, list: readonly T[]): status is T {
   return (list as readonly string[]).includes(status);
 }
@@ -180,7 +188,7 @@ export function cancellationTerms(
 ): { late: boolean; deadline: Date } {
   const start = londonInstant(date, sessionTimes(s, session).start);
   const deadline = new Date(start.getTime() - s.freeCancellationHours * 3_600_000);
-  return { late: now >= deadline, deadline };
+  return { late: now > deadline, deadline };
 }
 
 export function formatPounds(pence: number): string {

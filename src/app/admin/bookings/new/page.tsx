@@ -40,16 +40,7 @@ export default async function OwnerNewBooking() {
             }))}
           />
           <TextField name="date" label="Date" type="date" required defaultValue={londonDate(new Date())} />
-          <RadioGroup
-            name="session"
-            label="Session"
-            defaultValue="full"
-            options={[
-              { value: 'full', label: 'Full day' },
-              { value: 'am', label: 'Morning' },
-              { value: 'pm', label: 'Afternoon' },
-            ]}
-          />
+          <input type="hidden" name="session" value="full" />
           <Checkbox name="taxi" label="Dog taxi" />
           <Checkbox name="trial" label="This is a trial day" />
           <RadioGroup

@@ -1,0 +1,84 @@
+.hero {
+  background: var(--color-brand-navy);
+  color: var(--color-brand-navy-text);
+  margin: calc(-1 * var(--space-6)) 0 var(--space-6);
+  padding: var(--space-7) var(--space-4);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.heroInner {
+  display: grid;
+  gap: var(--space-6);
+  align-items: center;
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+.heroText {
+  max-width: 44rem;
+}
+.heroText h1 {
+  color: #fff;
+  font-size: clamp(2rem, 6vw, 3rem);
+}
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--color-brand-sand);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: var(--text-sm);
+}
+.lead {
+  font-size: var(--text-lg);
+  max-width: 36rem;
+}
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+.onDark {
+  color: var(--color-brand-navy-text);
+  border-color: var(--color-brand-navy-text);
+}
+.onDark:hover {
+  color: var(--color-brand-navy) !important;
+  background: var(--color-brand-navy-text) !important;
+}
+.benefits {
+  padding-bottom: var(--space-6);
+}
+.benefitList {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+.benefitList p {
+  margin: 0;
+}
+.error {
+  max-width: var(--content-narrow);
+  margin: 0 auto;
+  text-align: center;
+}
+.errorCode {
+  margin: 0;
+  font-size: 4rem;
+  font-weight: var(--weight-bold);
+  /* Navy on white is 13.4:1 (sand was 1.61:1, and aria-hidden text still counts for axe). */
+  color: var(--color-brand-navy);
+  line-height: 1;
+}
+.errorActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+}
+@media (min-width: 900px) {
+  .benefitList {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
