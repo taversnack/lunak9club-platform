@@ -510,8 +510,11 @@ describe('monthly confirmation (D88)', () => {
     const subject = /membership confirmations for/;
     const ownerMails = () => mail.sent.filter((m) => m.to === owner.email && subject.test(m.subject)).length;
     const before = ownerMails();
-    const unconfirmed = (await unconfirmedMembers(db(), owner, month)).length;
     await runTick(db(), SYSTEM, now);
+    // Counted after the first tick: that tick books the month's member days ahead (on the app's clock)
+    // before it emails. Counting before it found none whenever the month was beyond the booking
+    // horizon at the real date (e.g. from 1 Nov, when the month two ahead is January).
+    const unconfirmed = (await unconfirmedMembers(db(), owner, month)).length;
     await runTick(db(), SYSTEM, new Date(now.getTime() + 3_600_000));
     await runTick(db(), SYSTEM, new Date(now.getTime() + 86_400_000));
     expect(ownerMails() - before).toBe(unconfirmed ? 1 : 0);
