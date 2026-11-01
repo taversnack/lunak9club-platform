@@ -201,7 +201,12 @@ export default async function MembershipPage() {
                     <summary>{m ? `Change ${d.name}’s days for all future months` : `Choose ${d.name}’s days`}</summary>
                     <ActionForm action={requestMembershipDaysAction}>
                       <input type="hidden" name="dogId" value={d.id} />
-                      {m ? (
+                      {m && !m.started ? (
+                        <p>
+                          {d.name}’s membership starts on {formatUkDate(m.startsOn)}. Keep that first day or choose
+                          another below.
+                        </p>
+                      ) : m ? (
                         <p>
                           New days start on {formatUkDate(days.changeFrom)} (the first month we haven’t invoiced yet).
                           To move one day only, use <Link href="/account/bookings">Your bookings</Link>.
@@ -210,13 +215,13 @@ export default async function MembershipPage() {
                       <DayPicker open={settings.openWeekdays} checked={m?.weekdays ?? []} />
                       <input type="hidden" name="session" value="full" />
                       <Checkbox name="taxi" label="Use the dog taxi (included)" defaultChecked={m?.taxi ?? false} />
-                      {m ? null : (
+                      {m && m.started ? null : (
                         <TextField
                           name="startsOn"
                           label="First day"
                           type="date"
                           required
-                          defaultValue={tomorrow}
+                          defaultValue={m ? m.startsOn : tomorrow}
                           min={tomorrow}
                         />
                       )}
