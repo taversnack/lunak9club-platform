@@ -35,7 +35,28 @@ const OUTCOME: Record<string, { tone: 'info' | 'success' | 'warning' | 'danger';
 const plan = (weekdays: number[], session: string, taxi: boolean) =>
   `${describeWeekdays(weekdays)} · ${SESSION_LABELS[session as Session]}${taxi ? ' · taxi' : ''}`;
 
-export default async function MembershipPage() {
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** What ending a membership did, from the address the action redirects to (Tester #111 F-111b). */
+function endedNotice(sp: Record<string, string | undefined>): string | null {
+  const on = sp.on && ISO.test(sp.on) ? sp.on : null;
+  if (!on || (sp.ended !== 'before' && sp.ended !== 'after')) return null;
+  const n = Number(sp.refunds ?? 0);
+  const refunds =
+    Number.isInteger(n) && n > 0
+      ? ` ${n === 1 ? 'One of those days was' : `${n} of those days were`} already on an invoice: we’ll review ${n === 1 ? 'it' : 'them'} and send you a credit note, which reduces what you owe (or is refunded if you’ve paid).`
+      : '';
+  return sp.ended === 'before'
+    ? `The membership has been cancelled before it started (it was due to start on ${formatUkDate(on)}). Its booked days have been cancelled free of charge.${refunds}`
+    : `The membership ends after ${formatUkDate(on)}. Later booked days have been cancelled free of charge.${refunds}`;
+}
+
+export default async function MembershipPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
+  const notice = endedNotice(await searchParams);
   const actor = await requirePermission('account.access');
   const db = getDb();
   const [days, months, requests, legacy, settings] = await Promise.all([
@@ -49,6 +70,8 @@ export default async function MembershipPage() {
   const today = londonDate(new Date());
   const tomorrow = addDays(today, 1);
   const leaveFrom = changeEffectiveDate(today);
+  // The furthest first day the request accepts (checked again on the server).
+  const latestStart = addDays(today, settings.maxAdvanceDays);
   const memberRequests = requests.filter((r) => r.type.startsWith('membership.')).slice(0, 20);
   const pendingFor = (dogId: string) =>
     memberRequests.find((r) => r.status === 'pending' && r.subjectKey === `dog:${dogId}`);
@@ -58,6 +81,11 @@ export default async function MembershipPage() {
   return (
     <Stack>
       <h1>Membership</h1>
+      {notice ? (
+        <div id="ended" tabIndex={-1}>
+          <Alert tone="success">{notice}</Alert>
+        </div>
+      ) : null}
       <p>
         Questions about cancelling, changing or adding days? See <Link href="/account/faq">membership questions</Link>.
       </p>
@@ -148,6 +176,7 @@ export default async function MembershipPage() {
                           required
                           defaultValue={o.startsOn > today ? o.startsOn : tomorrow}
                           min={tomorrow}
+                          max={latestStart}
                         />
                         <div>
                           <SubmitButton variant="secondary">Send for approval</SubmitButton>
@@ -198,7 +227,13 @@ export default async function MembershipPage() {
                   </Stack>
                 ) : (
                   <details>
-                    <summary>{m ? `Change ${d.name}’s days for all future months` : `Choose ${d.name}’s days`}</summary>
+                    <summary>
+                      {m && !m.started
+                        ? `Change ${d.name}’s days or first day`
+                        : m
+                          ? `Change ${d.name}’s days for all future months`
+                          : `Choose ${d.name}’s days`}
+                    </summary>
                     <ActionForm action={requestMembershipDaysAction}>
                       <input type="hidden" name="dogId" value={d.id} />
                       {m && !m.started ? (
@@ -223,6 +258,7 @@ export default async function MembershipPage() {
                           required
                           defaultValue={m ? m.startsOn : tomorrow}
                           min={tomorrow}
+                          max={latestStart}
                         />
                       )}
                       <div>

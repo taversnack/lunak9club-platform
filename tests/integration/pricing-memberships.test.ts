@@ -2,7 +2,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
-import { bookingDogs, customers, memberships, priceBooks, priceSnapshots } from '@/infra/db/schema';
+import {
+  bookingDogs,
+  customers,
+  invoiceLines,
+  invoices,
+  memberships,
+  priceBooks,
+  priceSnapshots,
+  refundRequests,
+} from '@/infra/db/schema';
+import { refreshMembershipDrafts } from '@/server/services/billing';
+import { addMonths } from '@/domain/billing/rules';
 import { previewMyBookings } from '@/server/services/bookings';
 import { ownerCreateBooking } from '@/server/services/owner-bookings';
 import {
@@ -412,13 +423,63 @@ describe('memberships', () => {
     expect(booked.length).toBeGreaterThan(0);
 
     const r = await leaveMembership(db(), u, m!.id);
-    expect(r).toEqual({ endsOn: start, neverStarts: true });
+    expect(r).toEqual({ endsOn: start, neverStarts: true, refundRequests: 0 });
     const [after] = await db().select().from(memberships).where(eq(memberships.id, m!.id));
     // Not left active with an end date nobody was told about: it never runs.
     expect(after).toMatchObject({ status: 'ended', endsOn: start });
     const days = await db().select().from(bookingDogs).where(eq(bookingDogs.membershipId, m!.id));
     expect(days.every((x) => x.status === 'cancelled' && x.lateCancellation === false)).toBe(true);
     await expect(leaveMembership(db(), u, m!.id)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('ending a not-started membership whose invoice is already issued raises refund requests for every invoiced day (Tester #111 F-111a, D56)', async () => {
+    const u = await makeUser(db(), 'customer', 'Iris Issued');
+    await readyCustomer(db(), u);
+    const dog = await approvedDog(db(), owner, u, 'Ivy');
+    const cutoff = changeEffectiveDate(today);
+    const offset = Math.round((Date.parse(cutoff) - Date.parse(today)) / 86_400_000) + 7;
+    const start = firstOpenWeekday(offset);
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 4], session: 'full', startsOn: start });
+    const [m] = await db()
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.dogId, dog), eq(memberships.status, 'active')));
+    const [c] = await db().select().from(customers).where(eq(customers.userId, u.userId));
+    // Draft the start month's invoice on the 26th before it (D24).
+    const month = start.slice(0, 7);
+    const prev = addMonths(month, -1);
+    const on26 = new Date(`${prev}-26T10:00:00Z`);
+    await refreshMembershipDrafts(db(), owner, { customerId: c!.id }, on26);
+    const [inv] = await db()
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.customerId, c!.id), eq(invoices.periodMonth, month)));
+    expect(inv).toBeDefined();
+    // Issued (as on the 28th, D24). Set directly: approving and sending here would need the business
+    // settings and take a number from the shared invoice sequence that billing.test.ts checks.
+    await db()
+      .update(invoices)
+      .set({
+        status: 'issued',
+        number: `TEST-F111A-${inv!.id.slice(0, 8)}`,
+        issuedAt: new Date(`${prev}-28T09:30:00Z`),
+        issueDate: `${prev}-28`,
+        dueDate: `${month}-02`,
+        billToName: 'Iris Issued',
+        sellerDetails: {} as never,
+      })
+      .where(eq(invoices.id, inv!.id));
+    const lines = await db().select().from(invoiceLines).where(eq(invoiceLines.invoiceId, inv!.id));
+    expect(lines.length).toBeGreaterThan(0);
+
+    const r = await leaveMembership(db(), u, m!.id);
+    expect(r.neverStarts).toBe(true);
+    expect(r.refundRequests).toBe(lines.length); // shown to the customer
+    // Each invoiced day cancelled free gets a refund request for the Owner to approve (-> credit note,
+    // which reduces what is owed on the unpaid invoice), as for any other free cancellation (D56).
+    const reqs = await db().select().from(refundRequests).where(eq(refundRequests.invoiceId, inv!.id));
+    expect(reqs.map((x) => x.invoiceLineId).sort()).toEqual(lines.map((l) => l.id).sort());
+    expect(reqs.reduce((a, x) => a + x.amountPence, 0)).toBe(lines.reduce((a, l) => a + l.amountPence, 0));
   });
 
   it('legacy requests: the Owner declines with a reason, and customers can withdraw', async () => {

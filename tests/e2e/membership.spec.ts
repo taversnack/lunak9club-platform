@@ -79,15 +79,18 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   const regular = page.getByRole('region', { name: 'Your dogs’ regular days' });
   await expect(regular).toContainText('Monday');
   // Not started yet: the customer sees the real first day and can move it, not "New days start on …" (#106 F1).
-  await regular.getByText(`Change ${dog}’s days for all future months`).click();
+  // Pending: the link no longer says "for all future months" (#106 r2 minor).
+  await expect(regular.getByText(`Change ${dog}’s days for all future months`)).toHaveCount(0);
+  await regular.getByText(`Change ${dog}’s days or first day`).click();
   await expect(regular).toContainText(`${dog}’s membership starts on`);
   await expect(regular).not.toContainText('New days start on');
-  await expect(
-    regular
-      .locator('details[open]')
-      .filter({ hasText: `Change ${dog}’s days for all future months` })
-      .getByLabel('First day'),
-  ).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  const firstDay = regular
+    .locator('details[open]')
+    .filter({ hasText: `Change ${dog}’s days or first day` })
+    .getByLabel('First day');
+  await expect(firstDay).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  // The 90-day limit is on the field, not only reported after sending (#106 r2 minor).
+  await expect(firstDay).toHaveAttribute('max', /^\d{4}-\d{2}-\d{2}$/);
   await axe(page);
 });
 
@@ -164,4 +167,21 @@ test('customer sees the invoice and can download the PDF', async ({ page }, info
   await signIn(page, other.email, other.password);
   await expect(page).toHaveURL(/\/account$/);
   expect((await page.request.get(href!)).status()).toBe(404);
+});
+
+test('customer ends the membership and is told what happened (Tester #111 F-111b)', async ({ page }, info) => {
+  const { user, dog } = who(info.project.name);
+  await signIn(page, user.email, user.password);
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto('/account/membership');
+  const regular = page.getByRole('region', { name: 'Your dogs’ regular days' });
+  await regular.getByText(`End ${dog}’s membership`, { exact: true }).click();
+  const form = regular.locator('details[open]').filter({ hasText: `End ${dog}’s membership` });
+  await form.getByRole('checkbox').check();
+  await form.getByRole('button', { name: 'End membership' }).click();
+  await expect(page).toHaveURL(/[?&]ended=(before|after)&on=\d{4}-\d{2}-\d{2}/);
+  await expect(
+    page.getByRole('status').filter({ hasText: /The membership (has been cancelled before it started|ends after)/ }),
+  ).toBeVisible();
+  await axe(page);
 });
