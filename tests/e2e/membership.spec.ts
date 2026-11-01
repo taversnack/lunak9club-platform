@@ -82,7 +82,12 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   await regular.getByText(`Change ${dog}’s days for all future months`).click();
   await expect(regular).toContainText(`${dog}’s membership starts on`);
   await expect(regular).not.toContainText('New days start on');
-  await expect(regular.getByLabel('First day')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  await expect(
+    regular
+      .locator('details[open]')
+      .filter({ hasText: `Change ${dog}’s days for all future months` })
+      .getByLabel('First day'),
+  ).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
   await axe(page);
 });
 
