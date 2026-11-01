@@ -226,6 +226,8 @@ test('magic link: an unknown address gets exactly the same reply, and resend say
   await expect(page.getByText('If that address has an account, a link is on its way.')).toBeVisible();
   await page.getByRole('button', { name: 'Send the link again' }).click();
   await expect(page.getByText("We've sent another link. Use the newest one.")).toBeVisible();
+  // Focus lands on the outcome, not the page body (Tester, #109 F2).
+  await expect(page.getByTestId('resend-result')).toBeFocused();
   await page.getByRole('button', { name: 'Use a different email address' }).click();
   await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toBeVisible();
 });
