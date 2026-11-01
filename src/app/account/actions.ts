@@ -271,11 +271,13 @@ export async function leaveMembershipAction(_: ActionState, fd: FormData): Promi
     if (fd.get('confirm') !== 'on') {
       return { status: 'error', message: 'Tick the box to confirm.', fields: { confirm: 'Tick to confirm' } };
     }
-    const { endsOn } = await leaveMembership(getDb(), actor, String(fd.get('id') ?? ''));
+    const { endsOn, neverStarts } = await leaveMembership(getDb(), actor, String(fd.get('id') ?? ''));
     revalidatePath('/account/membership');
     return {
       status: 'success',
-      message: `Your membership ends after ${formatUkDate(endsOn)}. Later booked days have been cancelled free of charge.`,
+      message: neverStarts
+        ? `Your membership has been cancelled before it started (it was due to start on ${formatUkDate(endsOn)}). Its booked days have been cancelled free of charge.`
+        : `Your membership ends after ${formatUkDate(endsOn)}. Later booked days have been cancelled free of charge.`,
     };
   });
 }

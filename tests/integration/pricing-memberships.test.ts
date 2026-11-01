@@ -391,6 +391,33 @@ describe('memberships', () => {
     await expect(leaveMembership(db(), dan, active!.id)).rejects.toBeInstanceOf(NotFoundError);
   });
 
+  it('ending a membership that has not started yet cancels it outright (Tester #106 F3)', async () => {
+    const u = await makeUser(db(), 'customer', 'Penny Pending');
+    await readyCustomer(db(), u);
+    const dog = await approvedDog(db(), owner, u, 'Pip');
+    // Starts after the day leaving would take effect, so "last day" would be before the first day.
+    const cutoff = changeEffectiveDate(today);
+    const offset = Math.round((Date.parse(cutoff) - Date.parse(today)) / 86_400_000) + 7;
+    const start = firstOpenWeekday(offset);
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [1, 2, 3, 4, 5], session: 'full', startsOn: start });
+    const [m] = await db()
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.dogId, dog), eq(memberships.status, 'active')));
+    expect(m!.startsOn).toBe(start);
+    const booked = await db().select().from(bookingDogs).where(eq(bookingDogs.membershipId, m!.id));
+    expect(booked.length).toBeGreaterThan(0);
+
+    const r = await leaveMembership(db(), u, m!.id);
+    expect(r).toEqual({ endsOn: start, neverStarts: true });
+    const [after] = await db().select().from(memberships).where(eq(memberships.id, m!.id));
+    // Not left active with an end date nobody was told about: it never runs.
+    expect(after).toMatchObject({ status: 'ended', endsOn: start });
+    const days = await db().select().from(bookingDogs).where(eq(bookingDogs.membershipId, m!.id));
+    expect(days.every((x) => x.status === 'cancelled' && x.lateCancellation === false)).toBe(true);
+    await expect(leaveMembership(db(), u, m!.id)).rejects.toBeInstanceOf(ConflictError);
+  });
+
   it('legacy requests: the Owner declines with a reason, and customers can withdraw', async () => {
     const r = await legacyRequest(dan, danDog, [3]);
     await expect(declineMembership(db(), owner, r.id, { version: r.version })).rejects.toBeInstanceOf(ValidationError);

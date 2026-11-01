@@ -230,14 +230,25 @@ export default async function MembershipPage() {
                   <details>
                     <summary>End {d.name}’s membership</summary>
                     <ActionForm action={leaveMembershipAction}>
-                      <p>
-                        Leaving takes effect from {formatUkDate(leaveFrom)} (the 1st of next month if you tell us by the
-                        20th).
-                      </p>
+                      {addDays(leaveFrom, -1) < m.startsOn ? (
+                        <p>
+                          {d.name}’s membership hasn’t started yet (it starts on {formatUkDate(m.startsOn)}). Ending it
+                          now cancels it before it starts, and its booked days are cancelled free of charge.
+                        </p>
+                      ) : (
+                        <p>
+                          Leaving takes effect from {formatUkDate(leaveFrom)} (the 1st of next month if you tell us by
+                          the 20th).
+                        </p>
+                      )}
                       <input type="hidden" name="id" value={m.id} />
                       <Checkbox
                         name="confirm"
-                        label={`End ${d.name}’s membership (last day ${formatUkDate(addDays(leaveFrom, -1))})`}
+                        label={
+                          addDays(leaveFrom, -1) < m.startsOn
+                            ? `Cancel ${d.name}’s membership before it starts`
+                            : `End ${d.name}’s membership (last day ${formatUkDate(addDays(leaveFrom, -1))})`
+                        }
                       />
                       <div>
                         <SubmitButton variant="danger">End membership</SubmitButton>
