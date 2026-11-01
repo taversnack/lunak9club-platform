@@ -302,8 +302,10 @@ describe('booking requests (D76)', () => {
   });
 
   it('the customer withdraws a request, or one day of it, at no charge', async () => {
-    const d1 = weekdayAhead(14);
-    const d2 = weekdayAhead(15);
+    // Two days in a row, so the email gives a range ("12 to 13 …"); a Friday and Monday would be listed instead.
+    let d1 = weekdayAhead(14);
+    let d2 = weekdayAhead(15);
+    while (addDays(d1, 1) !== d2) [d1, d2] = [d2, weekdayAhead(15)];
     const r = await createMyBookings(db(), alice, {
       dogIds: [aliceDog],
       dates: [d1, d2],
