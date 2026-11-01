@@ -233,7 +233,8 @@ export async function daysChangeStart(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startsOn) || Number.isNaN(Date.parse(`${startsOn}T00:00:00Z`)))
     return fail('Enter the first day as a real date');
   if (startsOn <= today) return fail('Choose tomorrow or later');
-  if (p.maxAdvanceDays !== undefined && startsOn > addDays(today, p.maxAdvanceDays))
+  // The booking window (D37) applies to a first day being chosen, not one already agreed.
+  if (p.maxAdvanceDays !== undefined && startsOn !== pending && startsOn > addDays(today, p.maxAdvanceDays))
     return fail(`Choose a date within ${p.maxAdvanceDays} days`);
   const invoiced = await invoicedMonths(q, p.customerId);
   if (invoiced.includes(startsOn.slice(0, 7)))

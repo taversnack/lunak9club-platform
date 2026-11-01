@@ -560,7 +560,15 @@ export async function ownerSetMembershipDays(db: Db, actor: Actor, rawDogId: str
   const fields: Record<string, string> = {};
   const wd = validWeekdays(d.weekdays, settings.openWeekdays);
   if (wd) fields.weekdays = wd;
-  const start = await daysChangeStart(db, { customerId: dog.customerId, dogId: dog.id, entered: d.startsOn, now });
+  // The Owner's first day keeps to the booking window too (D37), as the customer's and the Owner's
+  // new-customer offer do; only one-off Owner bookings reach further.
+  const start = await daysChangeStart(db, {
+    customerId: dog.customerId,
+    dogId: dog.id,
+    entered: d.startsOn,
+    now,
+    maxAdvanceDays: settings.maxAdvanceDays,
+  });
   const startsOn: IsoDate = start.startsOn;
   if (start.error) fields.startsOn = start.error;
   if (Object.keys(fields).length) throw new ValidationError('Please check the highlighted fields.', fields);

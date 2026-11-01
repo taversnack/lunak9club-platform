@@ -185,6 +185,7 @@ export default async function CustomerPage({
                       type="date"
                       required
                       min={addDays(today, 1)}
+                      max={[addDays(today, settings.maxAdvanceDays), d.membership?.startsOn ?? ''].sort().at(-1)}
                       defaultValue={d.membership ? d.membership.startsOn : addDays(today, 1)}
                     />
                   )}
