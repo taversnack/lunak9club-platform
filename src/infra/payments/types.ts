@@ -64,6 +64,19 @@ export interface PaymentProvider {
     reference: string,
     attempt?: number,
   ): Promise<RefundResult>;
-  /** Verify the signature and parse. Throws if the signature is wrong. */
+  /** Verify the signature and parse. Throws WebhookVerificationError if it can't be trusted. */
   parseWebhook(rawBody: string, signature: string | null): WebhookEvent;
 }
+
+/**
+ * A webhook that can't be trusted: no or bad signature, a timestamp outside the tolerance (a replay),
+ * a garbled header or body, or no webhook secret configured. The route answers 4xx so Stripe doesn't
+ * retry it. Recognised by `name` rather than `instanceof` (route handlers and pages can be bundled
+ * with separate copies of this class in `next dev`).
+ */
+export class WebhookVerificationError extends Error {
+  override readonly name = 'WebhookVerificationError';
+}
+
+export const isWebhookVerificationError = (err: unknown): err is WebhookVerificationError =>
+  err instanceof Error && err.name === 'WebhookVerificationError';

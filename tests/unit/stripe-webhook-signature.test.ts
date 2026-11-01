@@ -46,12 +46,22 @@ describe('Stripe webhook signature (non-negotiable 3)', () => {
 
   it('rejects a replayed event outside the 5 minute tolerance', () => {
     const old = Math.floor(Date.now() / 1000) - 3600;
-    expect(() => provider.parseWebhook(body, header(body, SECRET, old))).toThrow(/tolerance|timestamp/i);
+    expect(() => provider.parseWebhook(body, header(body, SECRET, old))).toThrow(
+      expect.objectContaining({
+        name: 'WebhookVerificationError',
+        message: expect.stringMatching(/Timestamp outside the tolerance zone/),
+      }),
+    );
   });
 
   it('rejects a missing or garbage header', () => {
     expect(() => provider.parseWebhook(body, null)).toThrow(/Stripe-Signature/);
-    expect(() => provider.parseWebhook(body, 'nonsense')).toThrow();
+    expect(() => provider.parseWebhook(body, 'nonsense')).toThrow(
+      expect.objectContaining({
+        name: 'WebhookVerificationError',
+        message: expect.stringMatching(/Unable to extract timestamp and signatures from header/),
+      }),
+    );
   });
 
   it('refuses everything when no webhook secret is configured, without echoing any value', () => {
