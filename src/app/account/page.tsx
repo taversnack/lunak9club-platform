@@ -11,39 +11,11 @@ import { OVERALL_LABELS } from '@/domain/compliance/evaluate';
 import { myBookings } from '@/server/services/bookings';
 import { myHoldsWithoutPayLink, myOpenCheckouts } from '@/server/services/payments';
 import { myMonthConfirmations } from '@/server/services/membership-workflow';
-import { formatUkDate } from '@/domain/time';
+import { formatUkDate, londonDate } from '@/domain/time';
 import { pounds } from '@/domain/pricing/engine';
 import { formatDateTimeLondon } from '@/ui/format';
-
-/** One line per request status: what it means and what happens next (D76, D80). */
-const TIMELINE: Record<
-  string,
-  {
-    tone: 'info' | 'success' | 'warning' | 'danger';
-    text: string;
-    next: (hold: Date | null, freeCancelHours: number) => string;
-  }
-> = {
-  requested: {
-    tone: 'warning',
-    text: 'Requested',
-    next: () =>
-      'Luna’s K9 Club will reply soon. Nothing to pay yet, and the day isn’t secured until it’s approved and paid for.',
-  },
-  pending_payment: {
-    tone: 'warning',
-    text: 'Approved – pay to secure',
-    next: (hold) =>
-      hold ? `Pay by ${formatDateTimeLondon(hold)} to secure the day, or it’s released.` : 'Pay to secure the day.',
-  },
-  confirmed: {
-    tone: 'success',
-    text: 'Confirmed',
-    next: (_hold, hours) => `You’re booked. Cancel at least ${hours} hours ahead for a full refund.`,
-  },
-  waitlisted: { tone: 'info', text: 'On the waitlist', next: () => 'We’ll email you if a place opens up.' },
-  rejected: { tone: 'danger', text: 'Declined', next: () => 'Nothing to pay. You’re welcome to request another day.' },
-};
+import { asUser } from '@/server/services/customers';
+import { daysLabel, overviewTimeline } from '@/domain/booking/overview';
 
 export const metadata: Metadata = { title: 'My account' };
 export const dynamic = 'force-dynamic';
@@ -66,9 +38,35 @@ export default async function AccountPage() {
   const dogTodo = dogs
     .map((d) => ({ d, left: d.evaluation.items.filter((i) => i.mandatory && i.action).length }))
     .filter((x) => x.left > 0);
-  const timeline = [...bookings.upcoming, ...bookings.past.filter((b) => b.status === 'rejected')]
-    .filter((b) => b.status in TIMELINE)
-    .slice(0, 6);
+  const now = new Date();
+  const canBook = dogs.some((d) => d.evaluation.canBook);
+  // One rule for both lists: a hold whose pay-by time has passed is released (Needs you drops it too).
+  const timeline = overviewTimeline([...bookings.upcoming, ...bookings.past], {
+    now,
+    today: londonDate(now),
+    myUserId: asUser(actor).userId,
+    freeCancelHours: bookings.freeCancellationHours,
+    formatHold: formatDateTimeLondon,
+  });
+  // Name each pay link by its dog(s) and date(s), so several "Pay" links can be told apart (WCAG 2.4.4).
+  const held = (bookingId: string) =>
+    bookings.upcoming.filter((b) => b.bookingId === bookingId && b.status === 'pending_payment');
+  const payItems = [
+    ...checkouts.map((c) => ({
+      key: c.id,
+      amountPence: c.amountPence,
+      by: c.expiresAt,
+      href: `/api/payments/pay/${c.id}`,
+      what: daysLabel(c.days.length ? c.days : held(c.bookingId!)),
+    })),
+    ...unlinked.map((u) => ({
+      key: u.bookingId,
+      amountPence: u.amountPence,
+      by: u.holdUntil,
+      href: `/api/payments/pay-booking/${u.bookingId}`,
+      what: daysLabel(held(u.bookingId)),
+    })),
+  ];
   const first = actor.name.split(' ')[0];
   const todo: { href: '/account/profile' | '/account/contacts' | '/account/terms'; text: string }[] = [];
   if (!isProfileComplete(customer)) todo.push({ href: '/account/profile', text: 'Add your phone number and address' });
@@ -100,45 +98,31 @@ export default async function AccountPage() {
         ) : (
           <Muted>No days booked yet.</Muted>
         )}
-        {dogs.some((d) => d.evaluation.canBook) ? (
+        {canBook ? (
           <Link href="/account/book" className={buttonClass('primary')}>
             Request a day
           </Link>
-        ) : null}
+        ) : (
+          <Muted>Booking opens once your dog has been approved.</Muted>
+        )}
       </Card>
       <Card aria-labelledby="needs-you">
         <h2 id="needs-you">Needs you</h2>
-        {checkouts.length + unlinked.length + toConfirm.length + dogTodo.length === 0 ? (
+        {payItems.length + toConfirm.length + dogTodo.length === 0 ? (
           <p>
             <StatusBadge tone="success">All done</StatusBadge> Nothing needs you right now.
           </p>
         ) : (
           <ul className={s.list}>
-            {checkouts.map((c) => (
-              <li key={c.id} className={s.listItem}>
-                <span>
-                  <strong>Pay {pounds(c.amountPence)}</strong> to secure your booking
+            {payItems.map((p) => (
+              <li key={p.key} className={s.listItem}>
+                <span className={s.wrapText}>
+                  <strong>{p.what}</strong>: approved, pay to secure your booking
                   <br />
-                  <span className={s.hint}>
-                    Pay by {formatDateTimeLondon(c.expiresAt)}, or the places are released.
-                  </span>
+                  <span className={s.hint}>Pay by {formatDateTimeLondon(p.by)}, or the places are released.</span>
                 </span>
-                <a className={buttonClass('primary')} href={`/api/payments/pay/${c.id}`}>
-                  Pay now
-                </a>
-              </li>
-            ))}
-            {unlinked.map((u) => (
-              <li key={u.bookingId} className={s.listItem}>
-                <span>
-                  <strong>Pay {pounds(u.amountPence)}</strong> to secure your booking
-                  <br />
-                  <span className={s.hint}>
-                    Pay by {formatDateTimeLondon(u.holdUntil)}, or the places are released.
-                  </span>
-                </span>
-                <a className={buttonClass('primary')} href={`/api/payments/pay-booking/${u.bookingId}`}>
-                  Pay now
+                <a className={`${buttonClass('primary')} ${s.wrapButton}`} href={p.href}>
+                  Pay {pounds(p.amountPence)} for {p.what}
                 </a>
               </li>
             ))}
@@ -175,23 +159,26 @@ export default async function AccountPage() {
           <Muted>Nothing yet. When you request a day, you’ll see it here.</Muted>
         ) : (
           <ol className={s.list}>
-            {timeline.map((b) => {
-              const t = TIMELINE[b.status]!;
-              return (
-                <li key={b.id} className={s.listItem} style={{ display: 'block' }}>
-                  <p>
-                    <strong>{formatUkDate(b.serviceDate)}</strong> · {b.dogName}{' '}
-                    <StatusBadge tone={t.tone}>{t.text}</StatusBadge>
-                    <br />
-                    <span className={s.hint}>{t.next(b.offerExpiresAt, bookings.freeCancellationHours)}</span>
-                  </p>
-                </li>
-              );
-            })}
+            {timeline.map((b) => (
+              <li key={b.id} className={s.listItem} style={{ display: 'block' }}>
+                <p className={s.wrapText}>
+                  <strong>{formatUkDate(b.serviceDate)}</strong> · {b.dogName}{' '}
+                  <StatusBadge tone={b.state.tone}>{b.state.text}</StatusBadge>
+                  <br />
+                  <span className={s.hint}>{b.state.next}</span>
+                </p>
+              </li>
+            ))}
           </ol>
         )}
         <p>
-          <Link href="/account/bookings">All bookings</Link> · <Link href="/account/requests">Your requests</Link>
+          <Link href="/account/bookings" className={s.tapLink}>
+            All bookings
+          </Link>{' '}
+          ·{' '}
+          <Link href="/account/requests" className={s.tapLink}>
+            Your requests
+          </Link>
         </p>
       </Card>
       <Card aria-labelledby="dogs">
@@ -233,7 +220,11 @@ export default async function AccountPage() {
       <Grid>
         <Card aria-labelledby="invoices">
           <h2 id="invoices">Invoices</h2>
-          <Muted>Nothing to pay.</Muted>
+          {payItems.length ? (
+            <Muted>No invoices to pay. Pay for your approved days under Needs you.</Muted>
+          ) : (
+            <Muted>Nothing to pay.</Muted>
+          )}
         </Card>
       </Grid>
     </Stack>
