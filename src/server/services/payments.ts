@@ -1139,7 +1139,26 @@ export async function myOpenCheckouts(db: Db, actor: Actor, now = new Date()) {
       ),
     )
     .orderBy(asc(checkoutAttempts.expiresAt));
-  return rows.filter((r) => r.expiresAt > now);
+  const open = rows.filter((r) => r.expiresAt > now);
+  // The exact days each checkout pays for, so the account can name every pay link by dog and date (WCAG 2.4.4).
+  const days = open.length
+    ? await db
+        .select({
+          checkoutAttemptId: checkoutAttemptDays.checkoutAttemptId,
+          dogName: dogs.name,
+          serviceDate: bookingDogs.serviceDate,
+        })
+        .from(checkoutAttemptDays)
+        .innerJoin(bookingDogs, eq(bookingDogs.id, checkoutAttemptDays.bookingDogId))
+        .innerJoin(dogs, eq(dogs.id, bookingDogs.dogId))
+        .where(
+          inArray(
+            checkoutAttemptDays.checkoutAttemptId,
+            open.map((r) => r.id),
+          ),
+        )
+    : [];
+  return open.map((r) => ({ ...r, days: days.filter((d) => d.checkoutAttemptId === r.id) }));
 }
 
 /** Customer pays what's owed on an invoice by card (D59). Any older unpaid checkout is closed first. */

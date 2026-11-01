@@ -88,6 +88,12 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
 
   await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
   await expect(page).toHaveURL(/\/account$/);
+  // Each Needs you pay link names its dog and day, so several are never just "Pay now" (WCAG 2.4.4).
+  const payLinks = page.getByRole('link', { name: /^Pay £\d+\.\d\d for / });
+  await expect(payLinks.first()).toBeVisible();
+  const names = await payLinks.allInnerTexts();
+  expect(names.every((n) => /for .+, \w{3} \d{1,2} \w{3}/.test(n))).toBe(true);
+  expect(new Set(names).size).toBe(names.length);
   await page.goto(new URL(payLink).pathname);
   // Simulated card page stands in for Stripe in tests (PAYMENTS_DRIVER=simulated).
   await expect(page.getByRole('heading', { name: 'Test card payment' })).toBeVisible();

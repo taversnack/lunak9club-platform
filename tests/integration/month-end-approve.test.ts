@@ -29,6 +29,11 @@ const CUR = addMonths(monthOf(today), 1);
 const TARGET = addMonths(CUR, 1);
 const now = londonInstant(`${CUR}-26`, '10:00');
 const sendAt = londonInstant(`${CUR}-28`, '09:00');
+// The memberships are set up on the same pinned clock: the day before CUR starts, starting on its 1st,
+// so they're in place for all of CUR and their days are booked well into TARGET (the 60-day horizon
+// counts from the clock). With the real date instead, TARGET could fall past the horizon (e.g. on
+// 1 Nov, TARGET is January) and there would be nothing to approve.
+const setupAt = londonInstant(addDays(`${CUR}-01`, -1), '09:00');
 
 const BUSINESS = {
   tradingName: 'Luna’s K9 Club',
@@ -83,7 +88,13 @@ beforeAll(async () => {
     people[n] = u;
     await readyCustomer(db(), u);
     const dog = await approvedDog(db(), owner, u, `Dog ${n}`);
-    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 4], session: 'full', startsOn: addDays(today, 1) });
+    await ownerSetMembershipDays(
+      db(),
+      owner,
+      dog,
+      { weekdays: [2, 4], session: 'full', startsOn: `${CUR}-01` },
+      setupAt,
+    );
     const [c] = await db().select({ id: customers.id }).from(customers).where(eq(customers.userId, u.userId));
     customerIds[n] = c!.id;
   }
