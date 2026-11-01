@@ -1,10 +1,10 @@
 import 'server-only';
 import { LIVE_STATUSES, OPEN_STATUSES } from '@/domain/booking/rules';
 import { raiseRefundRequests, refreshMembershipDrafts } from './billing';
-import { and, asc, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
-import { bookingDogs, bookings, customers, dogs, memberships, users } from '@/infra/db/schema';
+import { bookingDogs, bookings, customers, dogs, memberships, refundRequests, users } from '@/infra/db/schema';
 import { checkBookableDate, fits, SESSION_LABELS, type Session } from '@/domain/booking/rules';
 import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
 import { changeEffectiveDate, membershipDates } from '@/domain/membership/rules';
@@ -137,7 +137,14 @@ export async function leaveMembership(db: Db, actor: Actor, rawId: string, now =
       metadata: { endsOn, neverStarts, cancelledDays: cancelled },
     });
   });
-  return { endsOn, neverStarts };
+  // Days already on an issued invoice get a refund request (D56): the Owner's approval issues the
+  // credit note. Counted so the customer is told, rather than seeing the invoice still owed.
+  const [r] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(refundRequests)
+    .innerJoin(bookingDogs, eq(bookingDogs.id, refundRequests.bookingDogId))
+    .where(and(eq(bookingDogs.membershipId, m.id), eq(refundRequests.status, 'requested')));
+  return { endsOn, neverStarts, refundRequests: r?.n ?? 0 };
 }
 
 // ---- Owner -------------------------------------------------------------------------
