@@ -105,10 +105,24 @@ export function Field({ label, name, hint, error, id, ...input }: FieldProps) {
 type Tone = 'info' | 'success' | 'warning' | 'danger';
 const toneIcon = { info: InfoIcon, success: CheckIcon, warning: WarningIcon, danger: ErrorIcon };
 
-export function Alert({ tone = 'info', title, children }: { tone?: Tone; title?: string; children?: ReactNode }) {
+/**
+ * Notice box. By default it is a live region (role alert/status) so a message that appears after an
+ * action is announced. Pass `live={false}` for permanent page text that shouldn't be announced.
+ */
+export function Alert({
+  tone = 'info',
+  title,
+  children,
+  live = true,
+}: {
+  tone?: Tone;
+  title?: string;
+  children?: ReactNode;
+  live?: boolean;
+}) {
   const Icon = toneIcon[tone];
   return (
-    <div className={cx(s.alert, s[`alert_${tone}`])} role={tone === 'danger' ? 'alert' : 'status'}>
+    <div className={cx(s.alert, s[`alert_${tone}`])} role={live ? (tone === 'danger' ? 'alert' : 'status') : undefined}>
       <Icon />
       <div>
         {title ? <strong>{title}</strong> : null}

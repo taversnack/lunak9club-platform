@@ -70,7 +70,9 @@ export async function signOut(page: Page) {
  */
 export async function setVaccinationExpiry(dogName: string, requirementKey: string, expiresOn: string) {
   const { Client } = await import('pg');
-  const url = process.env.TEST_DATABASE_URL ?? 'postgres://lunak9:lunak9@localhost:5432/lunak9_test';
+  // Never guess: a default would point at whichever shared test database happens to be on 5432.
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url) throw new Error('setVaccinationExpiry needs TEST_DATABASE_URL (the e2e test database) – it is not set.');
   if (!/test/.test(new URL(url).pathname)) throw new Error('Only for a *test* database');
   const c = new Client({ connectionString: url });
   await c.connect();
