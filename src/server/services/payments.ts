@@ -1075,7 +1075,15 @@ export async function returnFromCheckout(
   const target =
     attempt.purpose === 'invoice' ? `/account/invoices/${attempt.invoiceId}` : ('/account/bookings' as string);
   // "Cancel" (or a losing double-click) on something already paid: it's paid, not "not finished".
-  if (cancelled && attempt.status !== 'paid') return `${target}?payment=cancelled`;
+  if (cancelled && attempt.status !== 'paid') {
+    // "Your places are still held" only when they are, right now. Otherwise say what happened, as
+    // "Pay now" does: the booking was cancelled, it was paid (perhaps by a newer checkout), or the
+    // hold ran out (Tester, #72).
+    if (attempt.purpose !== 'booking' || !attempt.bookingId) return `${target}?payment=cancelled`;
+    if (await liveHolds(db, attempt.bookingId, now)) return `${target}?payment=cancelled`;
+    if (await bookingCancelled(db, attempt.bookingId)) return payLinkEnded('booking-cancelled').to;
+    return ((await alreadyPaidBooking(db, attempt.bookingId)) ?? payLinkEnded('expired')).to;
+  }
   const r = await completeCheckout(db, attempt.id, now);
   if (r.paid && (opts.again || cancelled)) {
     const [after] = await db.select().from(checkoutAttempts).where(eq(checkoutAttempts.id, attempt.id));
