@@ -36,7 +36,16 @@ import { ConflictError, NotFoundError, ValidationError } from '../errors';
 import { checkbox, idOrNotFound, isoDate, optionalText, parseInput, requiredText } from '../validation';
 import { evaluateDogs } from './compliance-facts';
 import { loadPricingContext, priceWith, writeSnapshot } from './pricing';
-import { closuresBetween, consume, daysOverview, describeSession, loadSettings, lockDays } from './booking-shared';
+import {
+  closuresBetween,
+  consume,
+  daysOverview,
+  describeSession,
+  loadSettings,
+  lockDays,
+  lockDogAndCheckTrialUsed,
+} from './booking-shared';
+import { trialAlreadyUsed } from '@/domain/booking/wording';
 import { appUrl, firstNameOf, sendSafely } from '../notify';
 import { bookingCancelledMessage, bookingSummaryMessage } from '@/infra/email/templates';
 import { pendingRequestFor, requestedLeft } from './booking-requests';
@@ -524,7 +533,7 @@ export async function setInternalNote(db: Db, actor: Actor, rawId: string, input
 export const OwnerBookingInput = z.object({
   dogId: z.string(),
   date: isoDate('the date'),
-  session: z.enum(['full', 'am', 'pm'], { message: 'Choose a session' }),
+  session: z.literal('full', { message: 'We only offer full days' }).default('full'),
   taxi: checkbox,
   overrideReason: optionalText(300),
   trial: checkbox,
@@ -577,6 +586,9 @@ export async function ownerCreateBooking(db: Db, actor: Actor, input: unknown, n
   let pricePence = 0;
   const id = await db.transaction(async (tx) => {
     const day = (await lockDays(tx, [d.date], settings, now)).get(d.date)!;
+    // One trial day per dog (D96), the same rule as on the customer's Book page. No reason overrides it.
+    if (d.trial && (await lockDogAndCheckTrialUsed(tx, dogId)))
+      throw new ValidationError(trialAlreadyUsed(dog.name), { trial: trialAlreadyUsed(dog.name) });
     const [dup] = await tx
       .select({ id: bookingDogs.id })
       .from(bookingDogs)

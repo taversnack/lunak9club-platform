@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import { auditActionLabel, auditEntityLabel } from '@/domain/audit-labels';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
-import { Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
+import { Alert, Card, Grid, Muted, Stack, StatusBadge } from '@/ui/components';
+import { ActionForm, SubmitButton } from '@/ui/form';
+import { approveRequestAction, declineRequestAction } from './approvals/actions';
 import { unconfirmedMembers } from '@/server/services/membership-workflow';
 import { formatMonth } from '@/domain/billing/rules';
 import { requirePermission } from '@/server/session';
@@ -17,17 +19,24 @@ import { expiringVaccinations } from '@/server/services/reminders';
 import { ownerDataRequests } from '@/server/services/privacy';
 import { formatUkDate, londonDate } from '@/domain/time';
 import { pounds } from '@/domain/pricing/engine';
-import { pendingApprovalCount } from '@/server/services/approvals';
+import { ownerApprovalList } from '@/server/services/approvals';
 import { reminderDaysCopy } from '@/domain/compliance/reminder-copy';
 
-export const metadata: Metadata = { title: 'Owner dashboard' };
+export const metadata: Metadata = { title: 'Today' };
 export const dynamic = 'force-dynamic';
 
-export default async function AdminHome() {
+const MAX_ROWS = 5;
+
+export default async function AdminHome({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
+  const sp = await searchParams;
   const actor = await requirePermission('admin.access');
   const db = getDb();
   const thisMonth = londonDate(new Date()).slice(0, 7);
-  const [events, queue, today, billing, welfare, expiring, requests, approvals, requirements, unconfirmed] =
+  const [events, queue, today, billing, welfare, expiring, requests, approvalItems, requirements, unconfirmed] =
     await Promise.all([
       listRecentAuditEvents(db, actor, 20),
       reviewQueue(db, actor),
@@ -36,15 +45,172 @@ export default async function AdminHome() {
       welfareOverview(db, actor),
       expiringVaccinations(db, actor),
       ownerDataRequests(db, actor),
-      pendingApprovalCount(db, actor),
+      ownerApprovalList(db, actor),
       listRequirements(db, actor),
       unconfirmedMembers(db, actor, thisMonth),
     ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
+  const approvals = approvalItems.length;
+  const expiredCount = expiring.filter((v) => v.expired).length;
+  const inboxTotal =
+    approvals +
+    queue.pending.length +
+    expiring.length +
+    billing.drafts +
+    billing.refundRequests +
+    billing.overdue +
+    unconfirmed.length +
+    welfare.followUpsDue +
+    waitingRequests;
   const checkedIn = today.booked.filter((b) => b.status === 'attended').length;
   return (
     <Stack>
-      <h1>Owner dashboard</h1>
+      <h1>Today</h1>
+      {sp.approved ? <Alert tone="success">Request approved. The customer has been emailed.</Alert> : null}
+      {sp.declined ? <Alert tone="info">Request declined. The customer has been emailed.</Alert> : null}
+      <Card aria-labelledby="inbox">
+        <h2 id="inbox">Needs you ({inboxTotal})</h2>
+        {inboxTotal === 0 ? (
+          <p>
+            <StatusBadge tone="success">All clear</StatusBadge> Nothing is waiting for you.
+          </p>
+        ) : null}
+        {approvals ? (
+          <section aria-labelledby="in-requests">
+            <h3 id="in-requests">Requests to approve ({approvals})</h3>
+            <ul className={s.list}>
+              {approvalItems.slice(0, MAX_ROWS).map((r) => (
+                <li key={r.id} className={s.listItem} data-testid="today-approval">
+                  <span>
+                    <strong>{r.label}</strong> · {r.customerName}
+                    <br />
+                    {r.summary}
+                    {r.lastError ? (
+                      <>
+                        <br />
+                        <StatusBadge tone="warning">Couldn’t approve last time</StatusBadge>
+                      </>
+                    ) : null}
+                  </span>
+                  <span className={s.two}>
+                    <ActionForm action={approveRequestAction}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <input type="hidden" name="from" value="today" />
+                      <SubmitButton>
+                        Approve <span className="visually-hidden">{r.summary}</span>
+                      </SubmitButton>
+                    </ActionForm>
+                    <ActionForm action={declineRequestAction}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <input type="hidden" name="from" value="today" />
+                      <SubmitButton variant="secondary">
+                        Decline <span className="visually-hidden">{r.summary}</span>
+                      </SubmitButton>
+                    </ActionForm>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p>
+              <Link href="/admin/approvals">
+                {approvals > MAX_ROWS ? `See all ${approvals} requests` : 'Add a note or see details'}
+              </Link>
+            </p>
+          </section>
+        ) : null}
+        {expiring.length ? (
+          <section aria-labelledby="in-vax">
+            <h3 id="in-vax">
+              Vaccinations ({expiring.length}
+              {expiredCount ? `, ${expiredCount} expired` : ''})
+            </h3>
+            <ul className={s.list}>
+              {[...expiring]
+                .sort((a, b) => Number(b.expired) - Number(a.expired))
+                .slice(0, MAX_ROWS)
+                .map((v) => (
+                  <li key={`${v.dogId}-${v.label}`} className={s.listItem}>
+                    <Link href={`/admin/dogs/${v.dogId}`}>{v.dogName}</Link>
+                    <span>
+                      {v.label}:{' '}
+                      {v.expired ? (
+                        <StatusBadge tone="danger">Expired {formatUkDate(v.expiresOn)}</StatusBadge>
+                      ) : (
+                        <StatusBadge tone="warning">Due {formatUkDate(v.expiresOn)}</StatusBadge>
+                      )}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        ) : null}
+        {queue.pending.length ? (
+          <section aria-labelledby="in-records">
+            <h3 id="in-records">Records to review ({queue.pending.length})</h3>
+            <ul className={s.list}>
+              {queue.pending.slice(0, MAX_ROWS).map((r) => (
+                <li key={r.submissionId} className={s.listItem}>
+                  <Link href={`/admin/dogs/${r.dogId}`}>{r.dogName}</Link>
+                  <span>
+                    {r.requirementLabel} · {r.customerName}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p>
+              <Link href="/admin/reviews">Open reviews</Link>
+            </p>
+          </section>
+        ) : null}
+        {billing.drafts + billing.refundRequests + billing.overdue > 0 ? (
+          <section aria-labelledby="in-money">
+            <h3 id="in-money">Invoices and refunds</h3>
+            <ul className={s.list}>
+              {billing.drafts ? (
+                <li className={s.listItem}>
+                  <Link href="/admin/invoices">{billing.drafts} invoice drafts to check</Link>
+                </li>
+              ) : null}
+              {billing.refundRequests ? (
+                <li className={s.listItem}>
+                  <Link href="/admin/refunds">{billing.refundRequests} refund requests</Link>
+                </li>
+              ) : null}
+              {billing.overdue ? (
+                <li className={s.listItem}>
+                  <Link href="/admin/invoices">
+                    <strong>{billing.overdue} overdue invoices</strong>
+                  </Link>
+                </li>
+              ) : null}
+            </ul>
+          </section>
+        ) : null}
+        {welfare.followUpsDue || waitingRequests || unconfirmed.length ? (
+          <section aria-labelledby="in-other">
+            <h3 id="in-other">Other</h3>
+            <ul className={s.list}>
+              {welfare.followUpsDue ? (
+                <li className={s.listItem}>
+                  <Link href="/admin/incidents">{welfare.followUpsDue} incident follow-ups due</Link>
+                </li>
+              ) : null}
+              {waitingRequests ? (
+                <li className={s.listItem}>
+                  <Link href="/admin/data-requests">{waitingRequests} data requests</Link>
+                </li>
+              ) : null}
+              {unconfirmed.length ? (
+                <li className={s.listItem}>
+                  <Link href="/admin/memberships">
+                    {unconfirmed.length} customers haven’t confirmed membership days for {formatMonth(thisMonth)}
+                  </Link>
+                </li>
+              ) : null}
+            </ul>
+          </section>
+        ) : null}
+      </Card>
       <Grid>
         <Card aria-labelledby="approvals">
           <h2 id="approvals">Requests waiting</h2>
@@ -69,7 +235,7 @@ export default async function AdminHome() {
       </Grid>
       <Grid>
         <Card aria-labelledby="today">
-          <h2 id="today">Today</h2>
+          <h2 id="today">Dogs today</h2>
           {today.closedReason ? (
             <Muted>Closed – {today.closedReason}</Muted>
           ) : (

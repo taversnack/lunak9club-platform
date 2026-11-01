@@ -6,14 +6,17 @@ import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { bookingCalendar, myBookableDogs } from '@/server/services/bookings';
 import { isoWeekday } from '@/domain/booking/rules';
+import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
+import { bookPageState, dogCantBookReasons, nothingToBookReasons } from '@/domain/booking/book-page';
 
 export const metadata: Metadata = { title: 'Book day care' };
 export const dynamic = 'force-dynamic';
 
 const AVAIL = {
   available: { tone: 'success' as const, text: 'Available' },
-  nearly_full: { tone: 'warning' as const, text: 'Nearly full' },
-  full: { tone: 'danger' as const, text: 'Full – waitlist' },
+  // Customers never see how many places are left, so "nearly full" reads as plain "Available" (D100).
+  nearly_full: { tone: 'success' as const, text: 'Available' },
+  full: { tone: 'danger' as const, text: 'Full – join the waitlist' },
   closed: { tone: 'info' as const, text: 'Closed' },
 };
 const dayLabel = (d: string) =>
@@ -28,6 +31,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
   const { error } = await searchParams;
   const bookable = dogs.filter((d) => d.canBook);
   const trialable = dogs.filter((d) => d.canRequestTrial);
+  const state = bookPageState(dogs);
   // Group into Monday-start weeks for a readable calendar.
   const weeks: (typeof cal.days)[] = [];
   for (const day of cal.days) {
@@ -44,15 +48,32 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
         <Link href="/account/faq#faq-extra">How extra days work</Link>
       </p>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {bookable.length === 0 ? (
-        dogs.length === 0 ? (
+      <Alert tone="info" title="How booking works" live={false}>
+        <p data-testid="book-request-not-secured">{REQUEST_NOT_SECURED}</p>
+      </Alert>
+      {state !== 'form' ? (
+        state === 'no-dogs' ? (
           <Alert tone="info" title="Add your dog to start booking">
             You haven’t added a dog yet. <Link href="/account/dogs/new">Add a dog</Link> and we’ll take you through the
             rest.
           </Alert>
         ) : (
           <Alert tone="info" title="Nothing to book yet">
-            Your dog needs to be approved before you can book. <Link href="/account">See what’s left to do</Link>.
+            <ul data-testid="book-nothing-reasons">
+              {nothingToBookReasons(dogs).map((r) => (
+                <li key={r.name}>
+                  {r.name}: {r.reasons[0]}
+                  {r.reasons.slice(1).map((x) => (
+                    <span key={x} className={s.hintLine}>
+                      {x}
+                    </span>
+                  ))}
+                </li>
+              ))}
+            </ul>
+            <p>
+              <Link href="/account">See what’s left to do</Link>.
+            </p>
           </Alert>
         )
       ) : (
@@ -77,7 +98,18 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                       {d.canRequestTrial ? (
                         <span className={s.hint}> – not approved yet: you can ask for a trial day</span>
                       ) : !d.canBook ? (
-                        <span className={s.hint}> – {d.blockers[0]}</span>
+                        <span className={s.hint} data-testid="dog-hint">
+                          {' – '}
+                          {dogCantBookReasons(d).map((x, n) =>
+                            n === 0 ? (
+                              <span key={x}>{x}</span>
+                            ) : (
+                              <span key={x} className={s.hintLine}>
+                                {x}
+                              </span>
+                            ),
+                          )}
+                        </span>
                       ) : null}
                     </span>
                   </label>
@@ -92,31 +124,10 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
             </Card>
             <Card aria-labelledby="what">
               <Stack>
-                <fieldset className={s.fieldset}>
-                  <legend className={s.label} id="what">
-                    Full day or half day?
-                  </legend>
-                  <div className={s.choices}>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="full" defaultChecked />
-                      <span>
-                        Full day ({cal.settings.fullDayStart}–{cal.settings.fullDayEnd})
-                      </span>
-                    </label>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="am" />
-                      <span>
-                        Morning ({cal.settings.morningStart}–{cal.settings.morningEnd})
-                      </span>
-                    </label>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="pm" />
-                      <span>
-                        Afternoon ({cal.settings.afternoonStart}–{cal.settings.afternoonEnd})
-                      </span>
-                    </label>
-                  </div>
-                </fieldset>
+                <p>
+                  Full day, {cal.settings.fullDayStart}–{cal.settings.fullDayEnd}.
+                </p>
+                <input type="hidden" name="session" value="full" />
                 <label className={s.choice}>
                   <input type="checkbox" name="taxi" value="1" />
                   <span>Collect and drop off with the dog taxi (included in the price)</span>
@@ -155,15 +166,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                             <strong>{dayLabel(d.date)}</strong>
                           </span>
                           <StatusBadge tone={a.tone}>{a.text}</StatusBadge>
-                          {d.open ? (
-                            <span className={s.hint}>
-                              {d.left.full > 0
-                                ? `${d.left.full} full-day places`
-                                : `Morning ${Math.max(0, d.left.am)}, afternoon ${Math.max(0, d.left.pm)}`}
-                            </span>
-                          ) : (
-                            <span className={s.hint}>{d.closedReason}</span>
-                          )}
+                          {d.open ? null : <span className={s.hint}>{d.closedReason}</span>}
                           {d.mine.length ? (
                             <span className={s.hint}>Booked: {d.mine.map((m) => m.dogName).join(', ')}</span>
                           ) : null}
