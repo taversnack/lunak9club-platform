@@ -79,6 +79,23 @@ const stripe = new TestProvider('http://localhost:3000');
 const today = londonDate(new Date());
 /** Distinct open weekdays well away from other test files' dates. */
 const weekdayAhead = weekdayPicker();
+/**
+ * Like weekdayAhead, but a day nobody else has a live booking on. Tests that cap a day's capacity
+ * need one: when the booking window is crowded (e.g. a clock near Christmas) weekdayAhead shares a
+ * day other files claimed as a last resort, and capping a day someone has booked is refused
+ * ("1 places are already booked"). Picks on until it finds an empty day.
+ */
+async function emptyWeekday(n: number): Promise<string> {
+  for (let tries = 0; tries < 40; tries++) {
+    const d = weekdayAhead(n);
+    const [r] = await db()
+      .select({ n: sql<number>`count(*)::int` })
+      .from(bookingDogs)
+      .where(and(eq(bookingDogs.serviceDate, d), sql`${bookingDogs.status} not in ('cancelled')`));
+    if (r!.n === 0) return d;
+  }
+  throw new Error(`No empty open weekday found from +${n}`);
+}
 
 let owner: TestUser;
 let pia: TestUser;
@@ -156,7 +173,7 @@ describe('pay at booking (D6)', () => {
   });
 
   it('a held place counts towards capacity', async () => {
-    const date = weekdayAhead(41);
+    const date = await emptyWeekday(41);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const q = await requestAndApprove(
@@ -188,7 +205,7 @@ describe('pay at booking (D6)', () => {
   });
 
   it('if the hold lapsed and the place went before payment arrived, it refunds automatically', async () => {
-    const date = weekdayAhead(42);
+    const date = await emptyWeekday(42);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const [a] = await attemptsFor(pia.userId);
@@ -230,8 +247,8 @@ describe('pay at booking (D6)', () => {
 
 describe('two offers from one request (same bookingId)', () => {
   it('each checkout pays for, confirms and releases only its own day', async () => {
-    const d1 = weekdayAhead(50);
-    const d2 = weekdayAhead(51);
+    const d1 = await emptyWeekday(50);
+    const d2 = await emptyWeekday(51);
     for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     const w = await createMyBookings(db(), quinn, {
       dogIds: [quinnDog],
@@ -284,8 +301,8 @@ describe('two offers from one request (same bookingId)', () => {
   });
 
   it('an expired checkout releases only its own day, not a newer hold on the same booking', async () => {
-    const d1 = weekdayAhead(36);
-    const d2 = weekdayAhead(38);
+    const d1 = await emptyWeekday(36);
+    const d2 = await emptyWeekday(38);
     for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), quinn, {
       dogIds: [quinnDog],
