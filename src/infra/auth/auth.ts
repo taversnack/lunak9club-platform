@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth';
-import { createAuthMiddleware } from 'better-auth/api';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { magicLink } from 'better-auth/plugins/magic-link';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
@@ -12,6 +12,7 @@ import { logger } from '../logger';
 import { getEmailProvider } from '../email/providers';
 import { magicLinkMessage, resetPasswordMessage, verifyEmailMessage } from '../email/templates';
 import { decodeOrNull, safeCallbackPath } from '@/domain/auth/callback-url';
+import { MAGIC_LINK_MAX, MAGIC_LINK_WINDOW_SECONDS, rateLimitedCopy } from '@/domain/auth/rate-limits';
 import { userRoles, auditEvents } from '../db/schema';
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? 'there';
@@ -119,7 +120,7 @@ export function createAuth(e: Env = env()) {
         '/sign-up/email': { window: 60, max: 3 },
         '/request-password-reset': { window: 300, max: 3 },
         '/send-verification-email': { window: 300, max: 3 },
-        [MAGIC_LINK_PATH]: { window: 300, max: 3 },
+        [MAGIC_LINK_PATH]: { window: MAGIC_LINK_WINDOW_SECONDS, max: MAGIC_LINK_MAX },
         [MAGIC_VERIFY_PATH]: { window: 60, max: 10 },
       },
     },
@@ -129,6 +130,13 @@ export function createAuth(e: Env = env()) {
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path === MAGIC_LINK_PATH) {
           const body = (ctx.body ?? {}) as Record<string, unknown>;
+          if (
+            e.AUTH_RATE_LIMIT === 'on' &&
+            typeof body.email === 'string' &&
+            !(await magicLinkAllowedFor(db, body.email))
+          ) {
+            throw new APIError('TOO_MANY_REQUESTS', { message: rateLimitedCopy(MAGIC_LINK_WINDOW_SECONDS) });
+          }
           const callbackURL = safeCallbackPath(body.callbackURL);
           return {
             context: {
@@ -250,6 +258,31 @@ async function revokeEarlierMagicLinks(db: ReturnType<typeof getDb>, email: stri
         sql`exists (select 1 from ${v} as cur where ${inArray(sql`cur.identifier`, current)})`,
       ),
     );
+}
+
+/**
+ * The per-address limit on magic-link requests (Tester, #109 F1). The per-IP rule alone let anyone
+ * on rotating addresses keep requesting links for someone else's email, and each request revokes
+ * that person's emailed link. Counted in the same rate_limits table, under a key built from the
+ * normalised address's hash (the table never holds the address itself), for every address known
+ * or not, so a 429 says nothing about whether an account exists. Fixed window, counted atomically.
+ */
+async function magicLinkAllowedFor(db: ReturnType<typeof getDb>, email: string, now = Date.now()) {
+  const key = `magic-link-email:${createHash('sha256').update(email.trim().toLowerCase()).digest('base64url')}`;
+  const r = schema.rateLimits;
+  const expired = sql`${r.lastRequest} <= ${now - MAGIC_LINK_WINDOW_SECONDS * 1000}`;
+  const [row] = await db
+    .insert(r)
+    .values({ id: randomUUID(), key, count: 1, lastRequest: now })
+    .onConflictDoUpdate({
+      target: r.key,
+      set: {
+        count: sql`case when ${expired} then 1 else ${r.count} + 1 end`,
+        lastRequest: sql`case when ${expired} then ${now} else ${r.lastRequest} end`,
+      },
+    })
+    .returning({ count: r.count });
+  return (row?.count ?? 1) <= MAGIC_LINK_MAX;
 }
 
 type Auth = ReturnType<typeof createAuth>;
