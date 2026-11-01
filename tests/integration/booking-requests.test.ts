@@ -61,7 +61,8 @@ import {
 } from '@/server/services/payments';
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
 import { AuthorizationError, type Actor } from '@/server/policy/authorize';
-import { addDays, londonDate } from '@/domain/time';
+import { addDays, londonDate, londonInstant } from '@/domain/time';
+import { ownerInbox } from '@/server/services/owner-inbox';
 
 import {
   PAY_TO_SECURE_KEY,
@@ -206,7 +207,7 @@ describe('booking requests (D76)', () => {
     expect(confirm.html).toContain(REQUEST_NOT_SECURED_KEY);
     expect(mail.sent.some((m) => m.to === owner.email && m.template === 'approval.owner-new')).toBe(true);
     // The place is held: Bob goes on the waitlist.
-    const b = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'am', taxi: false });
+    const b = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
     expect(b.outcomes[0]!.outcome).toBe('waitlisted');
     expect(b.requestId).toBeNull();
     const day = await ownerDay(db(), owner, date);
@@ -303,7 +304,12 @@ describe('booking requests (D76)', () => {
   it('the customer withdraws a request, or one day of it, at no charge', async () => {
     const d1 = weekdayAhead(14);
     const d2 = weekdayAhead(15);
-    const r = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [d1, d2], session: 'am', taxi: false });
+    const r = await createMyBookings(db(), alice, {
+      dogIds: [aliceDog],
+      dates: [d1, d2],
+      session: 'full',
+      taxi: false,
+    });
     const [first] = (await rowsOf(r.bookingId)).filter((x) => x.serviceDate === d1);
     await cancelMyBooking(db(), alice, first!.id);
     expect((await rowOf(aliceDog, d1)).status).toBe('cancelled');
@@ -351,7 +357,7 @@ describe('booking requests (D76)', () => {
 
   it('only one pending request per subject', async () => {
     const d = weekdayAhead(19);
-    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'pm', taxi: false });
+    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'full', taxi: false });
     const [c] = await db().select().from(customers).where(eq(customers.userId, bob.userId));
     await expect(
       createApprovalRequest(db(), bob, {
@@ -397,10 +403,10 @@ describe('booking requests (D76)', () => {
 
   it('unpaid holds lapse through releaseExpiredCheckouts with the "booking not completed" email', async () => {
     const d = weekdayAhead(24);
-    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [d], session: 'am', taxi: false });
+    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [d], session: 'full', taxi: false });
     await db().update(bookingDogs).set({ kind: 'standard' }).where(eq(bookingDogs.bookingId, r.bookingId));
     // Carol's £0 rate means no payment; use Alice for a priced hold.
-    const a = await createMyBookings(db(), alice, { dogIds: [aliceDog2], dates: [d], session: 'am', taxi: false });
+    const a = await createMyBookings(db(), alice, { dogIds: [aliceDog2], dates: [d], session: 'full', taxi: false });
     await approveApprovalRequest(db(), owner, a.requestId!);
     mail.sent.length = 0;
     await releaseExpiredCheckouts(db(), new Date(Date.now() + 25 * 3_600_000));
@@ -440,7 +446,7 @@ describe('Owner context on Requests (Developer 1 gap c)', () => {
   it('lists the other dogs already booked that day, with links to them and the day view', async () => {
     const date = weekdayAhead(11);
     await ownerCreateBooking(db(), owner, { dogId: bobDog, date, session: 'full' });
-    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [date], session: 'am', taxi: false });
+    const r = await createMyBookings(db(), carol, { dogIds: [carolDog], dates: [date], session: 'full', taxi: false });
     const item = (await ownerApprovalList(db(), owner)).find((x) => x.id === r.requestId)!;
     const day = item.context.find((c) => c.heading.includes('dogs already booked'))!;
     expect(day.lines.join(' ')).toMatch(/Already booked: Rex \(Full day, awaiting payment\)/);
@@ -708,7 +714,7 @@ describe('manual waitlist (D81, D82)', () => {
 describe('approvals authorisation', () => {
   it('only the Owner decides; customers only see their own requests', async () => {
     const d = weekdayAhead(34);
-    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'am', taxi: false });
+    const r = await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [d], session: 'full', taxi: false });
     await expect(approveApprovalRequest(db(), bob, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(rejectApprovalRequest(db(), alice, r.requestId!)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(ownerApprovalList(db(), alice)).rejects.toBeInstanceOf(AuthorizationError);
@@ -719,6 +725,65 @@ describe('approvals authorisation', () => {
     );
     expect(n.rows[0]!.n).toBeGreaterThan(0);
     await withdrawMyApprovalRequest(db(), bob, r.requestId!);
+  });
+});
+
+describe('Owner inbox (D77)', () => {
+  it('lists a pending request with its first service date as the deadline, Owner only, and honours the limit', async () => {
+    const date = weekdayAhead(30);
+    const r = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'full', taxi: false });
+    try {
+      await expect(ownerInbox(db(), alice)).rejects.toBeInstanceOf(AuthorizationError);
+      const items = await ownerInbox(db(), owner);
+      const mine = items.find((i) => i.key === `approval:${r.requestId}`)!;
+      expect(mine.kind).toBe('approval');
+      expect(mine.dueAt).toEqual(londonInstant(date, '07:30'));
+      expect(mine.dueLabel).toBe('later');
+      // Titles never carry contact or payment detail.
+      expect(JSON.stringify(mine)).not.toContain(alice.email);
+      expect(await ownerInbox(db(), owner, { limit: 1 })).toHaveLength(1);
+      // Items with a deadline come before items without one.
+      const firstUndated = items.findIndex((i) => !i.dueAt);
+      if (firstUndated >= 0) expect(items.slice(firstUndated).every((i) => !i.dueAt)).toBe(true);
+    } finally {
+      await withdrawMyApprovalRequest(db(), alice, r.requestId!);
+    }
+  });
+  const soonDay = weekdayPicker({ base: 7 });
+  const inboxWaitlist = async (id: string) =>
+    (await ownerInbox(db(), owner)).find((i) => i.key === `waitlist_place:${id}`);
+
+  it('shows a waitlisted dog only once the day has room, with the day as its deadline', async () => {
+    const date = soonDay(0);
+    await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
+    const a = await createMyBookings(db(), alice, { dogIds: [aliceDog], dates: [date], session: 'full', taxi: false });
+    await createMyBookings(db(), bob, { dogIds: [bobDog], dates: [date], session: 'full', taxi: false });
+    const waiting = await rowOf(bobDog, date);
+    expect(waiting.status).toBe('waitlisted');
+    expect(await inboxWaitlist(waiting.id)).toBeUndefined(); // day is full
+    await withdrawMyApprovalRequest(db(), alice, a.requestId!);
+    await runTick(db(), system);
+    const item = (await inboxWaitlist(waiting.id))!;
+    expect(item.kind).toBe('waitlist_place');
+    expect(item.dueAt).toEqual(londonInstant(date, '07:30'));
+    expect(item.ref).toEqual({ type: 'waitlist_place', id: waiting.id, date });
+  });
+
+  it('hides a waitlisted dog that fails the vaccination check even when the day has room', async () => {
+    const date = soonDay(2);
+    const pip = await onboardedDog(bob, 'Pip');
+    await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
+    await createMyBookings(db(), bob, { dogIds: [pip], dates: [date], session: 'full', taxi: false });
+    const waiting = await rowOf(pip, date);
+    expect(waiting.status).toBe('waitlisted');
+    await db()
+      .update(complianceSubmissions)
+      .set({ expiresOn: addDays(date, -1) })
+      .where(
+        and(eq(complianceSubmissions.dogId, pip), eq(complianceSubmissions.requirementKey, 'vaccination_kennel_cough')),
+      );
+    await setDayCapacity(db(), owner, { date, sessionCapacity: 5, taxiCapacity: 20 });
+    expect(await inboxWaitlist(waiting.id)).toBeUndefined();
   });
 });
 
@@ -844,7 +909,7 @@ describe('One trial day per dog (D96)', () => {
         overrideReason: 'Trial went well',
       });
       expect((await rowOf(dog, dayD)).kind).toBe('standard');
-      await ownerCreateBooking(db(), owner, { dogId: aliceDog, date: dayD, session: 'am' });
+      await ownerCreateBooking(db(), owner, { dogId: aliceDog, date: dayD, session: 'full' });
       expect((await rowOf(aliceDog, dayD)).kind).toBe('standard');
     });
 

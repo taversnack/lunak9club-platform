@@ -37,7 +37,6 @@ export default async function PricingPage() {
                 <th scope="col">Ad hoc</th>
                 <th scope="col">1–3 days</th>
                 <th scope="col">4–5 days</th>
-                <th scope="col">Half day</th>
                 <th scope="col">Status</th>
                 <th scope="col">
                   <span className="visually-hidden">Actions</span>
@@ -54,7 +53,6 @@ export default async function PricingPage() {
                   <td>{formatPounds(b.adHocFullPence)}</td>
                   <td>{formatPounds(b.memberLowFullPence)}</td>
                   <td>{formatPounds(b.memberHighFullPence)}</td>
-                  <td>{b.halfDayPercent}%</td>
                   <td>
                     {b.id === current?.id ? (
                       <StatusBadge tone="success">In use</StatusBadge>
@@ -119,13 +117,7 @@ export default async function PricingPage() {
               required
               defaultValue={current ? p2(current.memberHighFullPence) : ''}
             />
-            <TextField
-              name="halfDayPercent"
-              label="Half day (% of full day)"
-              inputMode="numeric"
-              required
-              defaultValue={current?.halfDayPercent ?? 50}
-            />
+            <input type="hidden" name="halfDayPercent" value={current?.halfDayPercent ?? 50} />
             <TextField
               name="taxi"
               label="Dog taxi (£, 0 = included)"

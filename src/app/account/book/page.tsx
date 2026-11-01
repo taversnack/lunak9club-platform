@@ -14,8 +14,9 @@ export const dynamic = 'force-dynamic';
 
 const AVAIL = {
   available: { tone: 'success' as const, text: 'Available' },
-  nearly_full: { tone: 'warning' as const, text: 'Nearly full' },
-  full: { tone: 'danger' as const, text: 'Full – waitlist' },
+  // Customers never see how many places are left, so "nearly full" reads as plain "Available" (D100).
+  nearly_full: { tone: 'success' as const, text: 'Available' },
+  full: { tone: 'danger' as const, text: 'Full – join the waitlist' },
   closed: { tone: 'info' as const, text: 'Closed' },
 };
 const dayLabel = (d: string) =>
@@ -123,31 +124,10 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
             </Card>
             <Card aria-labelledby="what">
               <Stack>
-                <fieldset className={s.fieldset}>
-                  <legend className={s.label} id="what">
-                    Full day or half day?
-                  </legend>
-                  <div className={s.choices}>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="full" defaultChecked />
-                      <span>
-                        Full day ({cal.settings.fullDayStart}–{cal.settings.fullDayEnd})
-                      </span>
-                    </label>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="am" />
-                      <span>
-                        Morning ({cal.settings.morningStart}–{cal.settings.morningEnd})
-                      </span>
-                    </label>
-                    <label className={s.choice}>
-                      <input type="radio" name="session" value="pm" />
-                      <span>
-                        Afternoon ({cal.settings.afternoonStart}–{cal.settings.afternoonEnd})
-                      </span>
-                    </label>
-                  </div>
-                </fieldset>
+                <p>
+                  Full day, {cal.settings.fullDayStart}–{cal.settings.fullDayEnd}.
+                </p>
+                <input type="hidden" name="session" value="full" />
                 <label className={s.choice}>
                   <input type="checkbox" name="taxi" value="1" />
                   <span>Collect and drop off with the dog taxi (included in the price)</span>
@@ -186,15 +166,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                             <strong>{dayLabel(d.date)}</strong>
                           </span>
                           <StatusBadge tone={a.tone}>{a.text}</StatusBadge>
-                          {d.open ? (
-                            <span className={s.hint}>
-                              {d.left.full > 0
-                                ? `${d.left.full} full-day places`
-                                : `Morning ${Math.max(0, d.left.am)}, afternoon ${Math.max(0, d.left.pm)}`}
-                            </span>
-                          ) : (
-                            <span className={s.hint}>{d.closedReason}</span>
-                          )}
+                          {d.open ? null : <span className={s.hint}>{d.closedReason}</span>}
                           {d.mine.length ? (
                             <span className={s.hint}>Booked: {d.mine.map((m) => m.dogName).join(', ')}</span>
                           ) : null}

@@ -78,16 +78,21 @@ const snapshotFor = async (bookingDogId: string) =>
   (await db().select().from(priceSnapshots).where(eq(priceSnapshots.bookingDogId, bookingDogId)))[0];
 
 describe('prices on bookings', () => {
-  it('ad hoc bookings are priced at £50 full day and £25 half day, and the price is stored', async () => {
+  it('ad hoc bookings are priced at £50 a full day, and the price is stored', async () => {
     const d1 = weekdayAhead(3);
-    const d2 = weekdayAhead(3);
+    const d2 = weekdayAhead(4);
     const preview = await previewMyBookings(db(), dan, { dogIds: [danDog], dates: [d1], session: 'full', taxi: true });
     expect(preview.totalPence).toBe(5000);
     expect(preview.lines[0]!.price!.explanation).toBe('Ad hoc rate, full day: £50.00; dog taxi included');
     const r = await requestAndApprove(db(), dan, { dogIds: [danDog], dates: [d1], session: 'full', taxi: true }, owner);
     expect(r.totalPence).toBe(5000);
-    const h = await requestAndApprove(db(), dan, { dogIds: [danDog], dates: [d2], session: 'am', taxi: false }, owner);
-    expect(h.totalPence).toBe(2500);
+    const h = await requestAndApprove(
+      db(),
+      dan,
+      { dogIds: [danDog], dates: [d2], session: 'full', taxi: false },
+      owner,
+    );
+    expect(h.totalPence).toBe(5000);
     const rows = await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, danDog));
     for (const row of rows) expect(await snapshotFor(row.id)).toBeTruthy();
   });
@@ -158,7 +163,11 @@ describe('scheduled price changes (D44, D45)', () => {
     expect(p.totalPence).toBe(5500);
     // A preview books nothing, so the day needn't be unique; it must just fall before the new book starts.
     // (weekdayAhead skips days other files have claimed, and near Christmas that could push it past `from`.)
-    const soon = firstOpenWeekday(5);
+    // Not a day Scout already holds: previewing a day the dog already has is priced at £0.
+    const danDays = new Set(
+      (await db().select().from(bookingDogs).where(eq(bookingDogs.dogId, danDog))).map((b) => b.serviceDate),
+    );
+    const soon = [5, 6, 7, 8, 9, 10].map(firstOpenWeekday).find((d) => !danDays.has(d))!;
     expect(soon < from, `${soon} should be before ${from}`).toBe(true);
     expect(
       (await previewMyBookings(db(), dan, { dogIds: [danDog], dates: [soon], session: 'full', taxi: false }))
@@ -223,7 +232,7 @@ async function legacyRequest(user: TestUser, dogId: string, weekdays: number[]) 
       customerId: c!.id,
       dogId,
       weekdays,
-      session: 'am',
+      session: 'full',
       status: 'requested',
       startsOn: nextMonday(),
       requestedBy: user.userId,

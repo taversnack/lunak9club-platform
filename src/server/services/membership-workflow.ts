@@ -63,7 +63,7 @@ const weekdaysField = z.preprocess(
   (v) => (Array.isArray(v) ? v : v === undefined || v === '' ? [] : [v]),
   z.array(z.coerce.number().int()),
 );
-const sessionField = z.enum(['full', 'am', 'pm'], { message: 'Choose full day, morning or afternoon' });
+const sessionField = z.literal('full', { message: 'We only offer full days' }).default('full');
 
 // ---- Owner creates the account (D86) ---------------------------------------------------------
 
