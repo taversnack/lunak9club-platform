@@ -2,7 +2,7 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
-import { env } from '../env';
+import { env, isLocalSmtpHost } from '../env';
 import { logger } from '../logger';
 import type { EmailMessage, EmailProvider } from './types';
 
@@ -37,20 +37,38 @@ export class ConsoleEmailProvider implements EmailProvider {
   }
 }
 
-/** SMTP (Mailpit locally). With EMAIL_SANDBOX=1 only local SMTP hosts are allowed. */
+export type SmtpSettings = {
+  host: string;
+  port: number;
+  tls: 'off' | 'starttls' | 'tls';
+  user?: string;
+  password?: string;
+};
+
+/** nodemailer options for the settings: plain for Mailpit, STARTTLS or implicit TLS for a real provider. */
+export function smtpTransportOptions(s: SmtpSettings) {
+  return {
+    host: s.host,
+    port: s.port,
+    secure: s.tls === 'tls',
+    requireTLS: s.tls === 'starttls',
+    ...(s.user && s.password ? { auth: { user: s.user, pass: s.password } } : {}),
+  };
+}
+
+/** SMTP: Mailpit locally, any provider's SMTP in production. With EMAIL_SANDBOX=1 only local hosts are allowed. */
 export class SmtpEmailProvider implements EmailProvider {
   readonly name = 'smtp';
   private readonly transport;
   constructor(
-    host: string,
-    port: number,
+    settings: SmtpSettings,
     private readonly from: string,
     sandbox: boolean,
   ) {
-    if (sandbox && !['localhost', '127.0.0.1', 'mailpit'].includes(host)) {
+    if (sandbox && !isLocalSmtpHost(settings.host)) {
       throw new Error('EMAIL_SANDBOX=1 only allows a local SMTP host (e.g. Mailpit).');
     }
-    this.transport = nodemailer.createTransport({ host, port, secure: false });
+    this.transport = nodemailer.createTransport(smtpTransportOptions(settings));
   }
   async send(message: EmailMessage) {
     const info = await this.transport.sendMail({
@@ -74,7 +92,11 @@ export function getEmailProvider(): EmailProvider {
       provider = new FileEmailProvider(e.MAIL_DIR);
       break;
     case 'smtp':
-      provider = new SmtpEmailProvider(e.SMTP_HOST, e.SMTP_PORT, e.EMAIL_FROM, e.EMAIL_SANDBOX === '1');
+      provider = new SmtpEmailProvider(
+        { host: e.SMTP_HOST, port: e.SMTP_PORT, tls: e.SMTP_TLS, user: e.SMTP_USER, password: e.SMTP_PASSWORD },
+        e.EMAIL_FROM,
+        e.EMAIL_SANDBOX === '1',
+      );
       break;
     default:
       provider = new ConsoleEmailProvider();

@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useActionState, useContext, useId, type ReactNode } from 'react';
+import { createContext, useActionState, useContext, useEffect, useId, useRef, type ReactNode } from 'react';
 import { useFormStatus } from 'react-dom';
 import s from './ui.module.css';
 import { Alert } from './components';
@@ -24,26 +24,49 @@ export function ActionForm({
   action,
   children,
   successMessage,
+  focusError = false,
 }: {
   action: (state: ActionState, fd: FormData) => Promise<ActionState>;
   children: ReactNode;
   successMessage?: string;
+  /**
+   * Move focus to the error notice after a failed submit, and list each field's message in it (for
+   * forms whose fields are hidden, e.g. booking confirmation, so the reason isn't lost).
+   */
+  focusError?: boolean;
 }) {
   const [state, formAction] = useActionState(action, { status: 'idle' } as ActionState);
   const fields = state.fields ?? {};
   const count = Object.keys(fields).length;
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusError && state.status === 'error') errorRef.current?.focus();
+  }, [focusError, state]);
   // No encType/method: React sets a multipart POST itself for a function action (and warns if given).
   return (
     <form action={formAction} noValidate>
       <FormCtx.Provider value={{ fields, values: state.values ?? {} }}>
         <div className={s.stack}>
           {state.status === 'error' ? (
-            <Alert
-              tone="danger"
-              title={count ? `There ${count === 1 ? 'is a problem' : `are ${count} problems`}` : 'That didn’t work'}
+            <div
+              ref={focusError ? errorRef : undefined}
+              tabIndex={focusError ? -1 : undefined}
+              data-testid="form-error"
             >
-              {state.message}
-            </Alert>
+              <Alert
+                tone="danger"
+                title={count ? `There ${count === 1 ? 'is a problem' : `are ${count} problems`}` : 'That didn’t work'}
+              >
+                {state.message}
+                {focusError && count ? (
+                  <ul>
+                    {Object.values(fields).map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </Alert>
+            </div>
           ) : null}
           {state.status === 'success' && (state.message || successMessage) ? (
             <Alert tone="success">{state.message ?? successMessage}</Alert>

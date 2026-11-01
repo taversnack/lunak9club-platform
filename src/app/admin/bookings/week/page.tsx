@@ -17,6 +17,8 @@ export default async function WeekPage({ searchParams }: { searchParams: Promise
   const base = sp.from && isIsoDate(sp.from) ? sp.from : londonDate(new Date());
   const monday = addDays(base, 1 - isoWeekday(base));
   const days = await ownerRange(getDb(), actor, monday, 7);
+  // One full-day count unless an existing half-day booking makes morning and afternoon differ (D100).
+  const split = days.some((d) => d.open && d.used.am !== d.used.pm);
   return (
     <Stack>
       <h1>Week of {formatUkDate(monday)}</h1>
@@ -31,8 +33,14 @@ export default async function WeekPage({ searchParams }: { searchParams: Promise
             <thead>
               <tr>
                 <th scope="col">Day</th>
-                <th scope="col">Morning</th>
-                <th scope="col">Afternoon</th>
+                {split ? (
+                  <>
+                    <th scope="col">Morning (existing half days)</th>
+                    <th scope="col">Afternoon (existing half days)</th>
+                  </>
+                ) : (
+                  <th scope="col">Places taken</th>
+                )}
                 <th scope="col">Taxi</th>
                 <th scope="col">Waitlist</th>
               </tr>
@@ -45,19 +53,27 @@ export default async function WeekPage({ searchParams }: { searchParams: Promise
                   </td>
                   {d.open ? (
                     <>
-                      <td>
-                        {d.used.am} / {d.cap.session}
-                      </td>
-                      <td>
-                        {d.used.pm} / {d.cap.session}
-                      </td>
+                      {split ? (
+                        <>
+                          <td>
+                            {d.used.am} / {d.cap.session}
+                          </td>
+                          <td>
+                            {d.used.pm} / {d.cap.session}
+                          </td>
+                        </>
+                      ) : (
+                        <td>
+                          {d.used.am} / {d.cap.session}
+                        </td>
+                      )}
                       <td>
                         {d.used.taxi} / {d.cap.taxi}
                       </td>
                       <td>{d.waitlist}</td>
                     </>
                   ) : (
-                    <td colSpan={4}>
+                    <td colSpan={split ? 4 : 3}>
                       <StatusBadge tone="info">Closed{d.closedReason ? `: ${d.closedReason}` : ''}</StatusBadge>
                     </td>
                   )}
