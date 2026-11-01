@@ -82,7 +82,7 @@ export default async function MembershipPage({
     <Stack>
       <h1>Membership</h1>
       {notice ? (
-        <div id="ended" tabIndex={-1} role="status">
+        <div id="ended" tabIndex={-1}>
           <Alert tone="success">{notice}</Alert>
         </div>
       ) : null}
