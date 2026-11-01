@@ -20,7 +20,7 @@ import {
 } from '@/infra/db/schema';
 import { cancelMyBooking, createMyBookings } from '@/server/services/bookings';
 import { giveWaitlistPlace, ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
-import { issueTx, markCreditRefunded, myInvoice, ownerInvoice } from '@/server/services/billing';
+import { issueTx, loadBusinessSettings, markCreditRefunded, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
   handleWebhook,
@@ -173,7 +173,12 @@ describe('pay at booking (D6)', () => {
     expect(attempt!.status).toBe('paid');
     const inv = await myInvoice(db(), pia, attempt!.resultInvoiceId!);
     expect(inv.inv).toMatchObject({ kind: 'booking', status: 'paid' });
-    expect(inv.inv.number).toMatch(/^LK9DOUGIE-\d{2,}$/);
+    // The configured prefix, whatever an earlier file set it to (billing.test.ts changes it), so this
+    // passes in any file order.
+    const { invoicePrefix } = await loadBusinessSettings(db());
+    const number = inv.inv.number ?? '';
+    expect(number.startsWith(invoicePrefix)).toBe(true);
+    expect(number.slice(invoicePrefix.length)).toMatch(/^\d{2,}$/);
     expect(inv.lines).toHaveLength(1);
     expect(inv.payments).toHaveLength(1);
     expect(inv.payments[0]).toMatchObject({ method: 'stripe', amountPence: 5000 });
