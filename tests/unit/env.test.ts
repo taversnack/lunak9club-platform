@@ -22,7 +22,12 @@ describe('env', () => {
     expect(() => env()).toThrow(/real email transport/);
   });
 
+  // Hermetic: whatever the shell exported (e.g. SMTP_HOST=127.0.0.1 for a local verify, or a CI
+  // DATABASE_URL) must not leak into these tests, so clear every variable env() reads first.
+  const READ_BY_ENV =
+    /^(APP_|DATABASE_URL$|BETTER_AUTH_|EMAIL_|SMTP_|MAIL_|AUTH_RATE_LIMIT$|TRUSTED_PROXIES$|CLIENT_IP_HEADER$|STORAGE_|PAYMENTS_|STRIPE_|CRON_SECRET$)/;
   const base = () => {
+    for (const k of Object.keys(process.env)) if (READ_BY_ENV.test(k)) vi.stubEnv(k, undefined);
     vi.stubEnv('DATABASE_URL', 'postgres://x@localhost/db');
     vi.stubEnv('BETTER_AUTH_SECRET', 'x'.repeat(40));
   };
