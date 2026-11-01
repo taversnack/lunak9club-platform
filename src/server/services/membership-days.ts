@@ -255,5 +255,8 @@ export async function currentMembership(q: Q, dogId: string, today: IsoDate) {
         or(isNull(memberships.endsOn), gt(memberships.endsOn, today)),
       ),
     );
-  return rows.sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))[0] ?? null;
+  const latest = rows.sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))[0];
+  // started: some membership for this dog is already running (a change then follows D89); if
+  // none has, the latest is a membership that hasn't started yet, whose start can still be moved.
+  return latest ? { ...latest, started: rows.some((r) => r.startsOn <= today) } : null;
 }

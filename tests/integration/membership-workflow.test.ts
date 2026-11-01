@@ -42,7 +42,7 @@ const SYSTEM = { kind: 'system', job: 'test' } as const;
 import { ConflictError, ValidationError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 import { isoWeekday } from '@/domain/booking/rules';
-import { addDays, londonDate } from '@/domain/time';
+import { addDays, londonDate, londonInstant } from '@/domain/time';
 import { MemoryEmailProvider, linkFrom } from '../support/memory-email';
 import { BANK_HOLIDAYS } from '../support/dates';
 import { makeUser, type TestUser } from '../support/factories';
@@ -385,6 +385,17 @@ describe('a membership that has not started yet keeps its start date (D19, D89, 
     const again = await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 5], session: 'full' });
     expect(again.startsOn).toBe(start);
     await expectStartKept(dog, customerId, [2, 5]);
+  });
+
+  it('the pages are told a pending membership has not started, with its real start (#106 F1, F2)', async () => {
+    const { dog, customerId } = await freshDog('Pending');
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [2, 4], session: 'full', startsOn: start });
+    const before = await ownerMembershipOverview(db(), owner, customerId);
+    const m = before.dogs.find((d) => d.id === dog)!.membership!;
+    // Not "the first month not yet invoiced" (changeFrom): the page shows startsOn and a date field.
+    expect(m).toMatchObject({ startsOn: start, started: false });
+    const after = await ownerMembershipOverview(db(), owner, customerId, londonInstant(addDays(start, 1), '12:00'));
+    expect(after.dogs.find((d) => d.id === dog)!.membership).toMatchObject({ startsOn: start, started: true });
   });
 
   it('Owner: moving a pending start later changes it in place; the old start never runs', async () => {
