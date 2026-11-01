@@ -831,3 +831,21 @@
     background: #b98a4f;
   }
 }
+
+/* Inline text links that are also tap targets (44px on touch). */
+.tapLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+/* Long dog names wrap instead of overflowing. */
+.wrapText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wrapButton {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  text-align: center;
+}
