@@ -646,3 +646,23 @@ describe('monthly confirmation decisions (D92–D94)', () => {
     ).toMatchObject({ status: 'late', byOwner: true });
   });
 });
+
+describe('the Owner’s first day keeps to the booking window (D37)', () => {
+  it('refuses a first day past maxAdvanceDays, accepts the last day inside it', async () => {
+    const { loadSettings } = await import('@/server/services/booking-shared');
+    const max = (await loadSettings(db())).maxAdvanceDays;
+    const u = await makeUser(db(), 'customer', 'Max Window');
+    await readyCustomer(db(), u);
+    const dog = await approvedDog(db(), owner, u, 'Rex');
+    const tooFar = ownerSetMembershipDays(db(), owner, dog, {
+      weekdays: [1],
+      session: 'full',
+      startsOn: addDays(today, max + 1),
+    });
+    await expect(tooFar).rejects.toBeInstanceOf(ValidationError);
+    await expect(tooFar).rejects.toMatchObject({ fields: { startsOn: `Choose a date within ${max} days` } });
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [1], session: 'full', startsOn: addDays(today, max) });
+    // Saving again with the start already agreed is fine.
+    await ownerSetMembershipDays(db(), owner, dog, { weekdays: [3], session: 'full', startsOn: addDays(today, max) });
+  });
+});

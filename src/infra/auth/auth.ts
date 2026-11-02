@@ -1,8 +1,8 @@
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { magicLink } from 'better-auth/plugins/magic-link';
-import { createHash, randomUUID } from 'node:crypto';
-import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { and, eq, gt, inArray, notInArray, sql } from 'drizzle-orm';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { nextCookies } from 'better-auth/next-js';
 import { getDb } from '../db/client';
@@ -133,7 +133,7 @@ export function createAuth(e: Env = env()) {
           if (
             e.AUTH_RATE_LIMIT === 'on' &&
             typeof body.email === 'string' &&
-            !(await magicLinkAllowedFor(db, body.email))
+            !(await magicLinkAllowedFor(db, body.email, browserOf(ctx.getCookie(MAGIC_BROWSER_COOKIE))))
           ) {
             throw new APIError('TOO_MANY_REQUESTS', { message: rateLimitedCopy(MAGIC_LINK_WINDOW_SECONDS) });
           }
@@ -216,8 +216,20 @@ export function createAuth(e: Env = env()) {
         // ({ status: true }), and the email goes out in the background, so the timing doesn't
         // reveal whether an account exists either. Unknown addresses, non-customers and unconfirmed
         // addresses get nothing (verifying an unproven account here would revoke its other sign-ins).
-        sendMagicLink: async ({ email, url }) => {
-          await revokeEarlierMagicLinks(db, email, url);
+        sendMagicLink: async ({ email, url }, ctx) => {
+          // Which browser asked: an existing random id from our cookie, or a new one set now.
+          let id = browserOf(ctx?.getCookie(MAGIC_BROWSER_COOKIE));
+          if (!id && ctx) {
+            id = randomBytes(24).toString('base64url');
+            ctx.setCookie(MAGIC_BROWSER_COOKIE, id, {
+              httpOnly: true,
+              sameSite: 'lax',
+              secure: (e.BETTER_AUTH_URL ?? e.APP_URL).startsWith('https:'),
+              path: '/',
+              maxAge: 60 * 60 * 24 * 30,
+            });
+          }
+          await revokeEarlierMagicLinks(db, email, url, id ? sha(id) : null);
           const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email.toLowerCase()));
           if (!user || !user.emailVerified || !(await customerOnly(user.id))) {
             if (user) await audit('auth.magic_link_refused', user.id);
@@ -234,41 +246,94 @@ export function createAuth(e: Env = env()) {
   });
 }
 
+const MAGIC_BROWSER_COOKIE = 'lk9_ml_browser';
+const BROWSER_TAG = 'lk9-browser:';
+const sha = (x: string) => createHash('sha256').update(x).digest('base64url');
+const emailKey = (email: string) => sha(email.trim().toLowerCase());
+/** The browser id from our cookie, if it looks like one we set. */
+const browserOf = (raw: string | null | undefined) => (raw && /^[A-Za-z0-9_-]{32}$/.test(raw) ? raw : null);
+const isEmail = (v: typeof schema.verifications, email: string) =>
+  sql`case when pg_input_is_valid(${v.value}, 'jsonb') then lower(${v.value}::jsonb ->> 'email') = ${email.trim().toLowerCase()} else false end`;
+
 /**
- * "Send the link again" replaces the earlier links for that address: only the newest one works.
- * better-auth stores each link as a verification row whose identifier is the hashed token
- * (`sha256` base64url; `magic-link:<hash>` from 1.7.7) and whose value is JSON with the email.
- * The new row is written before sendMagicLink is called, so this deletes that email's other
- * rows, but only if the new row is found: if better-auth ever stores links differently, nothing
- * is revoked (tests/integration/magic-link.test.ts then fails) rather than the new link too.
- * Runs for every request, known address or not, so the timing stays the same.
+ * "Send the link again" replaces the earlier links that THE SAME BROWSER asked for: only its newest
+ * one works (Tester #109). Links asked for from another browser are left alone, so someone else
+ * requesting links for your address can't kill the link in your inbox (Tester #113 F1); those
+ * links still expire after MAGIC_LINK_MINUTES and work once.
+ *
+ * The browser is a random id in an httpOnly cookie, set on the first request; the link's
+ * verification row is tagged with its hash. better-auth stores each link as a row whose identifier
+ * is the hashed token (`sha256` base64url; `magic-link:<hash>` from 1.7.7) and whose value is JSON
+ * with the email. The new row is written before sendMagicLink is called; if it isn't found (better-auth
+ * changed how it stores links), nothing is tagged or revoked (tests/integration/magic-link.test.ts
+ * then fails) rather than the new link too. Runs for every request, known address or not.
  */
-async function revokeEarlierMagicLinks(db: ReturnType<typeof getDb>, email: string, url: string) {
+async function revokeEarlierMagicLinks(
+  db: ReturnType<typeof getDb>,
+  email: string,
+  url: string,
+  browser: string | null,
+) {
   const token = new URL(url).searchParams.get('token');
-  if (!token) return;
-  const hash = createHash('sha256').update(token).digest('base64url');
+  if (!token || !browser) return;
+  const hash = sha(token);
   const current = [hash, `magic-link:${hash}`];
   const v = schema.verifications;
+  const tagged = await db
+    .update(v)
+    // better-auth parses the row strictly ({type, email, name?}); `name` is only read when signing a
+    // new user up, which is disabled (disableSignUp), so the browser tag lives there.
+    .set({ value: sql`(${v.value}::jsonb || ${JSON.stringify({ name: BROWSER_TAG + browser })}::jsonb)::text` })
+    .where(and(inArray(v.identifier, current), isEmail(v, email)))
+    .returning({ id: v.id });
+  if (!tagged.length) return;
   await db
     .delete(v)
     .where(
       and(
         notInArray(v.identifier, current),
-        sql`case when pg_input_is_valid(${v.value}, 'jsonb') then lower(${v.value}::jsonb ->> 'email') = ${email.toLowerCase()} else false end`,
-        sql`exists (select 1 from ${v} as cur where ${inArray(sql`cur.identifier`, current)})`,
+        isEmail(v, email),
+        sql`case when pg_input_is_valid(${v.value}, 'jsonb') then ${v.value}::jsonb ->> 'name' = ${BROWSER_TAG + browser} else false end`,
       ),
     );
 }
 
+/** Whether this browser already has a live link for the address (it is resending). */
+async function hasLiveLink(db: ReturnType<typeof getDb>, email: string, browser: string) {
+  const v = schema.verifications;
+  const [row] = await db
+    .select({ id: v.id })
+    .from(v)
+    .where(
+      and(
+        isEmail(v, email),
+        gt(v.expiresAt, new Date()),
+        sql`case when pg_input_is_valid(${v.value}, 'jsonb') then ${v.value}::jsonb ->> 'name' = ${BROWSER_TAG + browser} else false end`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 /**
- * The per-address limit on magic-link requests (Tester, #109 F1). The per-IP rule alone let anyone
- * on rotating addresses keep requesting links for someone else's email, and each request revokes
- * that person's emailed link. Counted in the same rate_limits table, under a key built from the
- * normalised address's hash (the table never holds the address itself), for every address known
- * or not, so a 429 says nothing about whether an account exists. Fixed window, counted atomically.
+ * The per-address limit on magic-link requests (Tester #109 F1, #113 F1): MAGIC_LINK_MAX per
+ * MAGIC_LINK_WINDOW_SECONDS, counted in better-auth's rate_limits table under the hash of the
+ * normalised address (the address itself is never stored), the same for every address known or
+ * not, so a 429 says nothing about whether an account exists. Fixed window, counted atomically.
+ *
+ * A browser resending for an address it already holds a live link for counts in its own bucket
+ * (address + browser), not the shared one. Strangers spending the shared bucket for your address
+ * therefore can't stop you resending; and they can't use your bucket without your cookie.
  */
-async function magicLinkAllowedFor(db: ReturnType<typeof getDb>, email: string, now = Date.now()) {
-  const key = `magic-link-email:${createHash('sha256').update(email.trim().toLowerCase()).digest('base64url')}`;
+async function magicLinkAllowedFor(
+  db: ReturnType<typeof getDb>,
+  email: string,
+  browserId: string | null,
+  now = Date.now(),
+) {
+  const browser = browserId ? sha(browserId) : null;
+  const own = browser && (await hasLiveLink(db, email, browser));
+  const key = `magic-link-email:${emailKey(email)}${own ? `:${browser}` : ''}`;
   const r = schema.rateLimits;
   const expired = sql`${r.lastRequest} <= ${now - MAGIC_LINK_WINDOW_SECONDS * 1000}`;
   const [row] = await db

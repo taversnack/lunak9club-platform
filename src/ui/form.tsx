@@ -30,8 +30,8 @@ export function ActionForm({
   children: ReactNode;
   successMessage?: string;
   /**
-   * Move focus to the error notice after a failed submit, and list each field's message in it (for
-   * forms whose fields are hidden, e.g. booking confirmation, so the reason isn't lost).
+   * List each field's message in the error notice (for forms whose fields are hidden, e.g. booking
+   * confirmation, so the reason isn't lost). Focus moves to the notice after any failed submit.
    */
   focusError?: boolean;
 }) {
@@ -39,20 +39,18 @@ export function ActionForm({
   const fields = state.fields ?? {};
   const count = Object.keys(fields).length;
   const errorRef = useRef<HTMLDivElement>(null);
+  // After a failed submit, focus goes to the error notice: the submit button is disabled while
+  // pending, which drops focus to the page body, and the notice is then read out (Tester #114 F5).
   useEffect(() => {
-    if (focusError && state.status === 'error') errorRef.current?.focus();
-  }, [focusError, state]);
+    if (state.status === 'error') errorRef.current?.focus();
+  }, [state]);
   // No encType/method: React sets a multipart POST itself for a function action (and warns if given).
   return (
     <form action={formAction} noValidate>
       <FormCtx.Provider value={{ fields, values: state.values ?? {} }}>
         <div className={s.stack}>
           {state.status === 'error' ? (
-            <div
-              ref={focusError ? errorRef : undefined}
-              tabIndex={focusError ? -1 : undefined}
-              data-testid="form-error"
-            >
+            <div ref={errorRef} tabIndex={-1} data-testid="form-error">
               <Alert
                 tone="danger"
                 title={count ? `There ${count === 1 ? 'is a problem' : `are ${count} problems`}` : 'That didn’t work'}

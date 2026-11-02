@@ -30,6 +30,7 @@ import {
   myMemberships,
   ownerEndMembership,
   withdrawMembershipRequest,
+  endedMembershipSummary,
 } from '@/server/services/memberships';
 import { ownerSetMembershipDays } from '@/server/services/membership-workflow';
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors';
@@ -423,7 +424,15 @@ describe('memberships', () => {
     expect(booked.length).toBeGreaterThan(0);
 
     const r = await leaveMembership(db(), u, m!.id);
-    expect(r).toEqual({ endsOn: start, neverStarts: true, refundRequests: 0 });
+    expect(r).toEqual({ id: m!.id, endsOn: start, neverStarts: true, refundRequests: 0 });
+    // The notice afterwards is read back from the membership, and only for its own customer (#114 F4).
+    expect(await endedMembershipSummary(db(), u, m!.id)).toEqual({
+      endsOn: start,
+      neverStarts: true,
+      refundRequests: 0,
+    });
+    expect(await endedMembershipSummary(db(), dan, m!.id)).toBeNull();
+    expect(await endedMembershipSummary(db(), u, 'not-a-uuid')).toBeNull();
     const [after] = await db().select().from(memberships).where(eq(memberships.id, m!.id));
     // Not left active with an end date nobody was told about: it never runs.
     expect(after).toMatchObject({ status: 'ended', endsOn: start });

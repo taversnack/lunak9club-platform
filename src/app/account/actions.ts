@@ -1,5 +1,7 @@
 'use server';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
+import { ENDED_FLASH_COOKIE } from './membership/ended-flash';
 import { revalidatePath } from 'next/cache';
 import { getDb } from '@/infra/db/client';
 import { getStorage } from '@/infra/storage';
@@ -274,10 +276,16 @@ export async function leaveMembershipAction(_: ActionState, fd: FormData): Promi
     const r = await leaveMembership(getDb(), actor, String(fd.get('id') ?? ''));
     revalidatePath('/account/membership');
     // The form goes away once the membership is ending, so the outcome is shown on the page itself
-    // (Tester #111 F-111b), via the address like the data-request notices.
-    const q = new URLSearchParams({ ended: r.neverStarts ? 'before' : 'after', on: r.endsOn });
-    if (r.refundRequests) q.set('refunds', String(r.refundRequests));
-    redirect(`/account/membership?${q}#ended`);
+    // (Tester #111 F-111b). A short-lived cookie names the membership; the page reads what happened
+    // from the membership itself, so a hand-made address can't show a made-up notice (#114 F4).
+    (await cookies()).set(ENDED_FLASH_COOKIE, r.id, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/account/membership',
+      maxAge: 120,
+    });
+    redirect('/account/membership#ended');
   });
 }
 

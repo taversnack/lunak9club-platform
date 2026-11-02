@@ -6,7 +6,10 @@ import { ActionForm, Checkbox, SelectField, SubmitButton, TextField } from '@/ui
 import { DayPicker } from '@/ui/day-picker';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
-import { describeWeekdays, myMemberships } from '@/server/services/memberships';
+import { describeWeekdays, endedMembershipSummary, myMemberships } from '@/server/services/memberships';
+import { cookies } from 'next/headers';
+import { FocusOnShow } from '@/ui/focus-on-show';
+import { ENDED_FLASH_COOKIE } from './ended-flash';
 import { myMembershipDays, myMonthConfirmations } from '@/server/services/membership-workflow';
 import { myApprovalRequests } from '@/server/services/approvals';
 import { loadSettings } from '@/server/services/booking-shared';
@@ -35,30 +38,28 @@ const OUTCOME: Record<string, { tone: 'info' | 'success' | 'warning' | 'danger';
 const plan = (weekdays: number[], session: string, taxi: boolean) =>
   `${describeWeekdays(weekdays)} · ${SESSION_LABELS[session as Session]}${taxi ? ' · taxi' : ''}`;
 
-const ISO = /^\d{4}-\d{2}-\d{2}$/;
-
-/** What ending a membership did, from the address the action redirects to (Tester #111 F-111b). */
-function endedNotice(sp: Record<string, string | undefined>): string | null {
-  const on = sp.on && ISO.test(sp.on) ? sp.on : null;
-  if (!on || (sp.ended !== 'before' && sp.ended !== 'after')) return null;
-  const n = Number(sp.refunds ?? 0);
+/**
+ * What ending a membership did (Tester #111 F-111b), from the membership itself (#114 F4). Days on
+ * an issued invoice wait for the Owner's approval of their refund request (D56), and a day that
+ * isn't approved is still owed, so the notice doesn't promise more (#114 F2).
+ */
+function endedNotice(e: { endsOn: string; neverStarts: boolean; refundRequests: number }): string {
+  const n = e.refundRequests;
   const refunds =
-    Number.isInteger(n) && n > 0
-      ? ` ${n === 1 ? 'One of those days was' : `${n} of those days were`} already on an invoice: we’ll review ${n === 1 ? 'it' : 'them'} and send you a credit note, which reduces what you owe (or is refunded if you’ve paid).`
+    n > 0
+      ? ` ${n === 1 ? 'One of those days was' : `${n} of those days were`} already invoiced: ${n === 1 ? 'it is' : 'they are'} credited once Luna’s K9 Club approves (the credit note reduces what you owe, or the money comes back to you if you’ve paid). Any day that isn’t approved is still owed.`
       : '';
-  return sp.ended === 'before'
-    ? `The membership has been cancelled before it started (it was due to start on ${formatUkDate(on)}). Its booked days have been cancelled free of charge.${refunds}`
-    : `The membership ends after ${formatUkDate(on)}. Later booked days have been cancelled free of charge.${refunds}`;
+  return e.neverStarts
+    ? `The membership has been cancelled before it started (it was due to start on ${formatUkDate(e.endsOn)}). Its booked days have been cancelled.${refunds}`
+    : `The membership ends after ${formatUkDate(e.endsOn)}. Later booked days have been cancelled.${refunds}`;
 }
 
-export default async function MembershipPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | undefined>>;
-}) {
-  const notice = endedNotice(await searchParams);
+export default async function MembershipPage() {
   const actor = await requirePermission('account.access');
   const db = getDb();
+  const flash = (await cookies()).get(ENDED_FLASH_COOKIE)?.value;
+  const ended = flash ? await endedMembershipSummary(db, actor, flash) : null;
+  const notice = ended ? endedNotice(ended) : null;
   const [days, months, requests, legacy, settings] = await Promise.all([
     myMembershipDays(db, actor),
     myMonthConfirmations(db, actor),
@@ -82,9 +83,9 @@ export default async function MembershipPage({
     <Stack>
       <h1>Membership</h1>
       {notice ? (
-        <div id="ended" tabIndex={-1}>
+        <FocusOnShow id="ended" testId="ended-notice">
           <Alert tone="success">{notice}</Alert>
-        </div>
+        </FocusOnShow>
       ) : null}
       <p>
         Questions about cancelling, changing or adding days? See <Link href="/account/faq">membership questions</Link>.
@@ -274,7 +275,8 @@ export default async function MembershipPage({
                       {addDays(leaveFrom, -1) < m.startsOn ? (
                         <p>
                           {d.name}’s membership hasn’t started yet (it starts on {formatUkDate(m.startsOn)}). Ending it
-                          now cancels it before it starts, and its booked days are cancelled free of charge.
+                          now cancels it before it starts, and its booked days are cancelled. Any of those days already
+                          invoiced are credited once Luna’s K9 Club approves; a day that isn’t approved is still owed.
                         </p>
                       ) : (
                         <p>
