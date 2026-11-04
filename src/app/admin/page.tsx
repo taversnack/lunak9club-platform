@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Route } from 'next';
 import { auditActionLabel, auditEntityLabel } from '@/domain/audit-labels';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
@@ -20,12 +20,45 @@ import { ownerDataRequests } from '@/server/services/privacy';
 import { formatUkDate, londonDate } from '@/domain/time';
 import { pounds } from '@/domain/pricing/engine';
 import { ownerApprovalList } from '@/server/services/approvals';
+import { ownerInbox } from '@/server/services/owner-inbox';
+import type { InboxDueLabel, InboxItem, InboxKind } from '@/domain/inbox';
 import { reminderDaysCopy } from '@/domain/compliance/reminder-copy';
 
 export const metadata: Metadata = { title: 'Today' };
 export const dynamic = 'force-dynamic';
 
 const MAX_ROWS = 5;
+
+/** Due labels from the inbox rules (D77), always text plus a badge icon, never colour alone. */
+const DUE: Record<InboxDueLabel, { tone: 'danger' | 'warning' | 'info'; text: string }> = {
+  overdue: { tone: 'danger', text: 'Overdue' },
+  today: { tone: 'warning', text: 'Due today' },
+  soon: { tone: 'warning', text: 'Due soon' },
+  later: { tone: 'info', text: 'Later' },
+  none: { tone: 'info', text: 'Waiting' },
+};
+const DUE_PREFIX: Record<InboxKind, string> = {
+  approval: 'First day:',
+  invoice_draft: 'Sends',
+  pay_link_missing: 'Held until',
+  waitlist_place: 'Day:',
+  refund_request: 'Due:',
+  refund_to_pay: 'Due:',
+};
+function inboxHref(i: InboxItem): Route {
+  switch (i.kind) {
+    case 'approval':
+    case 'pay_link_missing':
+      return '/admin/approvals';
+    case 'invoice_draft':
+      return '/admin/invoices';
+    case 'refund_request':
+    case 'refund_to_pay':
+      return '/admin/refunds';
+    case 'waitlist_place':
+      return `/admin/bookings?date=${i.ref.date ?? ''}` as Route;
+  }
+}
 
 export default async function AdminHome({
   searchParams,
@@ -36,7 +69,7 @@ export default async function AdminHome({
   const actor = await requirePermission('admin.access');
   const db = getDb();
   const thisMonth = londonDate(new Date()).slice(0, 7);
-  const [events, queue, today, billing, welfare, expiring, requests, approvalItems, requirements, unconfirmed] =
+  const [events, queue, today, billing, welfare, expiring, requests, approvalItems, requirements, unconfirmed, inbox] =
     await Promise.all([
       listRecentAuditEvents(db, actor, 20),
       reviewQueue(db, actor),
@@ -48,16 +81,15 @@ export default async function AdminHome({
       ownerApprovalList(db, actor),
       listRequirements(db, actor),
       unconfirmedMembers(db, actor, thisMonth),
+      ownerInbox(db, actor),
     ]);
   const waitingRequests = requests.filter((r) => r.r.status === 'requested').length;
-  const approvals = approvalItems.length;
+  const approvalById = new Map(approvalItems.map((r) => [r.id, r]));
   const expiredCount = expiring.filter((v) => v.expired).length;
   const inboxTotal =
-    approvals +
+    inbox.length +
     queue.pending.length +
     expiring.length +
-    billing.drafts +
-    billing.refundRequests +
     billing.overdue +
     unconfirmed.length +
     welfare.followUpsDue +
@@ -75,46 +107,76 @@ export default async function AdminHome({
             <StatusBadge tone="success">All clear</StatusBadge> Nothing is waiting for you.
           </p>
         ) : null}
-        {approvals ? (
-          <section aria-labelledby="in-requests">
-            <h3 id="in-requests">Requests to approve ({approvals})</h3>
+        {inbox.length ? (
+          <section aria-labelledby="in-order">
+            <h3 id="in-order">In date order ({inbox.length})</h3>
             <ul className={s.list}>
-              {approvalItems.slice(0, MAX_ROWS).map((r) => (
-                <li key={r.id} className={s.listItem} data-testid="today-approval">
-                  <span>
-                    <strong>{r.label}</strong> · {r.customerName}
-                    <br />
-                    {r.summary}
-                    {r.lastError ? (
-                      <>
-                        <br />
-                        <StatusBadge tone="warning">Couldn’t approve last time</StatusBadge>
-                      </>
-                    ) : null}
-                  </span>
-                  <span className={s.two}>
-                    <ActionForm action={approveRequestAction}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <input type="hidden" name="from" value="today" />
-                      <SubmitButton>
-                        Approve <span className="visually-hidden">{r.summary}</span>
-                      </SubmitButton>
-                    </ActionForm>
-                    <ActionForm action={declineRequestAction}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <input type="hidden" name="from" value="today" />
-                      <SubmitButton variant="secondary">
-                        Decline <span className="visually-hidden">{r.summary}</span>
-                      </SubmitButton>
-                    </ActionForm>
-                  </span>
-                </li>
-              ))}
+              {inbox.slice(0, MAX_ROWS * 2).map((i) => {
+                const a = approvalById.get(i.ref.id);
+                return (
+                  <li
+                    key={i.key}
+                    className={s.listItem}
+                    data-testid={i.kind === 'approval' ? 'today-approval' : undefined}
+                  >
+                    <span>
+                      <StatusBadge tone={DUE[i.dueLabel].tone}>{DUE[i.dueLabel].text}</StatusBadge>{' '}
+                      <strong>{a ? a.label : i.title}</strong> · {i.customerName}
+                      {i.dogName ? ` · ${i.dogName}` : ''}
+                      {a ? (
+                        <>
+                          <br />
+                          {a.summary}
+                        </>
+                      ) : null}
+                      {a?.lastError ? (
+                        <>
+                          <br />
+                          <StatusBadge tone="warning">Couldn’t approve last time</StatusBadge>
+                        </>
+                      ) : null}
+                      {i.dueAt ? (
+                        <>
+                          <br />
+                          <span className={s.hint}>
+                            {DUE_PREFIX[i.kind]} {formatDateTimeLondon(i.dueAt)}
+                          </span>
+                        </>
+                      ) : null}
+                    </span>
+                    {a ? (
+                      <span className={s.two}>
+                        <ActionForm action={approveRequestAction}>
+                          <input type="hidden" name="id" value={a.id} />
+                          <input type="hidden" name="from" value="today" />
+                          <SubmitButton>
+                            Approve <span className="visually-hidden">{a.summary}</span>
+                          </SubmitButton>
+                        </ActionForm>
+                        <ActionForm action={declineRequestAction}>
+                          <input type="hidden" name="id" value={a.id} />
+                          <input type="hidden" name="from" value="today" />
+                          <SubmitButton variant="secondary">
+                            Decline <span className="visually-hidden">{a.summary}</span>
+                          </SubmitButton>
+                        </ActionForm>
+                      </span>
+                    ) : (
+                      <Link href={inboxHref(i)}>
+                        Open{' '}
+                        <span className="visually-hidden">
+                          {i.title} for {i.customerName}
+                        </span>
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
             <p>
-              <Link href="/admin/approvals">
-                {approvals > MAX_ROWS ? `See all ${approvals} requests` : 'Add a note or see details'}
-              </Link>
+              {inbox.length > MAX_ROWS * 2 ? `${inbox.length - MAX_ROWS * 2} more. ` : ''}
+              See everything: <Link href="/admin/approvals">requests</Link> ·{' '}
+              <Link href="/admin/invoices">invoices</Link> · <Link href="/admin/refunds">refunds</Link>
             </p>
           </section>
         ) : null}
@@ -162,30 +224,6 @@ export default async function AdminHome({
             </p>
           </section>
         ) : null}
-        {billing.drafts + billing.refundRequests + billing.overdue > 0 ? (
-          <section aria-labelledby="in-money">
-            <h3 id="in-money">Invoices and refunds</h3>
-            <ul className={s.list}>
-              {billing.drafts ? (
-                <li className={s.listItem}>
-                  <Link href="/admin/invoices">{billing.drafts} invoice drafts to check</Link>
-                </li>
-              ) : null}
-              {billing.refundRequests ? (
-                <li className={s.listItem}>
-                  <Link href="/admin/refunds">{billing.refundRequests} refund requests</Link>
-                </li>
-              ) : null}
-              {billing.overdue ? (
-                <li className={s.listItem}>
-                  <Link href="/admin/invoices">
-                    <strong>{billing.overdue} overdue invoices</strong>
-                  </Link>
-                </li>
-              ) : null}
-            </ul>
-          </section>
-        ) : null}
         {welfare.followUpsDue || waitingRequests || unconfirmed.length ? (
           <section aria-labelledby="in-other">
             <h3 id="in-other">Other</h3>
@@ -214,7 +252,7 @@ export default async function AdminHome({
       <Grid>
         <Card aria-labelledby="approvals">
           <h2 id="approvals">Requests waiting</h2>
-          <p className={s.bigNumber}>{approvals}</p>
+          <p className={s.bigNumber}>{approvalItems.length}</p>
           <Link href="/admin/approvals">Open requests</Link>
         </Card>
         <Card aria-labelledby="records">
