@@ -1,4 +1,5 @@
 import 'server-only';
+import { inSequence } from '@/infra/db/sequence';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
@@ -747,19 +748,21 @@ export async function sendPaymentReminders(db: Db, actor: Actor, now = new Date(
 export async function balances(q: Q, ids: string[]): Promise<Map<string, Balance>> {
   const out = new Map<string, Balance>();
   if (!ids.length) return out;
-  const [invs, paid, credited] = await Promise.all([
-    q.select({ id: invoices.id, total: invoices.totalPence }).from(invoices).where(inArray(invoices.id, ids)),
-    q
-      .select({ id: payments.invoiceId, amount: sum(payments.amountPence).mapWith(Number) })
-      .from(payments)
-      .where(inArray(payments.invoiceId, ids))
-      .groupBy(payments.invoiceId),
-    q
-      .select({ id: creditNotes.invoiceId, amount: sum(creditNotes.amountPence).mapWith(Number) })
-      .from(creditNotes)
-      .where(inArray(creditNotes.invoiceId, ids))
-      .groupBy(creditNotes.invoiceId),
-  ]);
+  const [invs, paid, credited] = await inSequence(
+    () => q.select({ id: invoices.id, total: invoices.totalPence }).from(invoices).where(inArray(invoices.id, ids)),
+    () =>
+      q
+        .select({ id: payments.invoiceId, amount: sum(payments.amountPence).mapWith(Number) })
+        .from(payments)
+        .where(inArray(payments.invoiceId, ids))
+        .groupBy(payments.invoiceId),
+    () =>
+      q
+        .select({ id: creditNotes.invoiceId, amount: sum(creditNotes.amountPence).mapWith(Number) })
+        .from(creditNotes)
+        .where(inArray(creditNotes.invoiceId, ids))
+        .groupBy(creditNotes.invoiceId),
+  );
   const p = new Map(paid.map((r) => [r.id, r.amount]));
   const c = new Map(credited.map((r) => [r.id, r.amount]));
   for (const i of invs) out.set(i.id, balanceOf(i.total, c.get(i.id) ?? 0, p.get(i.id) ?? 0));

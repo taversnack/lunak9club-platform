@@ -29,3 +29,20 @@ if (process.env.TEST_NOW) {
     advanceTimeDelta: 1,
   });
 }
+
+// Guard: queueing a second query on a busy connection (e.g. Promise.all over reads on a transaction)
+// is deprecated in pg 8 and an error in pg 9. Any file that triggers it fails here (use inSequence).
+{
+  const { afterAll } = await import('vitest');
+  const busy: string[] = [];
+  process.on('warning', (w) => {
+    if (/already executing a query/.test(w.message)) busy.push(w.message);
+  });
+  afterAll(async () => {
+    await new Promise((r) => setImmediate(r));
+    if (busy.length)
+      throw new Error(
+        'A query was queued on a connection that was already busy (Promise.all over reads on a transaction?). Use inSequence from src/infra/db/sequence.ts.',
+      );
+  });
+}

@@ -1,4 +1,5 @@
 import 'server-only';
+import { inSequence } from '@/infra/db/sequence';
 import { and, desc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
@@ -28,40 +29,43 @@ export async function loadPricingContext(
   from: IsoDate,
   to: IsoDate,
 ): Promise<PricingContext> {
-  const [books, rates, ms] = await Promise.all([
-    db
-      .select()
-      .from(priceBooks)
-      .where(
-        and(lte(priceBooks.effectiveFrom, to), or(isNull(priceBooks.effectiveTo), gte(priceBooks.effectiveTo, from))),
-      ),
-    db
-      .select()
-      .from(customerRates)
-      .where(
-        and(
-          eq(customerRates.customerId, customerId),
-          lte(customerRates.startsOn, to),
-          or(isNull(customerRates.endsOn), gte(customerRates.endsOn, from)),
+  const [books, rates, ms] = await inSequence(
+    () =>
+      db
+        .select()
+        .from(priceBooks)
+        .where(
+          and(lte(priceBooks.effectiveFrom, to), or(isNull(priceBooks.effectiveTo), gte(priceBooks.effectiveTo, from))),
         ),
-      ),
-    db
-      .select({
-        dogId: memberships.dogId,
-        startsOn: memberships.startsOn,
-        endsOn: memberships.endsOn,
-        weekdays: memberships.weekdays,
-      })
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.customerId, customerId),
-          inArray(memberships.status, ['active', 'ended']),
-          lte(memberships.startsOn, to),
-          or(isNull(memberships.endsOn), gte(memberships.endsOn, from)),
+    () =>
+      db
+        .select()
+        .from(customerRates)
+        .where(
+          and(
+            eq(customerRates.customerId, customerId),
+            lte(customerRates.startsOn, to),
+            or(isNull(customerRates.endsOn), gte(customerRates.endsOn, from)),
+          ),
         ),
-      ),
-  ]);
+    () =>
+      db
+        .select({
+          dogId: memberships.dogId,
+          startsOn: memberships.startsOn,
+          endsOn: memberships.endsOn,
+          weekdays: memberships.weekdays,
+        })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.customerId, customerId),
+            inArray(memberships.status, ['active', 'ended']),
+            lte(memberships.startsOn, to),
+            or(isNull(memberships.endsOn), gte(memberships.endsOn, from)),
+          ),
+        ),
+  );
   const map = new Map<string, { from: IsoDate; to: IsoDate | null; daysPerWeek: number }[]>();
   for (const m of ms) {
     const list = map.get(m.dogId) ?? [];
