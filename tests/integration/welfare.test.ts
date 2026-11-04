@@ -20,6 +20,7 @@ import {
   payments,
   incidents,
   notificationLog,
+  sessions,
   users,
   welfareChecks,
 } from '@/infra/db/schema';
@@ -327,6 +328,55 @@ describe('your data (UK GDPR, D65)', () => {
 });
 
 describe('retention schedule (D64)', () => {
+  it('clears session IP and user agent 30 days after a session ends, keeps the row until 90 days (D64 amended)', async () => {
+    const day = 86_400_000;
+    const ended = (days: number) => new Date(Date.now() - days * day);
+    const mk = async (tag: string, expiresAt: Date) => {
+      const id = `ret-sess-${tag}-${Date.now()}`;
+      await db()
+        .insert(sessions)
+        .values({
+          id,
+          token: `tok-${id}`,
+          userId: rosa.userId,
+          expiresAt,
+          ipAddress: '203.0.113.42',
+          userAgent: 'Mozilla/5.0 Firefox/128.0',
+          createdAt: ended(200),
+          updatedAt: ended(200),
+        });
+      return id;
+    };
+    const live = await mk('live', new Date(Date.now() + 5 * day));
+    const recent = await mk('recent', ended(10));
+    const old = await mk('old', ended(31));
+    const veryOld = await mk('very-old', ended(91));
+    const get = async (id: string) => (await db().select().from(sessions).where(eq(sessions.id, id)))[0];
+
+    const first = await runRetention(db(), storage, system);
+    expect(first.sessionsScrubbed).toBeGreaterThanOrEqual(1);
+    expect(await get(live)).toMatchObject({ ipAddress: '203.0.113.42', userAgent: 'Mozilla/5.0 Firefox/128.0' });
+    expect(await get(recent)).toMatchObject({ ipAddress: '203.0.113.42' });
+    const scrubbed = (await get(old))!;
+    expect(scrubbed.ipAddress).toBeNull();
+    expect(scrubbed.userAgent).toBeNull();
+    // Clearing the detail is not "activity": the row's updatedAt is left as it was.
+    expect(Math.abs(scrubbed.updatedAt.getTime() - ended(200).getTime())).toBeLessThan(5_000);
+    expect(await get(veryOld)).toBeUndefined(); // the 90-day row delete is unchanged
+
+    // Idempotent: nothing left to clear, and nothing live was touched.
+    const second = await runRetention(db(), storage, system);
+    expect(second.sessionsScrubbed).toBe(0);
+    expect(await get(live)).toMatchObject({ ipAddress: '203.0.113.42' });
+    // The run's audit trail holds counts only, never an address or a browser string.
+    const [audit] = await db()
+      .execute<{ metadata: unknown }>(
+        sql`select metadata from audit_events where action = 'retention.run' order by occurred_at desc limit 1`,
+      )
+      .then((r) => r.rows);
+    expect(JSON.stringify(audit)).not.toMatch(/203\.0\.113|Firefox/);
+  });
+
   it('deletes licence records after 3 years (with their files) and nothing newer', async () => {
     const [cust] = await db().select().from(customers).where(eq(customers.userId, rosa.userId));
     const fourYearsAgo = new Date(Date.now() - 4 * 365 * 86_400_000);

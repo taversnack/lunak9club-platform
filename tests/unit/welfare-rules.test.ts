@@ -45,6 +45,7 @@ describe('retention (D64)', () => {
       financial: '2024-06-01',
       documents: '2027-06-01',
       technical: '2030-03-03',
+      sessionDetail: '2030-05-02',
     });
   });
 });
