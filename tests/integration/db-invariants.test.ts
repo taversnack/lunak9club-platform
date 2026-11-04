@@ -22,6 +22,21 @@ describe('database invariants', () => {
     expect(r.rows.map((x) => x.key)).toEqual(['customer', 'owner']);
   });
 
+  it('lets a document be held for a virus scan (D30) and refuses unknown scan states or negative attempts', async () => {
+    const defs = await getDb().execute<{ conname: string; def: string }>(
+      sql`select conname, pg_get_constraintdef(oid) as def from pg_constraint where conrelid = 'documents'::regclass and conname in ('documents_scan_chk', 'documents_scan_attempts_chk')`,
+    );
+    const by = Object.fromEntries(defs.rows.map((r) => [r.conname, r.def]));
+    expect(by.documents_scan_chk).toMatch(/not_scanned.*held.*clean.*infected/s);
+    expect(by.documents_scan_attempts_chk).toMatch(/scan_attempts >= 0/);
+    const cols = await getDb().execute<{ column_name: string; column_default: string | null; is_nullable: string }>(
+      sql`select column_name, column_default, is_nullable from information_schema.columns where table_name = 'documents' and column_name in ('scan_attempts', 'scanned_at')`,
+    );
+    const c = Object.fromEntries(cols.rows.map((r) => [r.column_name, r]));
+    expect(c.scan_attempts).toMatchObject({ column_default: '0', is_nullable: 'NO' });
+    expect(c.scanned_at).toMatchObject({ is_nullable: 'YES' });
+  });
+
   it('keeps audit_events append-only', async () => {
     const db = getDb();
     await recordAudit(db, { actor: { kind: 'system', job: 'test' }, action: 'test.event', entityType: 'test' });

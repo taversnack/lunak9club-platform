@@ -210,4 +210,10 @@ describe('env', () => {
       expect(env()).toMatchObject({ SMTP_HOST: 'smtp.mail-provider.example', SMTP_TLS: 'starttls' });
     });
   });
+
+  it('keeps the virus scanner off by default (D30)', async () => {
+    base();
+    const { env } = await import('@/infra/env');
+    expect(env()).toMatchObject({ SCANNER_MODE: 'off', SCANNER_HOST: 'localhost', SCANNER_PORT: 3310 });
+  });
 });

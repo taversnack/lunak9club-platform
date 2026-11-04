@@ -162,6 +162,13 @@
       "when": 1793358896361,
       "tag": "0024_full_days_only",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793822585122,
+      "tag": "0025_document_scan_state",
+      "breakpoints": true
     }
   ]
 }
