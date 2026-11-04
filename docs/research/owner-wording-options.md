@@ -70,6 +70,18 @@ We check these when you book and on the day. If a vaccination runs out, we can't
 
 Checks: D11 and D73 (core and leptospirosis are licence requirements with no override). **[Check]** The kennel cough line is the business's own rule (D11, "mandatory by default"): confirm Stephen wants it stated publicly as a requirement. D73 says titre certificates are not accepted (O16 open): do not mention titres. Do not say "licence requires" unless Stephen confirms the wording, because D11 cites the guidance, not exact legal text.
 
+## 3a. Practical details: hours, taxi, what to bring
+
+Only facts already in `decisions.md` are stated; the rest are placeholders.
+
+**Opening hours (D7, D100).** "We're open Monday to Friday, 7:30am to 6:00pm. We're closed on weekends and England and Wales bank holidays." **[Check]** D7 sets these hours; the full-day-only rule (D100) means no session times are shown.
+
+**Taxi (D22, D26).** "Taxi is included in the price. We collect and drop off dogs from addresses within 10 miles of the club. We fix collection and drop-off times the evening before and let you know when they are published." Checks: D22 (included, 10 miles, per the website), D26 (times fixed the evening before by the Owner, customers notified when the run sheet is published). Do not promise a time window or a particular slot. **[Check]** The taxi limit of 20 dogs a day (D26) is not for customers to see: do not say "limited places".
+
+**Dropping off and collecting yourself.** Owner to confirm: the earliest drop-off time and the latest collection time for customers who bring their dog themselves. Not in `decisions.md`. Suggested placeholder: "Drop-off from [Owner to confirm] and collection by [Owner to confirm]."
+
+**What to bring.** Owner to confirm. Not in `decisions.md`. Suggested placeholder: "Please bring: [Owner to confirm: for example lead, collar with ID tag, any medication with written instructions, own food if on a special diet]." Do not publish the example items unless Stephen confirms them.
+
 ---
 
 ## 4. "What happens next" lines for ended bookings
@@ -102,4 +114,5 @@ Plain text shown with a status badge, never colour only. Times in Europe/London.
 3. Supply the trust facts in section 3 (licence, company, address, contact, insurance, first aid, photos).
 4. Confirm the kennel cough requirement can be shown publicly.
 5. Say what "Released" should cover in the ended-booking lines.
-6. Confirm D96 (one trial day per dog) and D91 (decision notes) are recorded as Approved.
+6. Provide drop-off and collection times for owners who bring their dog, and the what-to-bring list (section 3a).
+7. Confirm D96 (one trial day per dog) and D91 (decision notes) are recorded as Approved.
