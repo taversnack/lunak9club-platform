@@ -184,6 +184,16 @@ Text comes before photos: every card and section reads fully without its image (
 4. **Photos:** placeholder blocks now; who supplies real dog and site photos, and with what consent for dogs and people?
 5. **Trust facts** (licence reference, company number, address, insurance, first aid): please supply, or confirm they stay out of the public site.
 
-## 8. Out of scope
+## 8. Researcher's R7 spec (PR #126): where this plan agrees and differs
+
+Agrees: 4 px spacing steps, 16 px phone gutters, one light shadow plus a stronger one on hover/focus and a visible border, icon-plus-word badges, one action per card, 56 px tab bar with safe-area padding and `aria-current`, search card without guests or session fields and without counts, skeleton cards with `aria-busy`, fixed aspect ratios for placeholders (16:9 hero, 4:3 cards, 1:1 dog avatars) so real photos cause no layout shift, no paid fonts or icons.
+
+Differences to decide:
+- **Tab labels:** researcher suggests Book, Requests, Dogs, Account; this plan has Bookings (requests and bookings live together there). Stephen to choose.
+- **Radius:** researcher suggests 8/12/16 px; this plan keeps the existing 20 px cards (24 px for hero/photo cards) and 16 px inputs, closer to the Airbnb feel Stephen asked for. The values are tokens, so they are easy to change at approval.
+- **Tab bar and the Book page:** on Book, the sticky request bar sits above the tab bar (not replacing it); content gets bottom padding for both.
+- **Requests badge:** a "needs you" count on the tab is allowed only for pay-now items, with an accessible name.
+
+## 9. Out of scope
 
 Owner back-office restyle (after the customer side), real photography, any new paid service, changes to booking rules or pricing, Airbnb's logo or assets.
