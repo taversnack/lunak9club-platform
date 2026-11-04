@@ -99,7 +99,7 @@ export default async function BookingsPage({
           {sp.cancelled === 'late'
             ? 'This was less than 48 hours before, so the day is still charged.'
             : sp.cancelled === 'refunded'
-              ? 'We’ve refunded this day to your card. It usually appears within 5–10 working days.'
+              ? 'We’ve refunded this day to your card. How long it takes to appear depends on your bank.'
               : 'No charge for this cancellation.'}
         </Alert>
       ) : null}
