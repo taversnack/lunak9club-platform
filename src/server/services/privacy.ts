@@ -702,7 +702,18 @@ export async function runRetention(db: Db, storage: StorageProvider, actor: Acto
         ),
       );
     }
-    // Technical data.
+    // Technical data. The IP address and user agent go 30 days after a session ends; the row itself at 90.
+    // updatedAt is set to itself so this doesn't count as activity (the inactivity check reads it).
+    const scrubbed = await tx
+      .update(sessions)
+      .set({ ipAddress: null, userAgent: null, updatedAt: sql`${sessions.updatedAt}` })
+      .where(
+        and(
+          lt(sessions.expiresAt, at(cut.sessionDetail)),
+          or(isNotNull(sessions.ipAddress), isNotNull(sessions.userAgent)),
+        ),
+      )
+      .returning({ id: sessions.id });
     await tx.delete(sessions).where(lt(sessions.expiresAt, at(cut.technical)));
     await tx.delete(verifications).where(lt(verifications.expiresAt, at(cut.technical)));
     await tx.delete(rateLimits).where(lt(rateLimits.lastRequest, at(cut.technical).getTime()));
@@ -728,6 +739,7 @@ export async function runRetention(db: Db, storage: StorageProvider, actor: Acto
       vaccinationRecords: subs.length,
       documents: orphanDocs.length,
       auditEvents: audit.length,
+      sessionsScrubbed: scrubbed.length,
     };
   });
   for (const key of files) await storage.delete(key).catch(() => logger.warn({}, 'retention: file already gone'));

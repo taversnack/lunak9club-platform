@@ -73,6 +73,8 @@ export const RETENTION = {
   documentYearsAfterExpiry: 3,
   /** Technical data: expired sessions, tokens, webhook events. */
   technicalDays: 90,
+  /** A session's IP address and user agent are cleared this long after it ends (D64 amended). */
+  sessionDetailDays: 30,
 } as const;
 
 /** When a customer's personal details may be removed: 3 years after their last visit (or sign-up). */
@@ -86,5 +88,6 @@ export function retentionCutoffs(today: IsoDate) {
     financial: addYears(today, -RETENTION.financialYears),
     documents: addYears(today, -RETENTION.documentYearsAfterExpiry),
     technical: addDays(today, -RETENTION.technicalDays),
+    sessionDetail: addDays(today, -RETENTION.sessionDetailDays),
   };
 }
