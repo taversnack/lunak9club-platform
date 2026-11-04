@@ -15,6 +15,7 @@ import { loadMyDog } from './dogs';
 import { logger } from '@/infra/logger';
 import { ownerReviewWaitingMessage } from '@/infra/email/templates';
 import { appUrl, ownerEmails, sendSafely } from '../notify';
+import { alertFileBlocked, BLOCKED_FILE_MESSAGE, scanUpload } from './document-scan';
 
 /** `administeredOn` is the date the vaccination was given (licence para 25(1)(h), D68). */
 export type VaccinationEntry = { requirementKey: string; expiresOn: string; administeredOn: string };
@@ -116,6 +117,11 @@ export async function uploadVaccinationRecord(
   if (Object.keys(fields).length || !check.ok)
     throw new ValidationError('Please check the highlighted fields.', fields);
 
+  const verdict = await scanUpload(input.bytes, now);
+  if (verdict.status === 'infected') {
+    await alertFileBlocked(db, actor, null);
+    throw new ValidationError('Please check the highlighted fields.', { file: BLOCKED_FILE_MESSAGE });
+  }
   const key = `customers/${dog.customerId}/dogs/${dog.id}/${randomUUID()}`;
   const sha256 = createHash('sha256').update(input.bytes).digest('hex');
   await storage.put(key, input.bytes, check.type.mime);
@@ -133,6 +139,9 @@ export async function uploadVaccinationRecord(
           contentType: check.type.mime,
           sizeBytes: input.bytes.byteLength,
           sha256,
+          scanStatus: verdict.status,
+          scanAttempts: verdict.scanAttempts,
+          scannedAt: verdict.scannedAt,
           uploadedBy: actor.userId,
         })
         .returning({ id: documents.id });
@@ -205,6 +214,9 @@ export async function authoriseDocumentDownload(db: Db, actor: Actor, rawDocumen
     }
     throw new NotFoundError('Document'); // same response as "doesn't exist"
   }
+  // A file the scanner found infected has no bytes; a file still waiting for its scan is for the Owner only.
+  if (row.doc.scanStatus === 'infected') throw new NotFoundError('Document');
+  if (row.doc.scanStatus === 'held' && !hasPermission(actor, 'documents.read_any')) throw new NotFoundError('Document');
   await recordAudit(db, { actor, action: 'document.downloaded', entityType: 'document', entityId: documentId });
   return row.doc;
 }
