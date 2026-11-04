@@ -1,6 +1,6 @@
 # Customer site: Airbnb-style design plan (for Stephen's approval)
 
-Status: **proposal, nothing built yet.** Author: frontend agent, 4 Nov 2026. Input: `docs/research/airbnb-style-patterns.md`, D97 (navy primary buttons, rounded cards), D99 (email-link sign-in first), D100 (full days only), D101 (no counts, no "nearly full"), D108 (approved wording). Customer side first; the Owner back office adopts the same cards, spacing and radius afterwards.
+Status: **approved by Stephen, 5 Nov 2026 (answers in section 7).** Building starts with PR A. Author: frontend agent, 4 Nov 2026. Input: `docs/research/airbnb-style-patterns.md`, D97 (navy primary buttons, rounded cards), D99 (email-link sign-in first), D100 (full days only), D101 (no counts, no "nearly full"), D108 (approved wording). Customer side first; the Owner back office adopts the same cards, spacing and radius afterwards.
 
 **Goal:** the feel, style and layout of Airbnb (photo-led, big calm cards, one clear action per screen, a bottom tab bar on phones) in Luna's K9 Club colours and brand: navy, sand, Raleway, the logo, rounded shapes. We copy the *pattern*, not Airbnb's logo, assets, icons or exact styling.
 
@@ -176,7 +176,16 @@ Text comes before photos: every card and section reads fully without its image (
 - Reduced motion respected; no hover-only information; forced-colours mode keeps borders.
 - UK English, plain wording, no counts or "nearly full" (D101), no half-day wording (D100).
 
-## 7. Decisions needed from Stephen
+## 7. Decisions (answered by Stephen, 5 Nov 2026)
+
+1. Plan and build order: **approved.**
+2. Tab bar: **Book, Bookings, Dogs, Account** (everything else in the Account sheet).
+3. Home search card: **link-through to the Book page first** (Pick days, Dog, Request); an inline date picker later.
+4. Trust facts (licence, company number, address, insurance, first aid): **stay off the public site for now.** The block is a placeholder visible only to the Owner.
+5. Photos: **placeholder blocks in brand colours**; real photos come from Stephen later.
+6. Radius: **keep this plan's tokens** (20 px cards, 24 px hero and photo cards, 16 px inputs), not researcher's 8/12/16.
+
+The original questions, for the record:
 
 1. **Approve this plan and sequence** (or change the order of pages).
 2. **Tab bar items:** Book, Bookings, Dogs, Account. Is that the right four? (Requests would sit in Bookings; Membership and Invoices in the Account sheet.)
