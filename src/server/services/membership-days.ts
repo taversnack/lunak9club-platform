@@ -127,7 +127,11 @@ export async function setMembershipDaysTx(
   // days and start date) rather than leaving an "ended" row covering its start date, which pricing
   // and the monthly confirmation would still count (Tester, PR #45). Its booked days are cancelled
   // and the caller rebooks.
-  const sameStart = current.find((m) => m.startsOn >= p.startsOn && m.startsOn > londonDate(p.now));
+  // If nothing has started yet, the pending membership is updated in place even when the new start
+  // is later than its old one, so the old start date never runs.
+  const today = londonDate(p.now);
+  const noneStarted = current.every((m) => m.startsOn > today);
+  const sameStart = current.find((m) => m.startsOn > today && (m.startsOn >= p.startsOn || noneStarted));
   for (const m of current) {
     replacedId = m.id;
     if (m === sameStart) {
@@ -198,6 +202,48 @@ export async function setMembershipDaysTx(
   return { id: row!.id, replacedId };
 }
 
+/**
+ * Where a change to a dog's regular days starts. Only a membership that has already started is a
+ * "change" in the D89 sense (from the first month not yet invoiced). A dog whose membership is
+ * still in the future gets the same treatment as a new membership: the entered start date (or the
+ * existing start date if none was entered), checked against the new-membership rules, so the
+ * start is never pulled forward into days nobody agreed (D19, D93). A start inside a month that
+ * has already been invoiced is refused.
+ */
+export async function daysChangeStart(
+  q: Q,
+  p: { customerId: string; dogId: string; entered: string | undefined; now: Date; maxAdvanceDays?: number },
+): Promise<{ started: boolean; startsOn: IsoDate; error?: string }> {
+  const today = londonDate(p.now);
+  const rows = await q
+    .select({ startsOn: memberships.startsOn })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.dogId, p.dogId),
+        eq(memberships.status, 'active'),
+        or(isNull(memberships.endsOn), gt(memberships.endsOn, today)),
+      ),
+    );
+  if (rows.some((r) => r.startsOn <= today))
+    return { started: true, startsOn: await changeStartFor(q, p.customerId, p.now) };
+  const pending = rows.map((r) => r.startsOn).sort()[0];
+  const startsOn = (p.entered || pending || '') as IsoDate;
+  const fail = (error: string) => ({ started: false, startsOn, error });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startsOn) || Number.isNaN(Date.parse(`${startsOn}T00:00:00Z`)))
+    return fail('Enter the first day as a real date');
+  if (startsOn <= today) return fail('Choose tomorrow or later');
+  // The booking window (D37) applies to a first day being chosen, not one already agreed.
+  if (p.maxAdvanceDays !== undefined && startsOn !== pending && startsOn > addDays(today, p.maxAdvanceDays))
+    return fail(`Choose a date within ${p.maxAdvanceDays} days`);
+  const invoiced = await invoicedMonths(q, p.customerId);
+  if (invoiced.includes(startsOn.slice(0, 7)))
+    return fail(
+      `That month has already been invoiced. Choose a date from ${formatUkDate(firstUninvoicedMonthStart(today, invoiced))}`,
+    );
+  return { started: false, startsOn };
+}
+
 /** The dog's membership that is running or due to start (latest start first). */
 export async function currentMembership(q: Q, dogId: string, today: IsoDate) {
   const rows = await q
@@ -210,5 +256,8 @@ export async function currentMembership(q: Q, dogId: string, today: IsoDate) {
         or(isNull(memberships.endsOn), gt(memberships.endsOn, today)),
       ),
     );
-  return rows.sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))[0] ?? null;
+  const latest = rows.sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))[0];
+  // started: some membership for this dog is already running (a change then follows D89); if
+  // none has, the latest is a membership that hasn't started yet, whose start can still be moved.
+  return latest ? { ...latest, started: rows.some((r) => r.startsOn <= today) } : null;
 }

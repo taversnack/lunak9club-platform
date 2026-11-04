@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 
 const REFUND_TEXT = {
   requested: 'Refund requested',
-  approved: 'Refunded as credit',
+  approved: 'Credited',
   declined: 'Refund declined',
 } as const;
 
@@ -33,6 +33,11 @@ export default async function MyInvoicePage({
   const actor = await requirePermission('account.access');
   const d = await orNotFound(myInvoice(getDb(), actor, invoiceId));
   const inv = d.inv;
+  // Money paid that credits mean is coming back (Tester #114 F3).
+  const sumRefunds = (state: string) =>
+    d.creditNotes.filter((c) => c.refundState === state).reduce((n, c) => n + c.refundDuePence, 0);
+  const dueBack = sumRefunds('awaiting_refund');
+  const refunded = sumRefunds('refunded');
   return (
     <Stack>
       <p>
@@ -78,8 +83,24 @@ export default async function MyInvoicePage({
           <dd>
             <strong>{pounds(d.bal.duePence)}</strong>
           </dd>
-          <dt>Due by</dt>
-          <dd>{formatUkDate(inv.dueDate!)}</dd>
+          {dueBack ? (
+            <>
+              <dt>Due back to you</dt>
+              <dd>{pounds(dueBack)}</dd>
+            </>
+          ) : null}
+          {refunded ? (
+            <>
+              <dt>Refunded to you</dt>
+              <dd>{pounds(refunded)}</dd>
+            </>
+          ) : null}
+          {d.state !== 'void' ? (
+            <>
+              <dt>Due by</dt>
+              <dd>{formatUkDate(inv.dueDate!)}</dd>
+            </>
+          ) : null}
         </dl>
         <p>
           <a className={`${s.button} ${s.secondary}`} href={`/api/invoices/${inv.id}/pdf`}>

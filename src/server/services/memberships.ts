@@ -1,10 +1,10 @@
 import 'server-only';
 import { LIVE_STATUSES, OPEN_STATUSES } from '@/domain/booking/rules';
 import { raiseRefundRequests, refreshMembershipDrafts } from './billing';
-import { and, asc, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
-import { bookingDogs, bookings, customers, dogs, memberships, users } from '@/infra/db/schema';
+import { bookingDogs, bookings, customers, dogs, memberships, refundRequests, users } from '@/infra/db/schema';
 import { checkBookableDate, fits, SESSION_LABELS, type Session } from '@/domain/booking/rules';
 import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
 import { changeEffectiveDate, membershipDates } from '@/domain/membership/rules';
@@ -116,22 +116,57 @@ export async function leaveMembership(db: Db, actor: Actor, rawId: string, now =
   if (m.status !== 'active') throw new ConflictError('Only active memberships can be ended.');
   const lastDay = addDays(changeEffectiveDate(londonDate(now)), -1);
   if (m.endsOn && m.endsOn <= lastDay) throw new ConflictError('This membership already ends on or before that date.');
-  const endsOn = lastDay < m.startsOn ? m.startsOn : lastDay;
+  // Not started by the time leaving would take effect: it never runs. Ended on its start date with
+  // every booked day cancelled (as when a pending membership is replaced), rather than staying
+  // active with an end date the customer was never told.
+  const neverStarts = lastDay < m.startsOn;
+  const endsOn = neverStarts ? m.startsOn : lastDay;
   await db.transaction(async (tx) => {
-    await tx
+    const [updated] = await tx
       .update(memberships)
-      .set({ endsOn, version: m.version + 1 })
-      .where(and(eq(memberships.id, m.id), eq(memberships.version, m.version)));
-    const cancelled = await cancelDaysAfter(tx, m.id, endsOn, me.userId, now);
+      .set({ endsOn, version: m.version + 1, ...(neverStarts ? { status: 'ended' as const } : {}) })
+      .where(and(eq(memberships.id, m.id), eq(memberships.version, m.version)))
+      .returning({ id: memberships.id });
+    if (!updated) throw new ConflictError('This membership changed. Please reload.');
+    const cancelled = await cancelDaysAfter(tx, m.id, neverStarts ? addDays(m.startsOn, -1) : endsOn, me.userId, now);
     await recordAudit(tx, {
       actor: me,
       action: 'membership.leaving',
       entityType: 'membership',
       entityId: m.id,
-      metadata: { endsOn, cancelledDays: cancelled },
+      metadata: { endsOn, neverStarts, cancelledDays: cancelled },
     });
   });
-  return { endsOn };
+  return { id: m.id, endsOn, neverStarts, refundRequests: await requestedRefunds(db, m.id) };
+}
+
+/**
+ * Days already on an issued invoice get a refund request (D56): the Owner's approval issues the
+ * credit note. Counted so the customer is told, rather than seeing the invoice still owed.
+ */
+async function requestedRefunds(db: Db, membershipId: string) {
+  const [r] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(refundRequests)
+    .innerJoin(bookingDogs, eq(bookingDogs.id, refundRequests.bookingDogId))
+    .where(and(eq(bookingDogs.membershipId, membershipId), eq(refundRequests.status, 'requested')));
+  return r?.n ?? 0;
+}
+
+/**
+ * What ending a membership did, for the notice shown after it (Tester #114 F4): read back from the
+ * membership itself, so it only ever describes one of the customer's own memberships that is
+ * really ending. Null for anything else (unknown, someone else's, not ending).
+ */
+export async function endedMembershipSummary(db: Db, actor: Actor, rawId: string) {
+  try {
+    const { m } = await loadMine(db, actor, rawId);
+    if (!m.endsOn || (m.status !== 'active' && m.status !== 'ended')) return null;
+    const neverStarts = m.status === 'ended' && m.endsOn === m.startsOn;
+    return { endsOn: m.endsOn, neverStarts, refundRequests: await requestedRefunds(db, m.id) };
+  } catch {
+    return null;
+  }
 }
 
 // ---- Owner -------------------------------------------------------------------------

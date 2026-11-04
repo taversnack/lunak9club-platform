@@ -51,6 +51,19 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   await expect(page).toHaveURL(/approved=1/);
   await page.goto('/admin/memberships');
   await axe(page);
+  // The membership starts tomorrow, so it hasn't started: the Owner sees its real start and can move it
+  // (#106 F1, F2), not "the first month not yet invoiced".
+  await page.goto('/admin/customers');
+  await page
+    .getByRole('link', { name: customerName(info.project.name) })
+    .first()
+    .click();
+  await page.getByText(`Change ${dog}’s days`).click();
+  const ownerForm = page.locator('details[open]').filter({ hasText: `Change ${dog}’s days` });
+  await expect(ownerForm).toContainText('Not started yet: starts');
+  await expect(ownerForm).not.toContainText('first month not yet invoiced');
+  await expect(ownerForm.getByLabel('First day')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  await axe(page);
   await page.goto('/admin/settings/pricing');
   await expect(page.getByText('In use')).toBeVisible();
   await axe(page);
@@ -63,7 +76,21 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   await expect(row).toContainText(dog);
   await expect(row).toContainText('£48.00');
   await page.goto('/account/membership');
-  await expect(page.getByRole('region', { name: 'Your dogs’ regular days' })).toContainText('Monday');
+  const regular = page.getByRole('region', { name: 'Your dogs’ regular days' });
+  await expect(regular).toContainText('Monday');
+  // Not started yet: the customer sees the real first day and can move it, not "New days start on …" (#106 F1).
+  // Pending: the link no longer says "for all future months" (#106 r2 minor).
+  await expect(regular.getByText(`Change ${dog}’s days for all future months`)).toHaveCount(0);
+  await regular.getByText(`Change ${dog}’s days or first day`).click();
+  await expect(regular).toContainText(`${dog}’s membership starts on`);
+  await expect(regular).not.toContainText('New days start on');
+  const firstDay = regular
+    .locator('details[open]')
+    .filter({ hasText: `Change ${dog}’s days or first day` })
+    .getByLabel('First day');
+  await expect(firstDay).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  // The 90-day limit is on the field, not only reported after sending (#106 r2 minor).
+  await expect(firstDay).toHaveAttribute('max', /^\d{4}-\d{2}-\d{2}$/);
   await axe(page);
 });
 
@@ -140,4 +167,36 @@ test('customer sees the invoice and can download the PDF', async ({ page }, info
   await signIn(page, other.email, other.password);
   await expect(page).toHaveURL(/\/account$/);
   expect((await page.request.get(href!)).status()).toBe(404);
+});
+
+test('customer ends the membership and is told what happened (Tester #111 F-111b)', async ({ page }, info) => {
+  const { user, dog } = who(info.project.name);
+  await signIn(page, user.email, user.password);
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto('/account/membership');
+  const regular = page.getByRole('region', { name: 'Your dogs’ regular days' });
+  await regular.getByText(`End ${dog}’s membership`, { exact: true }).click();
+  const form = regular.locator('details[open]').filter({ hasText: `End ${dog}’s membership` });
+  // A server-side error moves focus to its message, not the page body (Tester #114 F5).
+  await form.getByRole('button', { name: 'End membership' }).click();
+  await expect(form.getByTestId('form-error')).toContainText('Tick the box to confirm.');
+  await expect(form.getByTestId('form-error')).toBeFocused();
+  await form.getByRole('checkbox').check();
+  await form.getByRole('button', { name: 'End membership' }).click();
+  // The notice comes from the membership itself, not the address (#114 F4), and takes focus (#114 F1).
+  await expect(page).toHaveURL(/\/account\/membership#ended$/);
+  const notice = page.getByTestId('ended-notice');
+  await expect(notice).toContainText(/The membership (has been cancelled before it started|ends after)/);
+  await expect(notice).toBeFocused();
+  await axe(page);
+});
+
+test('a hand-made address shows no membership-ended notice (Tester #114 F4)', async ({ page }, info) => {
+  const { user } = who(info.project.name);
+  await signIn(page, user.email, user.password);
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto('/account/membership?ended=before&on=2030-01-01&refunds=9#ended');
+  await expect(page.getByRole('heading', { name: 'Membership', level: 1 })).toBeVisible();
+  await expect(page.getByTestId('ended-notice')).toHaveCount(0);
+  await expect(page.getByText(/cancelled before it started|ends after/)).toHaveCount(0);
 });

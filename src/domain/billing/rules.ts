@@ -112,6 +112,9 @@ export function paymentState(
   if (inv.status === 'draft') return 'draft';
   if (inv.status === 'scheduled') return 'scheduled';
   if (inv.status === 'void') return 'void';
+  // Fully credited: cancelled whether or not anything was paid (any payment is due back), the same
+  // as an unpaid one, which statusAfter voids (Tester #114 F3).
+  if (bal.totalPence > 0 && bal.creditedPence >= bal.totalPence) return 'void';
   if (bal.duePence === 0) return 'paid';
   if (inv.dueDate && today > inv.dueDate) return 'overdue';
   return bal.paidPence > 0 ? 'part_paid' : 'unpaid';

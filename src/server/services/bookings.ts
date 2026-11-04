@@ -459,12 +459,16 @@ export async function myBookings(db: Db, actor: Actor, now = new Date()) {
   const rows = await db
     .select({
       id: bookingDogs.id,
+      bookingId: bookingDogs.bookingId,
       serviceDate: bookingDogs.serviceDate,
       session: bookingDogs.session,
       taxi: bookingDogs.taxi,
       status: bookingDogs.status,
       offerExpiresAt: bookingDogs.offerExpiresAt,
       lateCancellation: bookingDogs.lateCancellation,
+      cancelledAt: bookingDogs.cancelledAt,
+      cancelledBy: bookingDogs.cancelledBy,
+      updatedAt: bookingDogs.updatedAt,
       customerNote: bookingDogs.customerNote,
       version: bookingDogs.version,
       kind: bookingDogs.kind,

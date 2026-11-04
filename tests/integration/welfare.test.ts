@@ -135,7 +135,7 @@ describe('incident reports (D62)', () => {
     const input = {
       dogId: rosaDog,
       occurredOn: today,
-      occurredTime: '00:01',
+      occurredTime: '00:00', // never after the app's now, even with TEST_NOW at midnight UTC (00:00 London in winter)
       kind: 'injury',
       severity: 'minor',
       description: 'Small graze on the left front paw during play.',

@@ -6,13 +6,13 @@ import { useEffect, useRef, type ReactNode } from 'react';
  * from a payment), so it is read out and the next Tab starts there. Server-rendered as a plain
  * wrapper with tabIndex -1; focus moves only after hydration.
  */
-export function FocusOnShow({ children, testId }: { children: ReactNode; testId?: string }) {
+export function FocusOnShow({ children, testId, id }: { children: ReactNode; testId?: string; id?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
   return (
-    <div ref={ref} tabIndex={-1} data-testid={testId}>
+    <div ref={ref} id={id} tabIndex={-1} data-testid={testId}>
       {children}
     </div>
   );

@@ -316,7 +316,7 @@ export default async function AdminHome({
           <Muted>No activity yet.</Muted>
         ) : (
           <div className={s.tableWrap} role="region" aria-label="Recent activity table" tabIndex={0}>
-            <table className={s.table}>
+            <table className={`${s.table} ${s.activityTable}`}>
               <caption className="visually-hidden">Most recent audit events</caption>
               <thead>
                 <tr>

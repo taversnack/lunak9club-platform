@@ -2,13 +2,14 @@
  * Magic-link sign-in (customers only): single use, 10-minute expiry, the safe callbackUrl from #50,
  * the Owner refused, no account enumeration and a rate limit.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
 import { users, verifications } from '@/infra/db/schema';
 import { MAGIC_LINK_MINUTES } from '@/infra/auth/auth';
+import { MAGIC_LINK_MAX, MAGIC_LINK_WINDOW_SECONDS } from '@/domain/auth/rate-limits';
 import { MemoryEmailProvider, linkFrom } from '../support/memory-email';
 import { authRequest, freshIp } from '../support/auth-http';
 import { makeUser, type TestUser } from '../support/factories';
@@ -23,6 +24,10 @@ beforeAll(async () => {
   customer = await makeUser(db(), 'customer', 'Mags Link');
   owner = await makeUser(db(), 'owner', 'Olive Owner');
 });
+// Each test starts with fresh per-address counts (the per-address limit has its own tests below).
+beforeEach(async () => {
+  await db().execute(sql`delete from rate_limits where key like 'magic-link-email:%'`);
+});
 afterAll(async () => {
   setEmailProvider(undefined);
   await closeDb();
@@ -33,17 +38,28 @@ const authPath = (url: string) => {
   const u = new URL(url);
   return u.pathname.replace('/api/auth', '') + u.search;
 };
-const request = (email: string, callbackURL?: string, ip = freshIp()) =>
-  authRequest('/sign-in/magic-link', { body: { email, ...(callbackURL ? { callbackURL } : {}) }, ip });
+/** One browser's magic-link cookie (set on its first request), like a real browser keeps it. */
+type Browser = { cookie?: string };
+const newBrowser = (): Browser => ({});
+async function request(email: string, callbackURL?: string, ip = freshIp(), browser?: Browser) {
+  const r = await authRequest('/sign-in/magic-link', {
+    body: { email, ...(callbackURL ? { callbackURL } : {}) },
+    ip,
+    ...(browser?.cookie ? { cookie: browser.cookie } : {}),
+  });
+  const set = r.cookie.split('; ').find((c) => c.startsWith('lk9_ml_browser='));
+  if (browser && set) browser.cookie = set;
+  return r;
+}
 /** Let the background email send settle. */
 const settle = () => new Promise((r) => setTimeout(r, 50));
 const sessionFor = async (cookie: string) => {
   const r = await authRequest('/get-session', { method: 'GET', cookie });
   return ((await r.res.json()) as { user?: { email: string } } | null)?.user?.email ?? null;
 };
-async function linkFor(email: string, callbackURL?: string) {
+async function linkFor(email: string, callbackURL?: string, browser?: Browser) {
   const before = mail.sent.length;
-  const { res } = await request(email, callbackURL);
+  const { res } = await request(email, callbackURL, freshIp(), browser);
   expect(res.status).toBe(200);
   await settle();
   const m = mail.sent.slice(before).find((x) => x.to === email);
@@ -73,6 +89,37 @@ describe('magic-link sign-in', () => {
     expect(loc.searchParams.get('callbackUrl')).toBe(target);
     expect(loc.searchParams.get('error')).toBe('INVALID_TOKEN');
     expect(again.cookie).not.toMatch(/session_token=[^;]+/);
+  });
+
+  it('“Send the link again” revokes the earlier link; only the newest works, and other people’s links are unaffected', async () => {
+    const other = await makeUser(db(), 'customer', 'Otto Other');
+    const otherLink = await linkFor(other.email);
+    const mine = newBrowser();
+    const a = await linkFor(customer.email, '/account/bookings', mine);
+    expect(mine.cookie).toMatch(/^lk9_ml_browser=[A-Za-z0-9_-]{32}$/);
+    const b = await linkFor(customer.email, '/account/bookings', mine);
+
+    const useA = await authRequest(authPath(a), { method: 'GET' });
+    expect(useA.res.status).toBe(302);
+    expect(new URL(useA.res.headers.get('location')!).searchParams.get('error')).toBe('INVALID_TOKEN');
+    expect(useA.cookie).not.toMatch(/session_token=[^;]+/);
+
+    const useB = await authRequest(authPath(b), { method: 'GET' });
+    expect(useB.res.status).toBe(302);
+    expect(new URL(useB.res.headers.get('location')!).pathname).toBe('/account/bookings');
+    expect(await sessionFor(useB.cookie)).toBe(customer.email);
+
+    const useOther = await authRequest(authPath(otherLink), { method: 'GET' });
+    expect(await sessionFor(useOther.cookie)).toBe(other.email);
+  });
+
+  it('a request for an unknown address revokes nothing', async () => {
+    const link = await linkFor(customer.email);
+    const { res } = await request(`nobody-${randomUUID()}@example.test`);
+    expect(res.status).toBe(200);
+    await settle();
+    const use = await authRequest(authPath(link), { method: 'GET' });
+    expect(await sessionFor(use.cookie)).toBe(customer.email);
   });
 
   it(`expires after ${MAGIC_LINK_MINUTES} minutes`, async () => {
@@ -174,5 +221,101 @@ describe('magic-link sign-in', () => {
     for (let i = 0; i < 5; i++) statuses.push((await request(customer.email, undefined, ip)).res.status);
     expect(statuses.slice(0, 3)).toEqual([200, 200, 200]);
     expect(statuses).toContain(429);
+  });
+
+  it('rate-limits requests for one email address from any number of IPs, keeping its emailed link alive (Tester, #109 F1)', async () => {
+    const victim = await makeUser(db(), 'customer', 'Vic Tim');
+    const link = await linkFor(victim.email); // 1 of MAGIC_LINK_MAX
+    const statuses: number[] = [];
+    // Upper case is the same address; every request comes from a fresh IP.
+    for (let i = 0; i < MAGIC_LINK_MAX + 1; i++)
+      statuses.push((await request(i % 2 ? victim.email.toUpperCase() : victim.email)).res.status);
+    expect(statuses).toEqual([...Array(MAGIC_LINK_MAX - 1).fill(200), 429, 429]);
+    const limited = await request(victim.email);
+    expect(limited.res.status).toBe(429);
+    expect(((await limited.res.json()) as { message?: string }).message).toBe(
+      'Too many requests. Please wait 5 minutes and try again.',
+    );
+    await settle();
+    // The refused requests didn't revoke anything: the newest link that was sent still works.
+    const newest = mail.sent.filter((m) => m.to === victim.email).at(-1);
+    const { res } = await authRequest(authPath(linkFrom(newest)), { method: 'GET' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location') ?? '').not.toContain('error');
+    expect(link).toBeTruthy();
+  });
+
+  it('limits unknown addresses the same way, so a 429 does not reveal whether an account exists', async () => {
+    const statusesFor = async (email: string) => {
+      const out: number[] = [];
+      for (let i = 0; i <= MAGIC_LINK_MAX; i++) out.push((await request(email)).res.status);
+      return out;
+    };
+    const known = await makeUser(db(), 'customer', 'Kay Known');
+    const expected = [...Array(MAGIC_LINK_MAX).fill(200), 429];
+    expect(await statusesFor(known.email)).toEqual(expected);
+    expect(await statusesFor(`nobody-${randomUUID()}@example.com`)).toEqual(expected);
+  });
+
+  it('counts per address without storing the address, and starts again after the window', async () => {
+    const who = await makeUser(db(), 'customer', 'Win Dow');
+    for (let i = 0; i < MAGIC_LINK_MAX; i++) expect((await request(who.email)).res.status).toBe(200);
+    expect((await request(who.email)).res.status).toBe(429);
+    const rows = await db().execute<{ key: string }>(
+      sql`select key from rate_limits where key like 'magic-link-email:%'`,
+    );
+    expect(rows.rows.some((r) => r.key.includes(who.email) || r.key.includes('@'))).toBe(false);
+    // Age the window out.
+    await db().execute(
+      sql`update rate_limits set last_request = last_request - ${(MAGIC_LINK_WINDOW_SECONDS + 1) * 1000} where key like 'magic-link-email:%'`,
+    );
+    expect((await request(who.email)).res.status).toBe(200);
+  });
+
+  const live = async (link: string) => {
+    const token = new URL(link).searchParams.get('token')!;
+    const h = createHash('sha256').update(token).digest('base64url');
+    const r = await db().execute(
+      sql`select 1 from verifications where identifier in (${h}, ${'magic-link:' + h}) and expires_at > now()`,
+    );
+    return r.rows.length === 1;
+  };
+
+  it('strangers asking for links to your address can neither kill your link nor stop you resending (Tester #113 F1)', async () => {
+    const jordan = await makeUser(db(), 'customer', 'Jo Rdan');
+    const browser = newBrowser();
+    const kept = await linkFor(jordan.email, undefined, browser);
+    // An attacker from rotating IPs, no cookie (or a cookie of their own): spends the shared bucket.
+    const attacker = newBrowser();
+    const statuses: number[] = [];
+    for (let i = 0; i < MAGIC_LINK_MAX + 1; i++)
+      statuses.push((await request(jordan.email, undefined, freshIp(), i % 2 ? attacker : undefined)).res.status);
+    expect(statuses).toContain(429);
+    await settle();
+    expect(await live(kept)).toBe(true); // not revoked by anyone else's request
+    // Jordan resends from his browser: allowed (his own bucket), and it replaces his earlier link.
+    const fresh = await linkFor(jordan.email, undefined, browser);
+    expect(await live(kept)).toBe(false);
+    const use = await authRequest(authPath(fresh), { method: 'GET' });
+    expect(await sessionFor(use.cookie)).toBe(jordan.email);
+  });
+
+  it('a browser resending is still limited, in its own bucket', async () => {
+    const who = await makeUser(db(), 'customer', 'Res Ender');
+    const browser = newBrowser();
+    await linkFor(who.email, undefined, browser); // shared bucket: 1
+    const statuses: number[] = [];
+    for (let i = 0; i < MAGIC_LINK_MAX + 1; i++)
+      statuses.push((await request(who.email, undefined, freshIp(), browser)).res.status);
+    expect(statuses).toEqual([...Array(MAGIC_LINK_MAX).fill(200), 429]);
+  });
+
+  it('a forged browser cookie is ignored (treated as a new browser)', async () => {
+    const who = await makeUser(db(), 'customer', 'For Ged');
+    const browser = newBrowser();
+    const kept = await linkFor(who.email, undefined, browser);
+    await request(who.email, undefined, freshIp(), { cookie: 'lk9_ml_browser=not-a-real-id' });
+    await settle();
+    expect(await live(kept)).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
@@ -25,7 +25,7 @@ import {
   setDayCapacity,
   setInternalNote,
 } from '@/server/services/owner-bookings';
-import { issueTx, markCreditRefunded, myInvoice, ownerInvoice } from '@/server/services/billing';
+import { issueTx, loadBusinessSettings, markCreditRefunded, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
   handleWebhook,
@@ -84,6 +84,23 @@ const stripe = new TestProvider('http://localhost:3000');
 const today = londonDate(new Date());
 /** Distinct open weekdays well away from other test files' dates. */
 const weekdayAhead = weekdayPicker();
+/**
+ * Like weekdayAhead, but a day nobody else has a live booking on. Tests that cap a day's capacity
+ * need one: when the booking window is crowded (e.g. a clock near Christmas) weekdayAhead shares a
+ * day other files claimed as a last resort, and capping a day someone has booked is refused
+ * ("1 places are already booked"). Picks on until it finds an empty day.
+ */
+async function emptyWeekday(n: number): Promise<string> {
+  for (let tries = 0; tries < 40; tries++) {
+    const d = weekdayAhead(n);
+    const [r] = await db()
+      .select({ n: sql<number>`count(*)::int` })
+      .from(bookingDogs)
+      .where(and(eq(bookingDogs.serviceDate, d), sql`${bookingDogs.status} not in ('cancelled')`));
+    if (r!.n === 0) return d;
+  }
+  throw new Error(`No empty open weekday found from +${n}`);
+}
 
 let owner: TestUser;
 let pia: TestUser;
@@ -119,6 +136,14 @@ beforeAll(async () => {
   piaDog = await approvedDog(db(), owner, pia, 'Nutmeg');
   quinnDog = await approvedDog(db(), owner, quinn, 'Juniper');
 });
+// Each test starts with a well-behaved provider, whatever order tests run in or however one ended.
+beforeEach(() => {
+  stripe.failRefunds = false;
+  stripe.loseRefundAnswers = false;
+  stripe.refundsPending = false;
+  stripe.badKey = false;
+  stripe.delayMs = 0;
+});
 afterAll(async () => {
   setEmailProvider(undefined);
   setPaymentProvider(undefined);
@@ -153,7 +178,12 @@ describe('pay at booking (D6)', () => {
     expect(attempt!.status).toBe('paid');
     const inv = await myInvoice(db(), pia, attempt!.resultInvoiceId!);
     expect(inv.inv).toMatchObject({ kind: 'booking', status: 'paid' });
-    expect(inv.inv.number).toMatch(/^LK9DOUGIE-\d{2,}$/);
+    // The configured prefix, whatever an earlier file set it to (billing.test.ts changes it), so this
+    // passes in any file order.
+    const { invoicePrefix } = await loadBusinessSettings(db());
+    const number = inv.inv.number ?? '';
+    expect(number.startsWith(invoicePrefix)).toBe(true);
+    expect(number.slice(invoicePrefix.length)).toMatch(/^\d{2,}$/);
     expect(inv.lines).toHaveLength(1);
     expect(inv.payments).toHaveLength(1);
     expect(inv.payments[0]).toMatchObject({ method: 'stripe', amountPence: 5000 });
@@ -161,7 +191,7 @@ describe('pay at booking (D6)', () => {
   });
 
   it('a held place counts towards capacity', async () => {
-    const date = weekdayAhead(41);
+    const date = await emptyWeekday(41);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const q = await requestAndApprove(
@@ -180,6 +210,9 @@ describe('pay at booking (D6)', () => {
   });
 
   it('releases unpaid places when the time runs out, and tells the customer', async () => {
+    // Its own unpaid hold, so it does not depend on another test leaving one open.
+    const date = weekdayAhead(46);
+    await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const [open] = await attemptsFor(pia.userId);
     expect(open!.status).toBe('open');
     mail.sent.length = 0;
@@ -207,7 +240,7 @@ describe('pay at booking (D6)', () => {
   });
 
   it('if the hold lapsed and the place went before payment arrived, it refunds automatically', async () => {
-    const date = weekdayAhead(42);
+    const date = await emptyWeekday(42);
     await setDayCapacity(db(), owner, { date, sessionCapacity: 1, taxiCapacity: 20 });
     await requestAndApprove(db(), pia, { dogIds: [piaDog], dates: [date], session: 'full', taxi: false }, owner);
     const [a] = await attemptsFor(pia.userId);
@@ -249,8 +282,8 @@ describe('pay at booking (D6)', () => {
 
 describe('two offers from one request (same bookingId)', () => {
   it('each checkout pays for, confirms and releases only its own day', async () => {
-    const d1 = weekdayAhead(50);
-    const d2 = weekdayAhead(51);
+    const d1 = await emptyWeekday(50);
+    const d2 = await emptyWeekday(51);
     for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     const w = await createMyBookings(db(), quinn, {
       dogIds: [quinnDog],
@@ -303,8 +336,8 @@ describe('two offers from one request (same bookingId)', () => {
   });
 
   it('an expired checkout releases only its own day, not a newer hold on the same booking', async () => {
-    const d1 = weekdayAhead(36);
-    const d2 = weekdayAhead(38);
+    const d1 = await emptyWeekday(36);
+    const d2 = await emptyWeekday(38);
     for (const date of [d1, d2]) await setDayCapacity(db(), owner, { date, sessionCapacity: 0, taxiCapacity: 20 });
     await createMyBookings(db(), quinn, {
       dogIds: [quinnDog],
@@ -396,9 +429,17 @@ describe('automatic refunds (D20, D58)', () => {
     const a = await payLatest(pia.userId);
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     stripe.failRefunds = true;
-    await cancelMyBooking(db(), pia, bd!.id);
-    stripe.failRefunds = false;
-    const [failed] = await db().select().from(cardRefunds).where(eq(cardRefunds.status, 'failed'));
+    try {
+      await cancelMyBooking(db(), pia, bd!.id);
+    } finally {
+      stripe.failRefunds = false;
+    }
+    // This test's own failed refund (other tests leave failed refunds of their own behind).
+    const [card] = await db().select().from(payments).where(eq(payments.checkoutAttemptId, a.id));
+    const [failed] = await db()
+      .select()
+      .from(cardRefunds)
+      .where(and(eq(cardRefunds.paymentId, card!.id), eq(cardRefunds.status, 'failed')));
     expect(failed).toBeDefined();
     await expect(retryCardRefund(db(), pia, failed!.id)).rejects.toBeInstanceOf(AuthorizationError);
     await retryCardRefund(db(), owner, failed!.id);

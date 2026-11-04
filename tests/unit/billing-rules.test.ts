@@ -100,6 +100,10 @@ describe('balances, credits and refunds (D54, D55)', () => {
     expect(paymentState(inv, balanceOf(9600, 0, 0), '2026-11-03')).toBe('overdue');
     expect(paymentState(inv, balanceOf(9600, 0, 100), '2026-11-01')).toBe('part_paid');
     expect(paymentState(inv, balanceOf(9600, 0, 9600), '2026-12-01')).toBe('paid');
+    // Fully credited reads as cancelled, paid, part paid or not (Tester #114 F3).
+    expect(paymentState({ ...inv, status: 'paid' }, balanceOf(9600, 9600, 9600), '2026-12-01')).toBe('void');
+    expect(paymentState({ ...inv, status: 'paid' }, balanceOf(9600, 9600, 4000), '2026-12-01')).toBe('void');
+    expect(paymentState(inv, balanceOf(9600, 4000, 5600), '2026-12-01')).toBe('paid');
   });
 });
 

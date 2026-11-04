@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import { requestMagicLink } from '@/infra/auth/client';
 import { Alert, Field, Stack, buttonClass } from '@/ui/components';
 import { PendingButton } from '@/ui/form';
+import { MAGIC_LINK_WINDOW_SECONDS, rateLimitedCopy } from '@/domain/auth/rate-limits';
 
 /** The same reply for every address, known or not, so the form never reveals who has an account. */
 export const LINK_SENT_COPY = 'If that address has an account, a link is on its way.';
 export const LINK_FAILED_COPY = 'That link has expired or was already used. Request a new one.';
-const RATE_LIMITED_COPY = 'Too many requests. Please wait a minute and try again.';
+const RATE_LIMITED_COPY = rateLimitedCopy(MAGIC_LINK_WINDOW_SECONDS);
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
@@ -32,6 +33,13 @@ export function MagicLinkForm({
   const [pending, setPending] = useState(false);
   const sentHeading = useRef<HTMLHeadingElement>(null);
   const errorBox = useRef<HTMLDivElement>(null);
+  const resendResult = useRef<HTMLDivElement>(null);
+  // Bumped after each "Send the link again", so focus moves to its outcome (the button is disabled
+  // while sending, which would otherwise drop focus to the page body).
+  const [resendDone, setResendDone] = useState(0);
+  // Bumped by "Use a different email address", so focus lands on the email field it brings back.
+  const [changeEmail, setChangeEmail] = useState(0);
+  const emailForm = useRef<HTMLFormElement>(null);
 
   // Move focus to whatever just changed, so keyboard and screen-reader users land on it.
   useEffect(() => {
@@ -40,6 +48,12 @@ export function MagicLinkForm({
   useEffect(() => {
     if (linkError) errorBox.current?.focus();
   }, [linkError]);
+  useEffect(() => {
+    if (resendDone) resendResult.current?.focus();
+  }, [resendDone]);
+  useEffect(() => {
+    if (changeEmail) emailForm.current?.querySelector<HTMLInputElement>('input[name="email"]')?.focus();
+  }, [changeEmail]);
 
   async function send(address: string): Promise<boolean> {
     setError(null);
@@ -69,6 +83,7 @@ export function MagicLinkForm({
     if (!sentTo) return;
     setResent(false);
     if (await send(sentTo)) setResent(true);
+    setResendDone((n) => n + 1);
   }
 
   if (sentTo) {
@@ -82,7 +97,7 @@ export function MagicLinkForm({
             {LINK_SENT_COPY} We sent it to <strong>{sentTo}</strong>. It works once and expires after 10 minutes.
           </Alert>
         </div>
-        <div aria-live="polite">
+        <div aria-live="polite" ref={resendResult} tabIndex={-1} data-testid="resend-result">
           {resent ? <p>We&apos;ve sent another link. Use the newest one.</p> : null}
           {error ? <Alert tone="danger">{error}</Alert> : null}
         </div>
@@ -104,6 +119,7 @@ export function MagicLinkForm({
               setSentTo(null);
               setResent(false);
               setError(null);
+              setChangeEmail((n) => n + 1);
             }}
           >
             Use a different email address
@@ -114,7 +130,7 @@ export function MagicLinkForm({
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate>
+    <form ref={emailForm} onSubmit={onSubmit} noValidate>
       <Stack>
         <h1>Sign in</h1>
         {linkError ? (
