@@ -18,8 +18,13 @@ import {
   payments,
   webhookEvents,
 } from '@/infra/db/schema';
-import { cancelMyBooking, createMyBookings } from '@/server/services/bookings';
-import { giveWaitlistPlace, ownerCreateBooking, setDayCapacity } from '@/server/services/owner-bookings';
+import { cancelMyBooking, createMyBookings, myBookings } from '@/server/services/bookings';
+import {
+  giveWaitlistPlace,
+  ownerCreateBooking,
+  setDayCapacity,
+  setInternalNote,
+} from '@/server/services/owner-bookings';
 import { issueTx, loadBusinessSettings, markCreditRefunded, myInvoice, ownerInvoice } from '@/server/services/billing';
 import {
   completeCheckout,
@@ -35,6 +40,7 @@ import { ConflictError, NotFoundError } from '@/server/errors';
 import { AuthorizationError } from '@/server/policy/authorize';
 
 import { londonDate, londonInstant } from '@/domain/time';
+import { timelineState } from '@/domain/booking/overview';
 import { weekdayPicker } from '../support/dates';
 import { requestAndApprove } from '../support/requests';
 import { MemoryEmailProvider } from '../support/memory-email';
@@ -74,6 +80,12 @@ class TestProvider extends SimulatedPaymentProvider {
 }
 
 const db = () => getDb();
+const overviewCtx = {
+  now: new Date(),
+  today: londonDate(new Date()),
+  freeCancelHours: 48,
+  formatHold: (d: Date) => d.toISOString(),
+};
 const mail = new MemoryEmailProvider();
 const stripe = new TestProvider('http://localhost:3000');
 const today = londonDate(new Date());
@@ -216,6 +228,30 @@ describe('pay at booking (D6)', () => {
     expect(r.released).toBeGreaterThanOrEqual(1);
     const rows = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, open!.bookingId!));
     expect(rows.every((x) => x.status === 'cancelled')).toBe(true);
+    // The timeline can tell a lapsed hold from a cancellation, and never sees the internal note (B14).
+    const mine = (await myBookings(db(), pia)).past.filter((b) => rows.some((x) => x.id === b.id));
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((b) => b.endedReason === 'payment_expired')).toBe(true);
+    // The account overview reads the same derived value: a lapsed hold shows as released.
+    expect(timelineState(mine[0]!, overviewCtx)).toMatchObject({ text: 'Released', ended: true });
+    for (const b of mine) {
+      expect(b).not.toHaveProperty('internalNote');
+      expect(b).not.toHaveProperty('cancelledBy'); // an Owner's raw user id never reaches the customer
+    }
+    // No row carries a raw staff or user id anywhere (keys and values).
+    const all = await myBookings(db(), pia);
+    for (const b of [...all.upcoming, ...all.past]) {
+      const keys = Object.keys(b);
+      for (const banned of ['cancelledBy', 'internalNote', 'attendanceBy', 'createdBy', 'userId'])
+        expect(keys).not.toContain(banned);
+    }
+    expect(JSON.stringify(all)).not.toContain(owner.userId);
+    // An Owner note on that day can't wipe the reason.
+    const target = rows[0]!;
+    await setInternalNote(db(), owner, target.id, { version: target.version, internalNote: 'rang her, no answer' });
+    const [after] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, target.id));
+    expect(after!.internalNote).toBe('Not paid in time\nrang her, no answer');
+    expect((await myBookings(db(), pia)).past.find((b) => b.id === target.id)!.endedReason).toBe('payment_expired');
     expect(mail.sent.some((m) => m.template === 'payment.hold-released' && m.to === pia.email)).toBe(true);
     expect((await resumeCheckoutUrl(db(), pia, open!.id)).url).toBeNull();
   });
@@ -356,6 +392,9 @@ describe('automatic refunds (D20, D58)', () => {
     mail.sent.length = 0;
     expect(await cancelMyBooking(db(), pia, bd!.id)).toEqual({ late: false, refundedPence: 5000 });
     expect(stripe.refunds.length).toBe(before + 1);
+    const cancelledRow = (await myBookings(db(), pia)).past.find((b) => b.id === bd!.id)!;
+    expect(cancelledRow.endedReason).toBe('cancelled_by_customer');
+    expect(timelineState(cancelledRow, overviewCtx)?.next).toMatch(/you withdrew or cancelled|still charged/i);
     const [paidAttempt] = await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.id, a.id));
     const inv = await myInvoice(db(), pia, paidAttempt!.resultInvoiceId!);
     expect(inv.creditNotes).toHaveLength(1);
