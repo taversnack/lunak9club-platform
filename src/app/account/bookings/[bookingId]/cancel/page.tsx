@@ -41,7 +41,7 @@ export default async function CancelPage({ params }: { params: Promise<{ booking
           </Alert>
         ) : (
           <Alert tone="success">
-            No charge – you’re cancelling more than {freeCancellationHours} hours before. If you’ve paid for this day by
+            No charge – you’re cancelling at least {freeCancellationHours} hours before. If you’ve paid for this day by
             card, it’s refunded to your card{b.kind === 'membership' ? ' once Luna’s K9 Club has checked it' : ''}.
           </Alert>
         )}
