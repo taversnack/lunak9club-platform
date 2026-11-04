@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { RequestBar } from '@/ui/request-bar';
 import s from '@/ui/ui.module.css';
 import { Alert, Card, Stack, StatusBadge } from '@/ui/components';
 import { requirePermission } from '@/server/session';
@@ -177,11 +178,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                 ))}
               </fieldset>
             </Card>
-            <div>
-              <button type="submit" className={`${s.button} ${s.primary}`}>
-                Check price and availability
-              </button>
-            </div>
+            <RequestBar cancelHours={cal.settings.freeCancellationHours} label="Check price and availability" />
           </Stack>
         </form>
       )}
