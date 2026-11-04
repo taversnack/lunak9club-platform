@@ -1,6 +1,6 @@
 # Customer site: Airbnb-style design plan (for Stephen's approval)
 
-Status: **approved by Stephen, 5 Nov 2026 (answers in section 7).** Building starts with PR A. Author: frontend agent, 4 Nov 2026. Input: `docs/research/airbnb-style-patterns.md`, D97 (navy primary buttons, rounded cards), D99 (email-link sign-in first), D100 (full days only), D101 (no counts, no "nearly full"), D108 (approved wording). Customer side first; the Owner back office adopts the same cards, spacing and radius afterwards.
+Status: **approved by Stephen, 4 Nov 2026 (answers in section 7).** Building starts with PR A. Author: frontend agent, 4 Nov 2026. Input: `docs/research/airbnb-style-patterns.md`, D97 (navy primary buttons, rounded cards), D99 (email-link sign-in first), D100 (full days only), D101 (no counts, no "nearly full"), D108 (approved wording). Customer side first; the Owner back office adopts the same cards, spacing and radius afterwards.
 
 **Goal:** the feel, style and layout of Airbnb (photo-led, big calm cards, one clear action per screen, a bottom tab bar on phones) in Luna's K9 Club colours and brand: navy, sand, Raleway, the logo, rounded shapes. We copy the *pattern*, not Airbnb's logo, assets, icons or exact styling.
 
@@ -176,7 +176,7 @@ Text comes before photos: every card and section reads fully without its image (
 - Reduced motion respected; no hover-only information; forced-colours mode keeps borders.
 - UK English, plain wording, no counts or "nearly full" (D101), no half-day wording (D100).
 
-## 7. Decisions (answered by Stephen, 5 Nov 2026)
+## 7. Decisions (answered by Stephen, 4 Nov 2026)
 
 1. Plan and build order: **approved.**
 2. Tab bar: **Book, Bookings, Dogs, Account** (everything else in the Account sheet).
