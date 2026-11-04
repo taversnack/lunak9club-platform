@@ -67,7 +67,11 @@ export const documents = pgTable(
     contentType: text().notNull(),
     sizeBytes: integer().notNull(),
     sha256: text().notNull(),
-    scanStatus: text().notNull().default('not_scanned'),
+    /** not_scanned = no scanner (D30 today); held = accepted, waiting for a scan; clean; infected = bytes removed. */
+    scanStatus: text().$type<'not_scanned' | 'held' | 'clean' | 'infected'>().notNull().default('not_scanned'),
+    /** Scan attempts so far, and when the last one was (scheduler retries held files). */
+    scanAttempts: integer().notNull().default(0),
+    scannedAt: timestamp({ withTimezone: true }),
     /** compliance = vaccination records etc.; incident = photos attached to an incident report. */
     purpose: text().$type<'compliance' | 'incident'>().notNull().default('compliance'),
     uploadedBy: text()
@@ -79,7 +83,8 @@ export const documents = pgTable(
     index('documents_dog_idx').on(t.dogId),
     index('documents_customer_idx').on(t.customerId),
     check('documents_size_chk', sql`${t.sizeBytes} > 0 and ${t.sizeBytes} <= 10485760`),
-    check('documents_scan_chk', sql`${t.scanStatus} in ('not_scanned', 'clean', 'infected')`),
+    check('documents_scan_chk', sql`${t.scanStatus} in ('not_scanned', 'held', 'clean', 'infected')`),
+    check('documents_scan_attempts_chk', sql`${t.scanAttempts} >= 0`),
   ],
 );
 

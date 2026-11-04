@@ -43,6 +43,10 @@ const EnvSchema = z.object({
     .optional()
     .transform((v) => v?.trim().toLowerCase() || undefined)
     .refine((v) => v === undefined || /^[a-z0-9-]+$/.test(v), 'CLIENT_IP_HEADER must be a header name'),
+  /** Virus scanning of uploads (D30). off = uploads stay "not scanned"; clamav = scan through clamd. Off until approved. */
+  SCANNER_MODE: z.enum(['off', 'clamav']).default('off'),
+  SCANNER_HOST: z.string().default('localhost'),
+  SCANNER_PORT: z.coerce.number().int().positive().default(3310),
   STORAGE_DRIVER: z.enum(['s3', 'fs']).default('fs'),
   STORAGE_DIR: z.string().default('.data/uploads'),
   S3_ENDPOINT: z.url().optional(),
