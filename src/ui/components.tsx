@@ -186,6 +186,66 @@ export function StatCard({
   );
 }
 
+/**
+ * Brand-colour stand-in for a photo (design plan, section 3). Fixed aspect ratio so a real photo dropped in
+ * later causes no layout shift. Decorative: the card's text carries the meaning. `initial` is the dog's first letter.
+ * PLACEHOLDER: replace with Stephen's photo when supplied.
+ */
+export function PlaceholderMedia({
+  ratio = '4 / 3',
+  initial,
+}: {
+  ratio?: '16 / 9' | '4 / 3' | '1 / 1';
+  initial?: string;
+}) {
+  return (
+    <div className={s.media} style={{ aspectRatio: ratio }} aria-hidden="true">
+      {initial ? <span className={s.mediaInitial}>{initial.slice(0, 1).toUpperCase()}</span> : null}
+    </div>
+  );
+}
+
+/** Responsive card grid: 1 column on phones, 2 from 640 px, 3 from 1024 px. */
+export function CardGrid({ children }: { children: ReactNode }) {
+  return <ul className={s.cardGrid}>{children}</ul>;
+}
+
+/**
+ * Listing-style card: media, title, one meta line, ONE text badge and ONE action. Render inside CardGrid.
+ * The title is a heading; status is words plus an icon (StatusBadge), never colour alone.
+ */
+export function ListingCard({
+  media,
+  title,
+  meta,
+  badge,
+  note,
+  action,
+  headingLevel = 3,
+}: {
+  media?: ReactNode;
+  title: ReactNode;
+  meta?: ReactNode;
+  badge?: ReactNode;
+  note?: ReactNode;
+  action?: ReactNode;
+  headingLevel?: 2 | 3 | 4;
+}) {
+  const H = `h${headingLevel}` as 'h2' | 'h3' | 'h4';
+  return (
+    <li className={s.listingCard}>
+      {media ? <div className={s.listingMedia}>{media}</div> : null}
+      <div className={s.listingBody}>
+        <H className={s.listingTitle}>{title}</H>
+        {meta ? <p className={s.muted}>{meta}</p> : null}
+        {badge ? <div>{badge}</div> : null}
+        {note ? <p className={s.hint}>{note}</p> : null}
+        {action ? <div className={s.listingAction}>{action}</div> : null}
+      </div>
+    </li>
+  );
+}
+
 /** Shown when a list or table has nothing in it. Always says what to do next when there is an action. */
 export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
