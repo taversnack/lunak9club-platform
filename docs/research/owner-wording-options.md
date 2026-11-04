@@ -15,10 +15,10 @@ The Owner-confirmed D76 sentence ("Please note: sending this request does not se
 | Variant | Wording | Checks |
 |---|---|---|
 | A (shortest) | "Nothing to pay yet. Luna's K9 Club approves your request first, then you pay to secure your booking." | Matches D76 (no payment taken at request) and D80 (pay after approval). No capacity hint. |
-| B (adds cancellation) | "No payment until Luna's K9 Club approves. You can withdraw a request any time. Once booked, cancel free up to 48 hours before; after that the day is charged." | D79 (withdraw any time, no charge), D8 and D39 (48 hours, then charged). "Once booked" matters: D39 applies to the session start. |
-| C (reassuring, longer) | "This is a request, not a booking yet. We'll check it and reply, and you only pay once it's approved. Free to cancel up to 48 hours before your day." | D76, D80, D8. **[Check]** "We'll check it and reply" promises a reply; D79 says unanswered requests simply close at 23:59 the day before. Drop that clause if the Owner does not want to promise a reply. |
+| B (adds cancellation) | "No payment until Luna's K9 Club approves. You can withdraw a request any time. Once booked, cancel free at least 48 hours before; after that the day is charged." **Approved (Stephen, 4 Nov 2026, as relayed by PM).** | D79 (withdraw any time, no charge), D8 and D39 (48 hours, then charged). "Once booked" matters: D39 applies to the session start. |
+| C (reassuring, longer) | "This is a request, not a booking yet. We'll check it and reply, and you only pay once it's approved. Free to cancel at least 48 hours before your day." | D76, D80, D8. **[Check]** "We'll check it and reply" promises a reply; D79 says unanswered requests simply close at 23:59 the day before. Drop that clause if the Owner does not want to promise a reply. |
 
-Recommended for approval (opinion): B, because it answers both fears (cost and cancelling) in two sentences. Avoid "guaranteed", "instant" or "confirmed" near the button.
+Approved: B (Stephen, 4 Nov 2026, as relayed by PM). Original rationale (opinion): B because it answers both fears (cost and cancelling) in two sentences. Avoid "guaranteed", "instant" or "confirmed" near the button.
 
 ---
 
