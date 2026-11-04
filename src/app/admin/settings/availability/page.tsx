@@ -70,7 +70,7 @@ export default async function AvailabilityPage() {
             />
             <TextField
               name="freeCancellationHours"
-              label="Free cancellation up to (hours before)"
+              label="Free cancellation at least (hours before)"
               inputMode="numeric"
               required
               defaultValue={settings.freeCancellationHours}
