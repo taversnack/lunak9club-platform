@@ -238,6 +238,14 @@ describe('pay at booking (D6)', () => {
       expect(b).not.toHaveProperty('internalNote');
       expect(b).not.toHaveProperty('cancelledBy'); // an Owner's raw user id never reaches the customer
     }
+    // No row carries a raw staff or user id anywhere (keys and values).
+    const all = await myBookings(db(), pia);
+    for (const b of [...all.upcoming, ...all.past]) {
+      const keys = Object.keys(b);
+      for (const banned of ['cancelledBy', 'internalNote', 'attendanceBy', 'createdBy', 'userId'])
+        expect(keys).not.toContain(banned);
+    }
+    expect(JSON.stringify(all)).not.toContain(owner.userId);
     // An Owner note on that day can't wipe the reason.
     const target = rows[0]!;
     await setInternalNote(db(), owner, target.id, { version: target.version, internalNote: 'rang her, no answer' });
