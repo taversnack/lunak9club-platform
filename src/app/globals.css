@@ -49,6 +49,8 @@
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 20px;
+  --radius-xl: 24px; /* hero and photo cards (design plan, Stephen 4 Nov) */
+  --radius-input: 16px;
   --radius-pill: 999px;
 
   /* Spacing: 4px base. */
