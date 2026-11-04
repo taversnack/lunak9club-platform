@@ -107,3 +107,35 @@ Real restore: put the site in maintenance (stop the app and scheduler), restore 
 **Options considered and not taken (Owner decision, D107):**
 - *Cloudflare Workers via the OpenNext adapter* (spike, PR #86, closed): the Next.js build and OpenNext output worked, but the Worker bundle step failed resolving `pg-cloudflare` under pnpm (adding it as a direct dependency did not help); `nodemailer` (raw SMTP over TCP) does not run on Workers; the compressed Worker size was likely over the free plan limit, so the Workers Paid plan, plus Hyperdrive or a hosted Postgres, a domain and an email provider, would have been paid items. It would also have meant changing the database driver.
 - *Vercel*: the free Hobby plan is non-commercial only and its cron runs too rarely for the 10-minute scheduler (O6, O12).
+
+## 8. Production alerting (operations note)
+
+Status: recommendations only. No monitoring service is chosen or paid for; every tool named here is a generic category. Alerts must never carry personal, payment or medical data (CLAUDE.md rule 5): they say what failed and where to look, not who it concerned.
+
+**What already exists in the app:**
+- A job that fails (or a tick step that reports errors) emails the Owner once per job per day ("Scheduled job failed: ..."), and the job is retried on the next tick.
+- Structured error logs (`level` 50) with personal fields redacted; messages carry the error name, not its text.
+- `GET /api/health` returns 503 when the database is unreachable, migrations are pending, or the configuration is invalid.
+- A production start with unsafe settings exits at once, so the host keeps the previous release.
+- Failed card refunds and missing pay links are listed on the Owner's Refunds and Today screens.
+- There is **no external error tracker** and no alert for "the scheduler stopped calling us". Both are covered below.
+
+**Recommended alerts** (tell the Owner and one technical contact; test each path before go-live):
+
+| What | Signal | Alert when |
+|---|---|---|
+| Site is down | An external uptime check on `GET /api/health` every 1 to 5 minutes (also checks TLS expiry) | 2 failures in a row (non-200 or timeout); certificate expires in under 14 days |
+| Scheduler stalled | The scheduler's own exit status (`curl -f`) or a "last success" ping to a dead-man's-switch monitor | No successful tick for 30 minutes (two missed ticks at 15 minutes, three at 10) |
+| A job keeps failing | The existing Owner email, plus `job failed` lines in the logs | Same job emails two days running (the email says so), or any `job failed` for retention or invoice jobs |
+| Errors rising | Count of `level` 50 log lines, from the host or log tool | More than 10 in 5 minutes, or any burst after a deploy |
+| Payments | Stripe's own dashboard alerts for a failing webhook endpoint (built in and free), and `webhook failed` log lines | Endpoint failing or more than 3 failures in an hour; refunds listed as failed for more than a day |
+| Database | The managed Postgres provider's alerts | Disk over 80%, connections over 80%, CPU or memory sustained high, failed backup |
+| Backups | Last successful backup time | Older than 26 hours; also a quarterly reminder to run the restore drill (section 6) |
+| Container health | Restart count and memory | More than 3 restarts in 10 minutes, or memory over 85% |
+| Email | The email provider's bounce and complaint notices once a provider is chosen (D102) | Any complaint, or bounces above 2% |
+| Sign-in abuse | Count of 429 responses on sign-in routes (proxy logs) | A sustained burst from many addresses (information, not urgent) |
+
+**Cheap ways to do this without choosing a paid tool:** the host's built-in metrics and alerts; a crontab on another machine that calls `/api/health` and mails on failure; a self-hosted or free-tier uptime and dead-man's-switch monitor (a paid plan only if the free limits are too small, which is a paid item for the Owner's approval); the managed database's included alerts. Adding an error-tracking service later is a dependency and a possible cost, so it needs the Owner's decision first.
+
+**Housekeeping:** keep a one-page runbook ("what to check when this alert fires") next to the alert list; review the thresholds after the first month of real traffic; log retention follows D64 (technical data 90 days).
+
