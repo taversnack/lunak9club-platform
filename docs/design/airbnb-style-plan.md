@@ -147,6 +147,26 @@ Invoice cards: month, total, badge (Paid / Due by [date] / Overdue), one action 
 
 Each PR: typecheck, lint, full e2e with axe on mobile and desktop on my own database, screenshots at 320, 390 and 1280 px (and a 200% zoom check) in a PR comment. Tester gates each.
 
+### Effort per PR (rough, one working day of frontend effort = 1 d) and costs
+
+| PR | Effort | Depends on |
+|---|---|---|
+| A. Tokens, listing card, grid, placeholder media, empty/loading states | 1 d | none |
+| B. Bottom tab bar, clean header, account sheet | 1-1.5 d | A |
+| Home page (+ D108 blocks, search-style card, trust placeholders) | 1.5 d | A, B |
+| Sign-in | 0.5 d | A |
+| Dogs (list and dog page) | 1 d | A, B |
+| Bookings (cards replace table) | 1 d | A, B |
+| Book (calendar cards, dog cards) | 1 d | A, B; after #119 |
+| Membership | 1 d | A, B |
+| Invoices | 0.5-1 d | A, B |
+| Account overview restyle + ended-booking lines | 1 d | A, B, #103, #104 |
+| Owner back office adopts tokens and cards | 2-3 d | all above |
+
+**Costs: none planned.** Stock photos, licensed icon sets and extra fonts would cost money and are **not** used; they are flagged here for the Owner to decide. Placeholder photo blocks are plain CSS in brand colours. Real photography is the Owner's to supply (and consent for people and dogs).
+
+Text comes before photos: every card and section reads fully without its image (the image is decorative), so slow connections and screen readers lose nothing.
+
 ## 6. Accessibility checklist (every PR)
 
 - WCAG 2.2 AA contrast (4.5:1 text, 3:1 for icons/borders that carry meaning); badges are icon + word.
