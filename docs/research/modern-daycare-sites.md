@@ -31,7 +31,7 @@ These now take precedence over the matching recommendations below. Record them i
 Effort: S under 0.5 day, M 0.5-2 days, L more. Impact H/M/L. None needs paid services.
 
 1. **[frontend] One customer status vocabulary, text plus icon**: Requested, Approved - pay to secure (with the hold deadline as date and time), Confirmed, Declined, Expired, Cancelled, each with a one-line "what happens next". S / H. F2. Check against Owner-confirmed wording (D76, D80).
-2. **[frontend] Cancellation rule beside the Request button** ("Free to cancel up to 48 hours before; after that the day is charged") with a link to the full rule. S / H. F3; D8, D20, D39.
+2. **[frontend] Cancellation rule beside the Request button** ("Free to cancel at least 48 hours before; after that the day is charged") with a link to the full rule. S / H. F3; D8, D20, D39.
 3. **[frontend] "Your requests" as a timeline card** (submitted, approved, pay-by, paid) with Withdraw while pending (D79). M / M-H.
 4. **[frontend] Owner Today inbox as a worklist**: grouped sections with counts linking to filtered lists; urgent first (vaccination blocks, nearest dates, unpaid holds about to lapse); cap about 5 per group plus "See all"; Approve/Decline inline; "Nothing needs you" empty state; urgency never by colour alone. M / H. F5.
 5. **[frontend] Compatibility context inside the approval row** (size/temperament summary, trial status, names of dogs already booked that day). Owner-only (D33). M / H.
