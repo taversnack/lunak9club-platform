@@ -343,6 +343,8 @@ describe('refunds and credit notes (D18, D54, D55)', () => {
     expect(after.bal.duePence).toBe(before.bal.duePence - 4800);
     expect(after.creditNotes[0]!.number).toBe(cnNo);
     expect(after.creditNotes[0]!.refundState).toBe('none'); // unpaid, so nothing to send back
+    // The customer's timeline: credited off an unpaid invoice, so no money moved (not "refunded").
+    expect((await myBookings(db(), mia)).past.find((b) => b.id === req!.bookingDogId)!.paymentState).toBe('credited');
     await expect(decideRefund(db(), owner, req!.id, true, {})).rejects.toBeInstanceOf(ConflictError);
   });
 

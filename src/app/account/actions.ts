@@ -1,5 +1,7 @@
 'use server';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
+import { ENDED_FLASH_COOKIE } from './membership/ended-flash';
 import { revalidatePath } from 'next/cache';
 import { getDb } from '@/infra/db/client';
 import { getStorage } from '@/infra/storage';
@@ -271,12 +273,19 @@ export async function leaveMembershipAction(_: ActionState, fd: FormData): Promi
     if (fd.get('confirm') !== 'on') {
       return { status: 'error', message: 'Tick the box to confirm.', fields: { confirm: 'Tick to confirm' } };
     }
-    const { endsOn } = await leaveMembership(getDb(), actor, String(fd.get('id') ?? ''));
+    const r = await leaveMembership(getDb(), actor, String(fd.get('id') ?? ''));
     revalidatePath('/account/membership');
-    return {
-      status: 'success',
-      message: `Your membership ends after ${formatUkDate(endsOn)}. Later booked days have been cancelled free of charge.`,
-    };
+    // The form goes away once the membership is ending, so the outcome is shown on the page itself
+    // (Tester #111 F-111b). A short-lived cookie names the membership; the page reads what happened
+    // from the membership itself, so a hand-made address can't show a made-up notice (#114 F4).
+    (await cookies()).set(ENDED_FLASH_COOKIE, r.id, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/account/membership',
+      maxAge: 120,
+    });
+    redirect('/account/membership#ended');
   });
 }
 

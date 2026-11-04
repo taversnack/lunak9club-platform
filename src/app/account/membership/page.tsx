@@ -6,7 +6,10 @@ import { ActionForm, Checkbox, SelectField, SubmitButton, TextField } from '@/ui
 import { DayPicker } from '@/ui/day-picker';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
-import { describeWeekdays, myMemberships } from '@/server/services/memberships';
+import { describeWeekdays, endedMembershipSummary, myMemberships } from '@/server/services/memberships';
+import { cookies } from 'next/headers';
+import { FocusOnShow } from '@/ui/focus-on-show';
+import { ENDED_FLASH_COOKIE } from './ended-flash';
 import { myMembershipDays, myMonthConfirmations } from '@/server/services/membership-workflow';
 import { myApprovalRequests } from '@/server/services/approvals';
 import { loadSettings } from '@/server/services/booking-shared';
@@ -35,9 +38,28 @@ const OUTCOME: Record<string, { tone: 'info' | 'success' | 'warning' | 'danger';
 const plan = (weekdays: number[], session: string, taxi: boolean) =>
   `${describeWeekdays(weekdays)} · ${SESSION_LABELS[session as Session]}${taxi ? ' · taxi' : ''}`;
 
+/**
+ * What ending a membership did (Tester #111 F-111b), from the membership itself (#114 F4). Days on
+ * an issued invoice wait for the Owner's approval of their refund request (D56), and a day that
+ * isn't approved is still owed, so the notice doesn't promise more (#114 F2).
+ */
+function endedNotice(e: { endsOn: string; neverStarts: boolean; refundRequests: number }): string {
+  const n = e.refundRequests;
+  const refunds =
+    n > 0
+      ? ` ${n === 1 ? 'One of those days was' : `${n} of those days were`} already invoiced: ${n === 1 ? 'it is' : 'they are'} credited once Luna’s K9 Club approves (the credit note reduces what you owe, or the money comes back to you if you’ve paid). Any day that isn’t approved is still owed.`
+      : '';
+  return e.neverStarts
+    ? `The membership has been cancelled before it started (it was due to start on ${formatUkDate(e.endsOn)}). Its booked days have been cancelled.${refunds}`
+    : `The membership ends after ${formatUkDate(e.endsOn)}. Later booked days have been cancelled.${refunds}`;
+}
+
 export default async function MembershipPage() {
   const actor = await requirePermission('account.access');
   const db = getDb();
+  const flash = (await cookies()).get(ENDED_FLASH_COOKIE)?.value;
+  const ended = flash ? await endedMembershipSummary(db, actor, flash) : null;
+  const notice = ended ? endedNotice(ended) : null;
   const [days, months, requests, legacy, settings] = await Promise.all([
     myMembershipDays(db, actor),
     myMonthConfirmations(db, actor),
@@ -49,6 +71,8 @@ export default async function MembershipPage() {
   const today = londonDate(new Date());
   const tomorrow = addDays(today, 1);
   const leaveFrom = changeEffectiveDate(today);
+  // The furthest first day the request accepts (checked again on the server).
+  const latestStart = addDays(today, settings.maxAdvanceDays);
   const memberRequests = requests.filter((r) => r.type.startsWith('membership.')).slice(0, 20);
   const pendingFor = (dogId: string) =>
     memberRequests.find((r) => r.status === 'pending' && r.subjectKey === `dog:${dogId}`);
@@ -58,6 +82,11 @@ export default async function MembershipPage() {
   return (
     <Stack>
       <h1>Membership</h1>
+      {notice ? (
+        <FocusOnShow id="ended" testId="ended-notice">
+          <Alert tone="success">{notice}</Alert>
+        </FocusOnShow>
+      ) : null}
       <p>
         Questions about cancelling, changing or adding days? See <Link href="/account/faq">membership questions</Link>.
       </p>
@@ -148,6 +177,7 @@ export default async function MembershipPage() {
                           required
                           defaultValue={o.startsOn > today ? o.startsOn : tomorrow}
                           min={tomorrow}
+                          max={latestStart}
                         />
                         <div>
                           <SubmitButton variant="secondary">Send for approval</SubmitButton>
@@ -198,10 +228,21 @@ export default async function MembershipPage() {
                   </Stack>
                 ) : (
                   <details>
-                    <summary>{m ? `Change ${d.name}’s days for all future months` : `Choose ${d.name}’s days`}</summary>
+                    <summary>
+                      {m && !m.started
+                        ? `Change ${d.name}’s days or first day`
+                        : m
+                          ? `Change ${d.name}’s days for all future months`
+                          : `Choose ${d.name}’s days`}
+                    </summary>
                     <ActionForm action={requestMembershipDaysAction}>
                       <input type="hidden" name="dogId" value={d.id} />
-                      {m ? (
+                      {m && !m.started ? (
+                        <p>
+                          {d.name}’s membership starts on {formatUkDate(m.startsOn)}. Keep that first day or choose
+                          another below.
+                        </p>
+                      ) : m ? (
                         <p>
                           New days start on {formatUkDate(days.changeFrom)} (the first month we haven’t invoiced yet).
                           To move one day only, use <Link href="/account/bookings">Your bookings</Link>.
@@ -210,14 +251,15 @@ export default async function MembershipPage() {
                       <DayPicker open={settings.openWeekdays} checked={m?.weekdays ?? []} />
                       <input type="hidden" name="session" value="full" />
                       <Checkbox name="taxi" label="Use the dog taxi (included)" defaultChecked={m?.taxi ?? false} />
-                      {m ? null : (
+                      {m && m.started ? null : (
                         <TextField
                           name="startsOn"
                           label="First day"
                           type="date"
                           required
-                          defaultValue={tomorrow}
+                          defaultValue={m ? m.startsOn : tomorrow}
                           min={tomorrow}
+                          max={latestStart}
                         />
                       )}
                       <div>
@@ -230,14 +272,26 @@ export default async function MembershipPage() {
                   <details>
                     <summary>End {d.name}’s membership</summary>
                     <ActionForm action={leaveMembershipAction}>
-                      <p>
-                        Leaving takes effect from {formatUkDate(leaveFrom)} (the 1st of next month if you tell us by the
-                        20th).
-                      </p>
+                      {addDays(leaveFrom, -1) < m.startsOn ? (
+                        <p>
+                          {d.name}’s membership hasn’t started yet (it starts on {formatUkDate(m.startsOn)}). Ending it
+                          now cancels it before it starts, and its booked days are cancelled. Any of those days already
+                          invoiced are credited once Luna’s K9 Club approves; a day that isn’t approved is still owed.
+                        </p>
+                      ) : (
+                        <p>
+                          Leaving takes effect from {formatUkDate(leaveFrom)} (the 1st of next month if you tell us by
+                          the 20th).
+                        </p>
+                      )}
                       <input type="hidden" name="id" value={m.id} />
                       <Checkbox
                         name="confirm"
-                        label={`End ${d.name}’s membership (last day ${formatUkDate(addDays(leaveFrom, -1))})`}
+                        label={
+                          addDays(leaveFrom, -1) < m.startsOn
+                            ? `Cancel ${d.name}’s membership before it starts`
+                            : `End ${d.name}’s membership (last day ${formatUkDate(addDays(leaveFrom, -1))})`
+                        }
                       />
                       <div>
                         <SubmitButton variant="danger">End membership</SubmitButton>

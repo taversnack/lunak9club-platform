@@ -473,19 +473,23 @@ export async function myBookings(db: Db, actor: Actor, now = new Date()) {
   const rows = await db
     .select({
       id: bookingDogs.id,
+      bookingId: bookingDogs.bookingId,
       serviceDate: bookingDogs.serviceDate,
       session: bookingDogs.session,
       taxi: bookingDogs.taxi,
       status: bookingDogs.status,
       offerExpiresAt: bookingDogs.offerExpiresAt,
       lateCancellation: bookingDogs.lateCancellation,
+      cancelledAt: bookingDogs.cancelledAt,
+      cancelledBy: bookingDogs.cancelledBy,
+      updatedAt: bookingDogs.updatedAt,
       customerNote: bookingDogs.customerNote,
       version: bookingDogs.version,
       kind: bookingDogs.kind,
       dogName: dogs.name,
       pricePence: priceSnapshots.totalPence,
-      // Used only to derive endedReason below; never returned to the customer.
-      cancelledBy: bookingDogs.cancelledBy,
+      // Used only to derive endedReason below; neither the note nor the raw user id of whoever cancelled
+      // is returned to the customer (an Owner's user id is not theirs to see).
       internalNote: bookingDogs.internalNote,
       // Used only to derive paymentState below; never returned.
       invoiceStatus: invoices.status,
