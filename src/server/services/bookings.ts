@@ -475,7 +475,6 @@ export async function myBookings(db: Db, actor: Actor, now = new Date()) {
       dogName: dogs.name,
       pricePence: priceSnapshots.totalPence,
       // Used only to derive endedReason below; never returned to the customer.
-      cancelledBy: bookingDogs.cancelledBy,
       internalNote: bookingDogs.internalNote,
     })
     .from(bookingDogs)
@@ -483,10 +482,10 @@ export async function myBookings(db: Db, actor: Actor, now = new Date()) {
     .leftJoin(priceSnapshots, eq(priceSnapshots.bookingDogId, bookingDogs.id))
     .where(and(eq(bookingDogs.customerId, customer.id), gte(bookingDogs.serviceDate, addDays(today, -30))))
     .orderBy(asc(bookingDogs.serviceDate), asc(dogs.name));
-  const withTerms = rows.map(({ cancelledBy, internalNote, ...r }) => ({
+  const withTerms = rows.map(({ internalNote, ...r }) => ({
     ...r,
     /** Why a day ended without being attended, for the timeline: a lapsed hold shows as payment_expired. */
-    endedReason: endedReason({ status: r.status, cancelledBy, internalNote }, customer.userId),
+    endedReason: endedReason({ status: r.status, cancelledBy: r.cancelledBy, internalNote }, customer.userId),
     /** Booked or held for payment: cancel (with the 48-hour rule). Requested: withdraw at no charge. */
     cancellable: (r.status === 'confirmed' || r.status === 'pending_payment') && r.serviceDate > today,
     withdrawable: r.status === 'requested',

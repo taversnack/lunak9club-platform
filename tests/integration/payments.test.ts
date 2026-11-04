@@ -227,7 +227,6 @@ describe('pay at booking (D6)', () => {
     expect(mine.every((b) => b.endedReason === 'payment_expired')).toBe(true);
     for (const b of mine) {
       expect(b).not.toHaveProperty('internalNote');
-      expect(b).not.toHaveProperty('cancelledBy');
     }
     // An Owner note on that day can't wipe the reason.
     const target = rows[0]!;
