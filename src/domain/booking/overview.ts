@@ -3,6 +3,7 @@
  * Pure functions, so the page and the unit tests share one rule.
  */
 import type { BookingStatus } from './rules';
+import type { EndedReason } from './ended-reason';
 
 type IsoDate = string;
 
@@ -36,7 +37,8 @@ export type TimelineRow = {
   status: BookingStatus;
   offerExpiresAt: Date | null;
   cancelledAt: Date | null;
-  cancelledBy: string | null;
+  /** Derived by the service; the raw user id of whoever cancelled never reaches the customer. */
+  endedReason: EndedReason | null;
   lateCancellation: boolean;
   updatedAt: Date;
 };
@@ -59,7 +61,13 @@ const RELEASED = 'Not paid in time, so the place was released. You’re welcome 
 
 export function timelineState(
   b: TimelineRow,
-  ctx: { now: Date; today: IsoDate; myUserId: string; freeCancelHours: number; formatHold: (d: Date) => string },
+  ctx: {
+    now: Date;
+    today: IsoDate;
+    /** Unused: kept so callers need no change. */ myUserId?: string;
+    freeCancelHours: number;
+    formatHold: (d: Date) => string;
+  },
 ): TimelineState | null {
   switch (b.status) {
     case 'requested':
@@ -100,7 +108,7 @@ export function timelineState(
     case 'cancelled': {
       const endedAt = b.cancelledAt ?? b.updatedAt;
       // No one cancelled it: a payment hold ran out (D78), or a request reached the booking cut-off (D79).
-      if (b.cancelledBy === null)
+      if (b.endedReason !== 'cancelled_by_customer' && b.endedReason !== 'cancelled_by_owner')
         return b.offerExpiresAt
           ? { tone: 'info', text: 'Released', next: RELEASED, ended: true, endedAt }
           : {
@@ -110,7 +118,7 @@ export function timelineState(
               ended: true,
               endedAt,
             };
-      if (b.cancelledBy === ctx.myUserId)
+      if (b.endedReason === 'cancelled_by_customer')
         return {
           tone: 'info',
           text: 'Cancelled',

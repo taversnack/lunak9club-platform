@@ -10,7 +10,7 @@ const row = (o: Partial<TimelineRow>): TimelineRow => ({
   status: 'requested',
   offerExpiresAt: null,
   cancelledAt: null,
-  cancelledBy: null,
+  endedReason: null,
   lateCancellation: false,
   updatedAt: now,
   ...o,
@@ -46,11 +46,17 @@ describe('one lapse rule', () => {
 
 describe('ended days give a plain reason, never place counts', () => {
   const cases: [Partial<TimelineRow>, RegExp][] = [
-    [{ status: 'cancelled', cancelledBy: null, offerExpiresAt: ago(1), cancelledAt: ago(1) }, /not paid in time/i],
-    [{ status: 'cancelled', cancelledBy: null, cancelledAt: ago(1) }, /no charge/i],
-    [{ status: 'cancelled', cancelledBy: 'me', cancelledAt: ago(1) }, /you withdrew or cancelled/i],
-    [{ status: 'cancelled', cancelledBy: 'me', cancelledAt: ago(1), lateCancellation: true }, /still charged/i],
-    [{ status: 'cancelled', cancelledBy: 'admin', cancelledAt: ago(1) }, /Luna/],
+    [
+      { status: 'cancelled', endedReason: 'payment_expired', offerExpiresAt: ago(1), cancelledAt: ago(1) },
+      /not paid in time/i,
+    ],
+    [{ status: 'cancelled', endedReason: 'request_closed', cancelledAt: ago(1) }, /no charge/i],
+    [{ status: 'cancelled', endedReason: 'cancelled_by_customer', cancelledAt: ago(1) }, /you withdrew or cancelled/i],
+    [
+      { status: 'cancelled', endedReason: 'cancelled_by_customer', cancelledAt: ago(1), lateCancellation: true },
+      /still charged/i,
+    ],
+    [{ status: 'cancelled', endedReason: 'cancelled_by_owner', cancelledAt: ago(1) }, /Luna/],
     [{ status: 'rejected', updatedAt: ago(1) }, /./],
   ];
   it.each(cases)('%o', (o, re) => {
