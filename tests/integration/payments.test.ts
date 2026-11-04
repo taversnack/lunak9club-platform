@@ -232,6 +232,7 @@ describe('pay at booking (D6)', () => {
     const mine = (await myBookings(db(), pia)).past.filter((b) => rows.some((x) => x.id === b.id));
     expect(mine.length).toBeGreaterThan(0);
     expect(mine.every((b) => b.endedReason === 'payment_expired')).toBe(true);
+    expect(mine.every((b) => b.paymentState === 'none')).toBe(true); // never paid
     // The account overview reads the same derived value: a lapsed hold shows as released.
     expect(timelineState(mine[0]!, overviewCtx)).toMatchObject({ text: 'Released', ended: true });
     for (const b of mine) {
@@ -390,8 +391,10 @@ describe('automatic refunds (D20, D58)', () => {
     const [bd] = await db().select().from(bookingDogs).where(eq(bookingDogs.bookingId, a.bookingId!));
     const before = stripe.refunds.length;
     mail.sent.length = 0;
+    expect((await myBookings(db(), pia)).upcoming.find((b) => b.id === bd!.id)!.paymentState).toBe('paid');
     expect(await cancelMyBooking(db(), pia, bd!.id)).toEqual({ late: false, refundedPence: 5000 });
     expect(stripe.refunds.length).toBe(before + 1);
+    expect((await myBookings(db(), pia)).past.find((b) => b.id === bd!.id)!.paymentState).toBe('refunded');
     const cancelledRow = (await myBookings(db(), pia)).past.find((b) => b.id === bd!.id)!;
     expect(cancelledRow.endedReason).toBe('cancelled_by_customer');
     expect(timelineState(cancelledRow, overviewCtx)?.next).toMatch(/you withdrew or cancelled|still charged/i);
@@ -440,6 +443,7 @@ describe('automatic refunds (D20, D58)', () => {
     expect(inv.creditNotes).toHaveLength(0);
     const [row] = await db().select().from(bookingDogs).where(eq(bookingDogs.id, l.bd.id));
     expect(row).toMatchObject({ status: 'cancelled', lateCancellation: true });
+    expect((await myBookings(db(), pia)).past.find((b) => b.id === l.bd.id)!.paymentState).toBe('charged_no_refund');
   });
 
   it('a refund the provider rejects can be retried by the Owner', async () => {
