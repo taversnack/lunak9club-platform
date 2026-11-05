@@ -23,6 +23,7 @@ import { sendBookingReminders, sendVaccinationReminders } from './reminders';
 import { expireBookingRequests } from './booking-requests';
 import { runRetention } from './privacy';
 import { getStorage } from '@/infra/storage';
+import { scanHeldDocuments } from './document-scan';
 import { ownerBillingMessage } from '@/infra/email/templates';
 import { appUrl, ownerEmails, sendSafely } from '../notify';
 import { claimNotification } from './reminders';
@@ -208,6 +209,10 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
   const reconciled = await step(db, 'reconcile-checkouts', now, failed, () => reconcileOpenCheckouts(db, now));
   const holds = await step(db, 'release-checkouts', now, failed, () => releaseExpiredCheckouts(db, now));
   const refunds = await step(db, 'card-refunds', now, failed, () => submitPendingRefunds(db));
+  // Virus scan (D30): re-check files held while the scanner was down. Does nothing while SCANNER_MODE=off.
+  const scans = await step(db, 'scan-held-documents', now, failed, () =>
+    scanHeldDocuments(db, getStorage(), actor, now),
+  );
   return {
     at: now.toISOString(),
     london: `${today} ${time}`,
@@ -217,6 +222,7 @@ export async function runTick(db: Db, actor: Actor, now = new Date()) {
     checkoutsPaid: reconciled?.paid ?? null,
     holdsReleased: holds?.released ?? null,
     refunds,
+    documentsScanned: scans?.checked ?? null,
     requestsExpired: requests?.expired ?? null,
     requestDaysClosed: requests?.daysClosed ?? null,
     failed,

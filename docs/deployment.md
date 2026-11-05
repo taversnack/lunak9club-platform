@@ -6,7 +6,7 @@ Status: **not deployed.** Hosting direction (Owner, D107): a **Node container or
 
 1. **No production email provider is chosen (D102).** The SMTP transport is provider-neutral and production-capable: set `EMAIL_TRANSPORT=smtp`, `EMAIL_SANDBOX=0`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` (`starttls` or `tls`), `SMTP_USER` and `SMTP_PASSWORD`; production refuses to start without them. What is missing is the Owner's choice of a provider (it may cost money, so ask first), a verified sender domain for `EMAIL_FROM`, and a real test send from a safe address. Until then email stays local-only (Mailpit).
 2. Which container host or VPS, which managed Postgres and which S3-compatible bucket: not chosen (all cost money; see section 7).
-3. No virus scanning on uploads (D30).
+3. Virus scanning of uploads (D30, D109) is built in parts and is **off by default** (`SCANNER_MODE=off`). **Do not switch it on (`SCANNER_MODE=clamav`) until parts 2 and 3 are both merged and Stephen has approved the extra memory** (about 2 GB for the scanner container, a paid host-size item). Until part 3 lands, the Owner can open a held file (one waiting for its scan) without the warning, acknowledgement and `document.opened_unscanned` audit entry that D109 requires. See `docs/virus-scanning-options.md`.
 
 ## 2. Environment variables
 
@@ -37,6 +37,8 @@ Status: **not deployed.** Hosting direction (Owner, D107): a **Node container or
 | `S3_FORCE_PATH_STYLE` | 1 | check provider | |
 | `PAYMENTS_DRIVER` | simulated | `stripe` | |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | none | required with `stripe` | Live keys only with the Owner's explicit approval (CLAUDE.md rule 7). Live keys are refused outside production. |
+| `SCANNER_MODE` | off | keep `off` until approved | `off` or `clamav`. Do not switch on before D30 parts 2 and 3 are merged and Stephen has approved the memory cost. |
+| `SCANNER_HOST` / `SCANNER_PORT` | localhost / 3310 | the scanner container's address, used only with `clamav` | The clamd sidecar, reachable on the private network only. |
 | `CRON_SECRET` | none | required, 32+ chars | Bearer token for `/api/jobs/tick`; the scheduler is off without it. |
 | `LOG_LEVEL` | info | optional | fatal, error, warn, info, debug. |
 | `TEST_DATABASE_URL`, `E2E_*` | n/a | not used | Test tooling only. |

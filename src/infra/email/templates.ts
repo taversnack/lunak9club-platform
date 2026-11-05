@@ -100,6 +100,20 @@ export function dogApprovedMessage(to: string, firstName: string, dogName: strin
   };
 }
 
+/** D30: a file was blocked by the virus scanner. Deliberately says nothing about the file, customer or dog. */
+export function ownerFileBlockedMessage(to: string, url: string): EmailMessage {
+  return {
+    to,
+    template: 'owner.file-blocked',
+    subject: 'Luna’s K9 Club: a file was blocked',
+    text: `The virus scanner blocked an uploaded file, so it was not kept. The customer has been asked to send a new copy.\n${url}`,
+    html: layout(
+      'A file was blocked',
+      `<p>The virus scanner blocked an uploaded file, so it was not kept. The customer has been asked to send a new copy.</p>${button(url, 'Open the Owner area')}`,
+    ),
+  };
+}
+
 export function ownerReviewWaitingMessage(to: string, url: string): EmailMessage {
   return {
     to,

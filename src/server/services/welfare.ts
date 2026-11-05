@@ -27,6 +27,7 @@ import { logger } from '@/infra/logger';
 import { assertAuthorized, type Actor } from '../policy/authorize';
 import { recordAudit } from '../audit';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
+import { alertFileBlocked, BLOCKED_FILE_MESSAGE, scanUpload, type StorableVerdict } from './document-scan';
 import { appUrl, firstNameOf, sendSafely } from '../notify';
 import { checkbox, idOrNotFound, isoDate, optionalText, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
@@ -97,6 +98,17 @@ export async function reportIncident(
   const owner = await dogWithOwner(db, d.dogId);
   const by = actor.kind === 'user' ? actor.userId : null;
 
+  // Virus scan (D30, off by default). A scanner that is down means the photo is held, not refused.
+  const verdicts = new Map<(typeof checked)[number], StorableVerdict>();
+  for (const p of checked) {
+    if (!p.check.ok) continue;
+    const v = await scanUpload(p.bytes, now);
+    if (v.status === 'infected') {
+      await alertFileBlocked(db, actor, null);
+      throw new ValidationError('Please check the highlighted fields.', { photos: BLOCKED_FILE_MESSAGE });
+    }
+    verdicts.set(p, v);
+  }
   const stored: { key: string; mime: string; p: (typeof checked)[number] }[] = [];
   for (const p of checked) {
     if (!p.check.ok) continue;
@@ -136,6 +148,9 @@ export async function reportIncident(
             contentType: s.mime,
             sizeBytes: s.p.bytes.byteLength,
             sha256: createHash('sha256').update(s.p.bytes).digest('hex'),
+            scanStatus: verdicts.get(s.p)!.status,
+            scanAttempts: verdicts.get(s.p)!.scanAttempts,
+            scannedAt: verdicts.get(s.p)!.scannedAt,
             uploadedBy: by ?? owner.customerUserId,
             purpose: 'incident',
           })
