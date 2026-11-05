@@ -32,6 +32,11 @@ describe('email templates', () => {
     expect(m.text).toContain('£50.00');
     expect(m.text).toContain('invoice INV-1');
     expect(m.html).toContain('https://app.test/account/invoices');
+    // D58: refund timing varies by bank, so no promise of a number of days.
+    for (const body of [m.text, m.html]) {
+      expect(body).toContain('How long it takes to appear depends on your bank.');
+      expect(body).not.toMatch(/working days|5–10/);
+    }
   });
 
   it('Owner confirmation summary (D92–D94): names and dogs by status, club name once in the subject, nothing else', () => {

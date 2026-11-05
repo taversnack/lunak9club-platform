@@ -378,10 +378,10 @@ export function cardRefundMessage(
     to,
     template: 'payment.refund',
     subject: `${BRAND}: refund of ${p.amountText}`,
-    text: `Hi ${firstName},\n\nWe’ve refunded ${p.amountText} to your card for ${p.forText}. It usually appears within 5–10 working days.\n\n${url}`,
+    text: `Hi ${firstName},\n\nWe’ve refunded ${p.amountText} to your card for ${p.forText}. How long it takes to appear depends on your bank.\n\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve refunded <strong>${escapeHtml(p.amountText)}</strong> to your card for ${escapeHtml(p.forText)}. It usually appears within 5–10 working days.</p>${button(url, 'See your invoices')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve refunded <strong>${escapeHtml(p.amountText)}</strong> to your card for ${escapeHtml(p.forText)}. How long it takes to appear depends on your bank.</p>${button(url, 'See your invoices')}`,
       '',
     ),
   };
