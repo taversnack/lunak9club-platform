@@ -72,7 +72,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  min-height: var(--target-min);
   padding: 0 var(--space-4);
   border-radius: var(--radius-pill);
   font-weight: var(--weight-bold);
@@ -286,6 +286,17 @@
 }
 .tabbar a[aria-current='page'] svg {
   background: var(--color-brand-sand);
+}
+
+/* Very short viewports (200 to 400% zoom, landscape phones): the tab bar would eat the screen, so the Menu
+   button in the header is the way around, and the Book request bar sits at the bottom of the page. */
+@media (max-height: 480px) {
+  .tabbar {
+    display: none;
+  }
+  .shell {
+    --tabbar-h: 0px;
+  }
 }
 
 @media (min-width: 900px) {

@@ -131,7 +131,7 @@ export function AppShell({
             <Image src="/brand/lunak9-logo.png" alt="Luna’s K9 Club home" width={155} height={55} priority />
           </Link>
           {tabs ? (
-            <nav aria-label="Main" className={s.tabs}>
+            <nav aria-label="Sections" className={s.tabs}>
               <ul>
                 {tabs.map((t) => (
                   <li key={t.href}>
