@@ -34,7 +34,7 @@ Our app sends only transactional email (approvals, pay links, receipts, reminder
 ### Resend
 - **Observed:** 3,000/month free with a 100/day cap, 3 domains; Pro $20/mo for 50,000; SMTP on all plans; log retention 30 days on Free and Pro (https://resend.com/pricing). Ireland sending region exists, but account data, logs and metadata stay in the US (https://resend.com/docs/dashboard/domains/regions). DPA with EU SCCs and UK SCCs by reference (https://resend.com/legal/dpa). The dashboard shows email details, which suggests content is stored (https://resend.com/docs/dashboard/emails/introduction): **I could not confirm any option to disable content storage.**
 - The 100/day cap is fine for us but a month-end invoice batch could exceed it; check against the number of members.
-- **DNS effort:** low: add SPF/DKIM records Resend displays, plus DMARC. The app already uses Resend (CLAUDE.md stack), so SMTP credentials are the only change.
+- **DNS effort:** low: add SPF/DKIM records Resend displays, plus DMARC. CLAUDE.md names Resend as the intended provider; the app's SMTP transport needs only its SMTP host, port, TLS mode, user and password.
 - **Deliverability (general knowledge):** well regarded by developers.
 
 ### Postmark
@@ -49,7 +49,7 @@ Our app sends only transactional email (approvals, pay links, receipts, reminder
 - **DNS effort:** low-medium (SPF, DKIM, optional tracking CNAME, plus DMARC).
 
 ### Brevo (EU option)
-- **Observed:** product page says a daily-capped free tier, published transactional pricing, SMTP relay, servers in the EU and GDPR compliance (https://www.brevo.com/products/transactional-email/). **Figures were not readable**; the pricing page returned no numbers and the help article returned 403. DPA and UK Addendum **unverified**. Brevo also bundles marketing tools, which we do not need and could tempt us towards PECR-covered marketing (see D-level note on service versus marketing email).
+- **Observed:** product page says a daily-capped free tier, published transactional pricing, SMTP relay, servers in the EU and GDPR compliance (https://www.brevo.com/products/transactional-email/). **Figures were not readable**; the pricing page returned no numbers and the help article returned 403. DPA and UK Addendum **unverified**. Brevo also bundles marketing tools, which we do not need and could tempt us towards PECR-covered marketing (no decision in `decisions.md` covers marketing email, so none is planned).
 - Check whether the free tier adds Brevo branding to messages and whether SMTP is available on Free.
 
 ### SMTP2GO
@@ -62,7 +62,7 @@ Our app sends only transactional email (approvals, pay links, receipts, reminder
 
 - **UK data location:** only SES offers a **London** region for the sending service (observed). Mailgun offers an EU region. Resend can send from Ireland but stores account data and logs in the US. Postmark is US-only. For all non-UK options the lawful basis for transfers is SCCs plus (where listed) the UK Addendum, not UK residency.
 - **Content logging:** none of the providers read clearly lets us disable content logging. Postmark keeps content 45 days; Resend shows content in its dashboard for 30 days; Mailgun keeps logs for 1 day on the plans we would use. The safest mitigation is the one we already follow: no sensitive data in email bodies (D33 and rule 5), so stored copies hold only a "sign in to see details" notice, a name and dates. Even so, a stored body can include a customer's name and email address (contact data): that is an unavoidable processor copy; note it in the privacy notice and DPA record.
-- **Magic-link emails (D99):** they carry a sign-in link that grants access. Short link lifetime already exists (MAIL link minutes in the code); some providers' link tracking rewrites URLs. **Turn off click and open tracking** for transactional mail on whichever provider is chosen, to avoid tracked or rewritten magic links and extra data collection.
+- **Magic-link emails (D99):** they carry a sign-in link that grants access. Short link lifetime already exists (the `MAGIC_LINK_MINUTES` constant in `src/infra/auth/auth.ts`, currently 10 minutes); some providers' link tracking rewrites URLs. **Turn off click and open tracking** for transactional mail on whichever provider is chosen, to avoid tracked or rewritten magic links and extra data collection.
 - **DNS records needed (any provider):** SPF (TXT) and DKIM (CNAME or TXT) from the provider, plus a DMARC TXT policy (start at `p=none` with an `rua` report address, then tighten). Use a subdomain such as a mail or notifications subdomain of the club's domain to protect the main domain's reputation. Effort: small, but the Owner must have DNS access; cost: none.
 - **Free tiers and commercial use:** none of the pages I read banned commercial use of the free tier, but the pages were incomplete (Resend's terms refer to a separate Acceptable Use Policy I did not read). Confirm before use.
 
