@@ -953,3 +953,9 @@
 .listingBody p {
   margin: 0;
 }
+/* Short viewports (zoom): the request bar scrolls with the form instead of covering it. */
+@media (max-height: 480px) {
+  .requestBar {
+    position: static;
+  }
+}
