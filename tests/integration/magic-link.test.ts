@@ -2,13 +2,14 @@
  * Magic-link sign-in (customers only): single use, 10-minute expiry, the safe callbackUrl from #50,
  * the Owner refused, no account enumeration and a rate limit.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { closeDb, getDb } from '@/infra/db/client';
 import { setEmailProvider } from '@/infra/email/providers';
 import { users, verifications } from '@/infra/db/schema';
 import { MAGIC_LINK_MINUTES } from '@/infra/auth/auth';
+import { logger } from '@/infra/logger';
 import { MAGIC_LINK_MAX, MAGIC_LINK_WINDOW_SECONDS } from '@/domain/auth/rate-limits';
 import { MemoryEmailProvider, linkFrom } from '../support/memory-email';
 import { authRequest, freshIp } from '../support/auth-http';
@@ -317,5 +318,31 @@ describe('magic-link sign-in', () => {
     await request(who.email, undefined, freshIp(), { cookie: 'lk9_ml_browser=not-a-real-id' });
     await settle();
     expect(await live(kept)).toBe(true);
+  });
+});
+
+describe('logging when the sign-in email fails', () => {
+  it('records only the error name, never the address (it can appear in a mail server error)', async () => {
+    const email = customer.email;
+    setEmailProvider({
+      name: 'failing',
+      send: async () => {
+        throw new Error(`550 Recipient address rejected: ${email}`);
+      },
+    });
+    const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      await request(email);
+      await settle();
+      await settle();
+      const logged = JSON.stringify(spy.mock.calls);
+      expect(spy).toHaveBeenCalled();
+      expect(logged).not.toContain(email);
+      expect(logged).not.toContain('Recipient address rejected');
+      expect(logged).toContain('magic-link email failed');
+    } finally {
+      spy.mockRestore();
+      setEmailProvider(mail);
+    }
   });
 });
