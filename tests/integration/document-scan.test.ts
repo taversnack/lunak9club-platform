@@ -142,35 +142,53 @@ describe('virus scanning of uploads (D30, fake scanner, no real malware)', () =>
     expect(await opened()).toHaveLength(2); // one entry per open
   });
 
-  it('the download route shows a warning page first, and only "Open anyway" serves the file (audited)', async () => {
+  it('the download route shows a warning page first; only its POST button serves the file (audited), a link cannot', async () => {
     await scannerDown();
     const id = await upload(PDF);
-    const { GET } = await import('@/app/api/documents/[documentId]/route');
-    const call = (query = '') =>
-      GET(new Request(`http://localhost:3000/api/documents/${id}${query}`), {
-        params: Promise.resolve({ documentId: id }),
-      });
-    // A customer sees the usual not-found, never the warning.
+    const { GET, POST } = await import('@/app/api/documents/[documentId]/route');
+    const params = { params: Promise.resolve({ documentId: id }) };
+    const url = `http://localhost:3000/api/documents/${id}`;
+    const get = (query = '') => GET(new Request(`${url}${query}`), params);
+    const post = (origin: string | null) =>
+      POST(new Request(url, { method: 'POST', ...(origin ? { headers: { origin } } : {}) }), params);
+    const opened = async () =>
+      (await db().select().from(auditEvents).where(eq(auditEvents.action, 'document.opened_unscanned'))).length;
+
+    // A customer sees the usual not-found, never the warning, by GET or POST.
     current.actor = uma;
-    expect((await call('?acknowledge=unscanned')).status).toBe(404);
-    // The Owner gets the warning (no file bytes), then the file after acknowledging.
+    expect((await get('?acknowledge=unscanned')).status).toBe(404);
+    expect((await post('http://localhost:3000')).status).toBe(404);
+
+    // The Owner gets the warning (no file bytes) with a POST button, not a link carrying the acknowledgement.
     current.actor = owner;
-    const warn = await call();
+    const warn = await get();
     expect(warn.status).toBe(409);
     const html = await warn.text();
     expect(html).toContain('Open anyway');
-    expect(html).toContain(`acknowledge=unscanned`);
+    expect(html).toContain('method="post"');
+    expect(html).not.toContain('acknowledge=');
     expect(html).not.toContain('%PDF');
-    const before = await db().select().from(auditEvents).where(eq(auditEvents.action, 'document.opened_unscanned'));
-    const ok = await call('?acknowledge=unscanned');
+
+    // A crafted link (GET with the old parameter) neither serves the file nor writes the audit entry.
+    const before = await opened();
+    const crafted = await get('?acknowledge=unscanned');
+    expect(crafted.status).toBe(409);
+    expect(await opened()).toBe(before);
+
+    // A POST from another site, or with no origin, is refused and writes nothing.
+    expect((await post('https://evil.example')).status).toBe(403);
+    expect((await post(null)).status).toBe(403);
+    expect(await opened()).toBe(before);
+
+    // The button (a same-origin POST) serves the file and is audited once.
+    const ok = await post('http://localhost:3000');
     expect(ok.status).toBe(200);
     expect(
       Buffer.from(await ok.arrayBuffer())
         .subarray(0, 5)
         .toString(),
     ).toBe('%PDF-');
-    const after = await db().select().from(auditEvents).where(eq(auditEvents.action, 'document.opened_unscanned'));
-    expect(after.length).toBe(before.length + 1);
+    expect(await opened()).toBe(before + 1);
   });
 
   it('the scheduler retries held files: clean once the scanner is back, and a second run does nothing', async () => {
