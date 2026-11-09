@@ -240,7 +240,12 @@
   display: none;
 }
 
-/* Bottom tab bar (customer, mobile). */
+/* Bottom tab bar (customer, mobile). Sticky bars (the Book request bar) sit above it via --tabbar-h. */
+.shell {
+  --tabbar-h: calc(58px + env(safe-area-inset-bottom));
+  --safe-pad: 0px;
+  scroll-padding-bottom: calc(var(--tabbar-h) + 16px);
+}
 .tabbar {
   position: fixed;
   inset: auto 0 0 0;
@@ -284,6 +289,10 @@
 }
 
 @media (min-width: 900px) {
+  .shell {
+    --tabbar-h: 0px;
+    --safe-pad: env(safe-area-inset-bottom);
+  }
   .tabs,
   .user {
     display: flex;
