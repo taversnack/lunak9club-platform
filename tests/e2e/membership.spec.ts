@@ -1,6 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, expectLandedAfterPayment, signIn, signOut } from './helpers';
+import {
+  DEMO_CUSTOMER,
+  DEMO_CUSTOMER_2,
+  DEMO_OWNER,
+  expectLandedAfterPayment,
+  signIn,
+  signOut,
+  navTo,
+} from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -19,7 +27,7 @@ test('customer sees prices and chooses 2 membership days for approval', async ({
   const { user, dog } = who(info.project.name);
   await signIn(page, user.email, user.password);
   await expect(page).toHaveURL(/\/account$/);
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Membership' }).click();
+  await navTo(page, 'Your account', 'Membership');
   await expect(page.getByRole('heading', { name: 'Membership', level: 1 })).toBeVisible();
   const prices = page.getByRole('region', { name: 'Prices', exact: true });
   await expect(prices).toContainText('£50.00');
@@ -138,7 +146,7 @@ test('customer sees the invoice and can download the PDF', async ({ page }, info
   const { user } = who(info.project.name);
   await signIn(page, user.email, user.password);
   await expect(page).toHaveURL(/\/account$/);
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Invoices' }).click();
+  await navTo(page, 'Your account', 'Invoices');
   await expect(page.getByRole('heading', { name: 'Your invoices', level: 1 })).toBeVisible();
   await axe(page);
   await page

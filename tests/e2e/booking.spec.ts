@@ -8,6 +8,7 @@ import {
   latestEmail,
   signIn,
   signOut,
+  navTo,
 } from './helpers';
 import { PAY_TO_SECURE_KEY, REQUEST_NOT_SECURED, REQUEST_NOT_SECURED_KEY } from '../../src/domain/booking/wording';
 
@@ -28,7 +29,7 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
 }, info) => {
   await signIn(page, DEMO_CUSTOMER.email, DEMO_CUSTOMER.password);
   await expect(page).toHaveURL(/\/account$/);
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Book', exact: true }).click();
+  await navTo(page, 'Your account', 'Book', true);
   await expect(page.getByRole('heading', { name: 'Book day care' })).toBeVisible();
   await axe(page);
 
