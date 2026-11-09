@@ -243,6 +243,45 @@ describe('virus scanning of uploads (D30, fake scanner, no real malware)', () =>
     );
   });
 
+  it('two ticks at once act on an infected held file exactly once (one alert, bytes deleted once)', async () => {
+    await scannerDown();
+    const id = await upload(withMarker, 'secret-name.pdf');
+    await fake();
+    const later = new Date(Date.now() + 6 * 60_000);
+    const alerts = () => mail.sent.filter((m) => m.template === 'owner.file-blocked').length;
+    const a0 = alerts();
+    const [r1, r2] = await Promise.all([
+      scanHeldDocuments(db(), storage, system, later),
+      scanHeldDocuments(db(), storage, system, later),
+    ]);
+    expect(r1.infected + r2.infected).toBe(1);
+    expect((await row(id)).scanStatus).toBe('infected');
+    expect(alerts() - a0).toBe(1);
+  });
+
+  it('a row that is no longer held when the scan result arrives is left alone (the UPDATE re-checks held)', async () => {
+    await scannerDown();
+    const id = await upload(withMarker);
+    const d0 = await row(id);
+    await fake();
+    // Another tick finishes first: the row is no longer held by the time this tick has its answer.
+    const racing = {
+      ...storage,
+      get: async (key: string) => {
+        const bytes = await storage.get(key);
+        await db().update(documents).set({ scanStatus: 'clean' }).where(eq(documents.id, id));
+        return bytes;
+      },
+      delete: (key: string) => storage.delete(key),
+    } as unknown as FsStorageProvider;
+    const before = mail.sent.filter((m) => m.template === 'owner.file-blocked').length;
+    const r = await scanHeldDocuments(db(), racing, system, new Date(Date.now() + 6 * 60_000));
+    expect(r.infected).toBe(0);
+    expect((await row(id)).scanStatus).toBe('clean'); // not flipped back to infected
+    expect(mail.sent.filter((m) => m.template === 'owner.file-blocked').length).toBe(before); // no alert
+    expect((await storage.get(d0.storageKey)).byteLength).toBeGreaterThan(0); // bytes not deleted
+  });
+
   it('with the scanner off the retry step does nothing', async () => {
     setScannerOverride('off');
     expect(await scanHeldDocuments(db(), storage, system)).toEqual({

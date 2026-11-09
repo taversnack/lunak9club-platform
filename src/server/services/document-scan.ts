@@ -115,22 +115,33 @@ export async function scanHeldDocuments(db: Db, storage: StorageProvider, actor:
       logger.warn({}, 'held document could not be read for scanning');
     }
     if (result === 'clean') {
-      await db
+      const moved = await db
         .update(documents)
         .set({ scanStatus: 'clean' })
-        .where(and(eq(documents.id, id), eq(documents.scanStatus, 'held')));
-      clean++;
+        .where(and(eq(documents.id, id), eq(documents.scanStatus, 'held')))
+        .returning({ id: documents.id });
+      if (moved.length) clean++;
     } else if (result === 'infected') {
-      await db.transaction(async (tx) => {
-        await tx.update(documents).set({ scanStatus: 'infected' }).where(eq(documents.id, id));
+      // Only the tick that actually moves the row from held to infected acts on it (the UPDATE re-checks the
+      // status), so two ticks can never both delete, send back and alert for the same file.
+      const acted = await db.transaction(async (tx) => {
+        const moved = await tx
+          .update(documents)
+          .set({ scanStatus: 'infected' })
+          .where(and(eq(documents.id, id), eq(documents.scanStatus, 'held')))
+          .returning({ id: documents.id });
+        if (!moved.length) return false;
         await tx
           .update(complianceSubmissions)
           .set({ status: 'replacement_requested', reviewReason: BLOCKED_FILE_MESSAGE })
           .where(and(eq(complianceSubmissions.documentId, id), eq(complianceSubmissions.status, 'pending_review')));
+        return true;
       });
-      await storage.delete(claimed.key).catch(() => logger.warn({}, 'infected file already gone'));
-      await alertFileBlocked(db, actor, id);
-      infected++;
+      if (acted) {
+        await storage.delete(claimed.key).catch(() => logger.warn({}, 'infected file already gone'));
+        await alertFileBlocked(db, actor, id);
+        infected++;
+      }
     } else {
       stillHeld++;
     }
