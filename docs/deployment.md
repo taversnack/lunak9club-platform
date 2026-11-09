@@ -141,3 +141,11 @@ Status: recommendations only. No monitoring service is chosen or paid for; every
 
 **Housekeeping:** keep a one-page runbook ("what to check when this alert fires") next to the alert list; review the thresholds after the first month of real traffic; log retention follows D64 (technical data 90 days).
 
+## 9. Known low-risk findings (accepted for now)
+
+Recorded from the security review so nobody has to rediscover them. None is high or critical. Each is open until the Owner decides otherwise.
+
+- **Pay links are GET requests that create or resume a checkout** (`/api/payments/pay/<attempt>` and `/api/payments/pay-booking/<booking>`). A link on another website could make a signed-in customer's browser create a checkout for that customer's own booking; it cannot pay, reach another customer's booking, or change an amount. The links are emailed and must work with one tap, so they stay GET requests. A confirmation page with a "Pay" button would remove the risk at the cost of one extra click in the pay flow: not done, pending the Owner's preference. (The change plan is in the backend notes and touches no payment rule.)
+- **Style attributes are allowed by the Content-Security-Policy** (`style-src 'unsafe-inline'`), because 25 files use inline `style` attributes, which a nonce cannot cover. Scripts are strictly limited (nonce only, no `eval` in production), which is the part that matters. Removing the inline styles would let the policy tighten.
+- **Dependency advisory (dev only):** `minimatch` in the eslint chain (moderate). It does not ship at runtime.
+
