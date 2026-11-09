@@ -1,5 +1,5 @@
 // Demo data for local development. All people and addresses are fictional (.test domain).
-import { assertSafeDatabaseUrl } from './_env';
+import { assertNotProduction, assertSafeDatabaseUrl } from './_env';
 import { sql } from 'drizzle-orm';
 import { createDb } from '../src/infra/db/client';
 import { ensureUser } from './lib/users';
@@ -26,6 +26,7 @@ export const DEMO = {
   },
 };
 
+assertNotProduction('seed demo data');
 const { db, pool } = createDb(assertSafeDatabaseUrl(process.env.DATABASE_URL));
 const ownerId = await ensureUser(db, DEMO.owner);
 const caseyId = await ensureUser(db, DEMO.customer);

@@ -4,9 +4,26 @@ Status: **not deployed.** Hosting direction (Owner, D107): a **Node container or
 
 ## 1. Known gaps to close before go-live
 
-1. **No production email provider is chosen (D102).** The SMTP transport is provider-neutral and production-capable: set `EMAIL_TRANSPORT=smtp`, `EMAIL_SANDBOX=0`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` (`starttls` or `tls`), `SMTP_USER` and `SMTP_PASSWORD`; production refuses to start without them. What is missing is the Owner's choice of a provider (it may cost money, so ask first), a verified sender domain for `EMAIL_FROM`, and a real test send from a safe address. Until then email stays local-only (Mailpit).
+1. **No production email provider is chosen (D102).** The SMTP transport is provider-neutral and production-capable: set `EMAIL_TRANSPORT=smtp`, `EMAIL_SANDBOX=0`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` (`starttls` or `tls`), `SMTP_USER` and `SMTP_PASSWORD`; production refuses to start without them. What is missing is the Owner's choice of a provider (it may cost money, so ask first), a verified sender domain for `EMAIL_FROM`, and a real test send from a safe address. **Whichever provider is chosen, switch its click tracking and open tracking OFF**: sign-in links (D99) and invoice, pay and reset links must reach the customer exactly as we wrote them, and tracking rewrites every link through the provider's own address, which breaks the one-time links. Until then email stays local-only (Mailpit).
 2. Which container host or VPS, which managed Postgres and which S3-compatible bucket: not chosen (all cost money; see section 7).
 3. Virus scanning of uploads (D30, D109) is built in parts and is **off by default** (`SCANNER_MODE=off`). **Do not switch it on (`SCANNER_MODE=clamav`) until parts 2 and 3 are both merged and Stephen has approved the extra memory** (about 2 GB for the scanner container, a paid host-size item). Part 3 (the Owner's warning, acknowledgement and `document.opened_unscanned` audit entry for a held file) must be merged first. An infected upload is refused outright with no file kept (recorded in D109). See `docs/virus-scanning-options.md`.
+
+## Before go-live checklist
+
+Nothing here may be done with real customer data, live keys or real email until the Owner has approved that step in the conversation (CLAUDE.md rule 7). Tick each box when it is done and write the date in `docs/progress.md`.
+
+- [ ] **Stripe test-mode run.** A real checkout, webhook delivery and refund end to end with Stripe's **test** keys (the simulated provider and the signature tests are not a substitute). Live keys only with the Owner's explicit approval.
+- [ ] **Email provider and sender domain (D102).** The Owner chooses a provider; the sender domain is verified with **SPF and DKIM** (and DMARC) so mail is not marked as spam; a real test send to a safe address works; **click and open tracking are switched off at the provider** (otherwise it rewrites the magic links, D99, and the pay and reset links) and the received sign-in link is checked to point at our own address; bounces and complaints reach someone.
+- [ ] **Staging rehearsal.** The container (or VPS) runs behind TLS with the proxy settings (`TRUSTED_PROXIES` or `CLIENT_IP_HEADER`) and the README two-network rate-limit check passes; `/api/health` is 200; the scheduler ticks every 10 to 15 minutes; migrations apply from zero; a Stripe test event is accepted and a replay is ignored.
+- [ ] **Backup and restore drill** (section 6) done once into a throwaway database, with the date, dump age and time taken recorded.
+- [ ] **Alerting configured** (section 8): uptime check on `/api/health`, scheduler-stalled alert, backup-age alert, database alerts, and a tested path to the Owner and a technical contact.
+- [ ] **Seed never run in production.** `pnpm db:seed` and `pnpm db:reset` now refuse to run when `APP_ENV` or `NODE_ENV` is `production` (also in the tools image, which sets `NODE_ENV=production`). Do not work around this. The demo data is fictional and is for local development only.
+- [ ] **First Owner created** with `pnpm owner:create` (see the runbook, step 5), signing in by the emailed link and setting a password.
+- [ ] **Business details filled in** in the Owner area under Settings, Business (registered company name, company number, registered office and the other details the law expects on an invoice). An invoice cannot be approved until they are complete.
+- [ ] **Bank holidays.** Closures for England and Wales bank holidays are loaded by migrations up to **31 December 2031**. A unit test (`tests/unit/bank-holidays.test.ts`) starts failing a year before the list ends, as the reminder to add the next years' dates in a new migration from <https://www.gov.uk/bank-holidays>. Do not ignore it: after the last date, bank holidays would become bookable.
+- [ ] **Security and dependencies.** `pnpm audit --prod` shows no high or critical advisory and `/security-review` has been re-run on the release commit.
+- [ ] **Virus scanning decision (D30).** `SCANNER_MODE` stays `off` unless Stephen has approved the extra memory (about 2 GB) and D30 part 3 is merged.
+- [ ] **Open business questions answered**, for example approving a booking request in the minutes between the 23:59 cut-off and the first tick after midnight.
 
 ## 2. Environment variables
 
