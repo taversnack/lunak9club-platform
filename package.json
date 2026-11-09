@@ -73,7 +73,8 @@
     "overrides": {
       "sharp": "^0.35.5",
       "source-map-js": "^1.2.2",
-      "@esbuild-kit/core-utils>esbuild": "0.25.12"
+      "@esbuild-kit/core-utils>esbuild": "0.25.12",
+      "minimatch@>=7 <11": "^11.0.1"
     }
   }
 }
