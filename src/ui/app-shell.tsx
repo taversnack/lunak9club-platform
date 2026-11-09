@@ -8,11 +8,21 @@ import s from './shell.module.css';
 import { SignOutButton } from './sign-out-button';
 import { LinkPending } from './nav-link';
 
-export type NavItem = { href: Route; label: string; icon?: ReactNode; badge?: ReactNode };
+export type NavItem = {
+  href: Route;
+  label: string;
+  icon?: ReactNode;
+  badge?: ReactNode;
+  /** Other paths this tab also stands for (e.g. "Account" covers Membership and Invoices). */
+  also?: string[];
+};
 export type NavGroup = { label: string; items: NavItem[] };
 
 const isCurrent = (path: string, href: string, root: string) =>
   href === root ? path === root : path === href || path.startsWith(`${href}/`);
+
+const tabCurrent = (path: string, t: NavItem, root: string) =>
+  isCurrent(path, t.href, root) || (t.also ?? []).some((p) => path === p || path.startsWith(`${p}/`));
 
 function MenuIcon() {
   return (
@@ -125,7 +135,7 @@ export function AppShell({
               <ul>
                 {tabs.map((t) => (
                   <li key={t.href}>
-                    <Link href={t.href} aria-current={isCurrent(path, t.href, root) ? 'page' : undefined}>
+                    <Link href={t.href} aria-current={tabCurrent(path, t, root) ? 'page' : undefined}>
                       {t.label}
                       <LinkPending />
                     </Link>
@@ -218,7 +228,7 @@ export function AppShell({
           <ul>
             {tabs.map((t) => (
               <li key={t.href}>
-                <Link href={t.href} aria-current={isCurrent(path, t.href, root) ? 'page' : undefined}>
+                <Link href={t.href} aria-current={tabCurrent(path, t, root) ? 'page' : undefined}>
                   {t.icon}
                   <span>{t.label}</span>
                   <LinkPending />

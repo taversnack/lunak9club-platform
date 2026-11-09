@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut } from './helpers';
+import { DEMO_CUSTOMER, DEMO_CUSTOMER_2, DEMO_OWNER, signIn, signOut, navTo } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -76,7 +76,7 @@ test('the customer reads the report (but not internal notes), acknowledges it an
   await page.getByRole('button', { name: 'I’ve read this' }).click();
   await expect(page.getByText(/You confirmed you’d read this/)).toBeVisible();
 
-  await page.getByRole('navigation', { name: 'Your account' }).getByRole('link', { name: 'Your data' }).click();
+  await navTo(page, 'Your account', 'Your data');
   await expect(page.getByRole('heading', { name: 'Your data', level: 1 })).toBeVisible();
   await axe(page);
   const exp = await page.request.get('/api/account/export');

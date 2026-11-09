@@ -1,7 +1,7 @@
 import 'server-only';
 import { eq } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
-import { approvalRequests } from '@/infra/db/schema';
+import { approvalRequests, customers, documents, dogs, users } from '@/infra/db/schema';
 import { londonDate, londonInstant, addDays } from '@/domain/time';
 import { dueLabel, orderInbox, type InboxItem } from '@/domain/inbox';
 import { assertAuthorized, type Actor } from '../policy/authorize';
@@ -114,6 +114,33 @@ export async function ownerInbox(
       dueAt: m.holdUntil,
       createdAt: m.holdUntil,
       ref: { type: 'pay_link_missing', id: m.bookingId },
+    });
+  }
+
+  // Files waiting for their virus check (D30): only exist while the scanner is on and was down at upload.
+  const held = await db
+    .select({
+      id: documents.id,
+      dogId: documents.dogId,
+      uploadedAt: documents.uploadedAt,
+      customerName: users.name,
+      dogName: dogs.name,
+    })
+    .from(documents)
+    .innerJoin(customers, eq(customers.id, documents.customerId))
+    .innerJoin(users, eq(users.id, customers.userId))
+    .leftJoin(dogs, eq(dogs.id, documents.dogId))
+    .where(eq(documents.scanStatus, 'held'));
+  for (const h of held) {
+    add({
+      key: `document_held:${h.id}`,
+      kind: 'document_held',
+      title: 'A file is waiting for a virus check',
+      customerName: h.customerName,
+      ...(h.dogName ? { dogName: h.dogName } : {}),
+      dueAt: null,
+      createdAt: h.uploadedAt,
+      ref: { type: 'document_held', id: h.id, ...(h.dogId ? { dogId: h.dogId } : {}) },
     });
   }
 

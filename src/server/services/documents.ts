@@ -190,7 +190,20 @@ export async function uploadVaccinationRecord(
  * Authorise and audit a document download. Owners may open any document; customers only their own.
  * Returns what's needed to stream it or redirect to a short-lived signed URL.
  */
-export async function authoriseDocumentDownload(db: Db, actor: Actor, rawDocumentId: string) {
+/** The Owner asked to open a file that hasn't been virus-checked and hasn't acknowledged the warning (D109). */
+export class UnscannedAcknowledgementRequired extends Error {
+  constructor() {
+    super('This file has not been checked for viruses yet.');
+    this.name = 'UnscannedAcknowledgementRequired';
+  }
+}
+
+export async function authoriseDocumentDownload(
+  db: Db,
+  actor: Actor,
+  rawDocumentId: string,
+  opts: { acknowledgeUnscanned?: boolean } = {},
+) {
   const documentId = idOrNotFound(rawDocumentId, 'Document');
   const [row] = await db
     .select({ doc: documents, ownerUserId: customers.userId })
@@ -216,7 +229,12 @@ export async function authoriseDocumentDownload(db: Db, actor: Actor, rawDocumen
   }
   // A file the scanner found infected has no bytes; a file still waiting for its scan is for the Owner only.
   if (row.doc.scanStatus === 'infected') throw new NotFoundError('Document');
-  if (row.doc.scanStatus === 'held' && !hasPermission(actor, 'documents.read_any')) throw new NotFoundError('Document');
+  if (row.doc.scanStatus === 'held') {
+    // Only the Owner, and only after an explicit acknowledgement; every such open is audited (D109).
+    if (!hasPermission(actor, 'documents.read_any')) throw new NotFoundError('Document');
+    if (!opts.acknowledgeUnscanned) throw new UnscannedAcknowledgementRequired();
+    await recordAudit(db, { actor, action: 'document.opened_unscanned', entityType: 'document', entityId: documentId });
+  }
   await recordAudit(db, { actor, action: 'document.downloaded', entityType: 'document', entityId: documentId });
   return row.doc;
 }
