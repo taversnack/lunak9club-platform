@@ -243,20 +243,23 @@ describe('virus scanning of uploads (D30, fake scanner, no real malware)', () =>
     );
   });
 
-  it('two ticks at once act on an infected held file exactly once (one alert, bytes deleted once)', async () => {
+  it('two ticks at once act on an infected held file exactly once (one audit entry for it, bytes deleted once)', async () => {
     await scannerDown();
     const id = await upload(withMarker, 'secret-name.pdf');
+    const d0 = await row(id);
     await fake();
     const later = new Date(Date.now() + 6 * 60_000);
-    const alerts = () => mail.sent.filter((m) => m.template === 'owner.file-blocked').length;
-    const a0 = alerts();
-    const [r1, r2] = await Promise.all([
+    await Promise.all([
       scanHeldDocuments(db(), storage, system, later),
       scanHeldDocuments(db(), storage, system, later),
     ]);
-    expect(r1.infected + r2.infected).toBe(1);
     expect((await row(id)).scanStatus).toBe('infected');
-    expect(alerts() - a0).toBe(1);
+    const entries = await db()
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.action, 'document.blocked_infected'), eq(auditEvents.entityId, id)));
+    expect(entries).toHaveLength(1); // acted on once, however many ticks ran
+    await expect(storage.get(d0.storageKey)).rejects.toThrow();
   });
 
   it('a row that is no longer held when the scan result arrives is left alone (the UPDATE re-checks held)', async () => {
