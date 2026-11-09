@@ -17,7 +17,8 @@ import { setStorage } from '@/infra/storage';
 import { scanHeldDocuments, setScannerOverride, BLOCKED_FILE_MESSAGE } from '@/server/services/document-scan';
 import { ValidationError } from '@/server/errors';
 import { NotFoundError } from '@/server/errors';
-import type { Actor } from '@/server/policy/authorize';
+import { AuthorizationError, type Actor } from '@/server/policy/authorize';
+import { ownerInbox } from '@/server/services/owner-inbox';
 import { addDays, londonDate } from '@/domain/time';
 import { FAKE_VIRUS_MARKER, startFakeClamd } from '../support/fake-clamd';
 import { MemoryEmailProvider } from '../support/memory-email';
@@ -184,6 +185,27 @@ describe('virus scanning of uploads (D30, fake scanner, no real malware)', () =>
     const second = await scanHeldDocuments(db(), storage, system, later);
     expect(second.checked).toBe(0);
     expect((await row(id)).scanAttempts).toBe(2);
+  });
+
+  it('a held file shows on the Owner inbox (no file name), and leaves it once it is checked', async () => {
+    await scannerDown();
+    const id = await upload(PDF, 'secret-name.pdf');
+    const items = await ownerInbox(db(), owner);
+    const item = items.find((i) => i.key === `document_held:${id}`)!;
+    expect(item).toMatchObject({
+      kind: 'document_held',
+      title: 'A file is waiting for a virus check',
+      customerName: 'Uma Uploader',
+      dogName: 'Scanny',
+      dueAt: null,
+      dueLabel: 'none',
+      ref: { type: 'document_held', id, dogId: dog },
+    });
+    expect(JSON.stringify(item)).not.toMatch(/secret-name|record\.pdf/);
+    await expect(ownerInbox(db(), uma)).rejects.toBeInstanceOf(AuthorizationError);
+    await fake();
+    await scanHeldDocuments(db(), storage, system, new Date(Date.now() + 6 * 60_000));
+    expect((await ownerInbox(db(), owner)).some((i) => i.key === `document_held:${id}`)).toBe(false);
   });
 
   it('a held file is not retried again within five minutes, and stays held while the scanner is down', async () => {

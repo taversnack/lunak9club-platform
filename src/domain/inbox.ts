@@ -1,7 +1,13 @@
 /** Owner inbox (D77): one list for everything waiting on the Owner, most urgent first. Pure rules. */
 
 export type InboxKind =
-  'pay_link_missing' | 'approval' | 'refund_request' | 'refund_to_pay' | 'invoice_draft' | 'waitlist_place';
+  | 'pay_link_missing'
+  | 'approval'
+  | 'refund_request'
+  | 'refund_to_pay'
+  | 'invoice_draft'
+  | 'waitlist_place'
+  | 'document_held';
 
 export type InboxDueLabel = 'overdue' | 'today' | 'soon' | 'later' | 'none';
 
@@ -18,7 +24,7 @@ export type InboxItem = {
   dueLabel: InboxDueLabel;
   /** When it joined the inbox, for ordering items without a deadline. */
   createdAt: Date;
-  ref: { type: InboxKind; id: string; date?: string };
+  ref: { type: InboxKind; id: string; date?: string; dogId?: string };
 };
 
 /** Tie-break between kinds when due dates match. */
@@ -29,6 +35,7 @@ const KIND_RANK: Record<InboxKind, number> = {
   refund_to_pay: 3,
   invoice_draft: 4,
   waitlist_place: 5,
+  document_held: 6,
 };
 
 export function dueLabel(dueAt: Date | null, now: Date): InboxDueLabel {

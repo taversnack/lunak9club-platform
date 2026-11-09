@@ -44,6 +44,7 @@ const DUE_PREFIX: Record<InboxKind, string> = {
   waitlist_place: 'Day:',
   refund_request: 'Due:',
   refund_to_pay: 'Due:',
+  document_held: 'Waiting since',
 };
 function inboxHref(i: InboxItem): Route {
   switch (i.kind) {
@@ -57,6 +58,9 @@ function inboxHref(i: InboxItem): Route {
       return '/admin/refunds';
     case 'waitlist_place':
       return `/admin/bookings?date=${i.ref.date ?? ''}` as Route;
+    case 'document_held':
+      // The dog's page, where the record opens (a held file shows a warning first); reviews if no dog (D30).
+      return (i.ref.dogId ? `/admin/dogs/${i.ref.dogId}` : '/admin/reviews') as Route;
   }
 }
 
