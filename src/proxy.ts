@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { RETURN_TO_HEADER, returnToFrom } from '@/domain/auth/callback-url';
+import { buildCsp } from '@/domain/security/csp';
 
 /**
  * Tells server-side guards which page was asked for. Server components and layouts can't see the
@@ -12,7 +13,20 @@ import { RETURN_TO_HEADER, returnToFrom } from '@/domain/auth/callback-url';
 export function proxy(req: NextRequest) {
   const headers = new Headers(req.headers);
   headers.set(RETURN_TO_HEADER, returnToFrom(req.nextUrl.pathname, req.nextUrl.search));
-  return NextResponse.next({ request: { headers } });
+  // A fresh nonce per request. Next.js reads it from the request's Content-Security-Policy header and puts it on
+  // its own inline scripts; the same policy goes on the response. Every page here is rendered per request, which
+  // a nonce needs.
+  const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+  const csp = buildCsp({
+    nonce,
+    development: process.env.NODE_ENV === 'development',
+    secure: process.env.NODE_ENV === 'production' && req.nextUrl.protocol === 'https:',
+  });
+  headers.set('Content-Security-Policy', csp);
+  headers.set('x-nonce', nonce);
+  const res = NextResponse.next({ request: { headers } });
+  res.headers.set('Content-Security-Policy', csp);
+  return res;
 }
 
 export const config = {
