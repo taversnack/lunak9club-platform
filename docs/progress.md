@@ -105,38 +105,47 @@ Phase 2: `pnpm verify` → OVERALL PASS. 33 unit, 39 integration/authz (incl. S3
 `pnpm verify` → OVERALL PASS: format, lint, typecheck, unit, integration+authz, drizzle-kit check, build, E2E, a11y, `pnpm audit --prod` (no high), gitleaks (no leaks).
 Not yet run on the Owner's Mac — see README "First-time setup".
 
-## Current
-- Phase 7 done; awaiting Owner review. Next: Phase 8 (hardening and launch).
-- Booking requests and approvals (D76–D85) built on `dev2/booking-approval` with migration 0016 (draft PR). Developer 1 regenerates their next migration as 0017.
-- Dog register fields (D68–D72) built on `dev2/dog-register-fields` (draft PR). **Developer 1’s migration must be regenerated as 0015 after 0014 lands** (see `drizzle/NOTES.md`); Developer 1 uses decision IDs from D73.
+## Current (9 Nov 2026)
+Phase 8 (hardening and launch) is in progress. Nothing is deployed; no live Stripe keys, no real email, no spend. The booking, billing, compliance and membership work from Phases 1–7 and the October branches (booking requests D76–D85, dog register D68–D72, membership workflow D86–D94, month-end in one tap D95) is merged to main.
 
-- **Membership workflow (Developer 1, branch dev1/membership-workflow, 13 Oct 2026, local only):** Owner-created accounts with 7-day invites (D86), per-dog offers and `membership.days` approvals (D87), monthly confirmation and job (D88), Owner day changes (D89), `membership.move_once` (D90), portal-only decision notes (D91). Migration 0017. Built on Developer 2's approval requests (merged from dev2/booking-approval 58c6d2d; its migration 0016 isn't committed yet).
-  - 13 Oct 2026 update: merged Developer 2's real 0016_booking_approvals and regenerated 0017 on top. Earlier gaps in the approvals interface are closed: customers withdraw any request (including membership.days and membership.move_once) from Your requests (`/account/requests`), and a failed approval attempt (e.g. a day now full) shows its reason to the Owner (`last_error`). The stopgap withdraw action was removed.
-  - The `offered` booking status no longer exists (Developer 2, D84); membership clash checks now count `requested` days instead.
+Merged since the October branches (PRs up to #132, 30 Oct – 9 Nov 2026):
+- **Booking rules and customer pages:** one trial day per dog (D96, waitlisted trials count, D103); customer Book page with full days only and Available / Full – join the waitlist, no counts (D100, D101); sticky request bar with the approved reassurance line (D108, “at least 48 hours before”); the 48-hour boundary fixed so exactly 48 h is free (D8, D39); half days removed for new bookings with existing ones honoured (D100, D105, migration 0024); customer `/account` overview with Next up, Needs you and a timeline; read-model fields `endedReason` (payment time ran out, request closed, cancelled by you or the club, declined) and `paymentState` (none, paid, refund requested, refunded, credited, charged with no refund) with no raw ids exposed.
+- **Owner:** Today as one ordered inbox on `ownerInbox` (D77); full-day capacity count; Recent activity cards on phones; “at least N hours” setting label.
+- **Sign-in and privacy:** emailed magic link first, password as fallback (D99); per-address magic-link rate limit and lock-out; sessions: IP and user agent cleared 30 days after a session ends (D110).
+- **Virus scanning (D30, D109):** parts 1 and 2 merged: migration 0025 (`held` scan status), a clamd client, upload scanning, scheduler retry and quarantine. It is **off by default (`SCANNER_MODE=off`) and must stay off** until part 3 (Owner opens a held file only with a warning and an audit entry, plus the `document_held` inbox item) is merged **and** Stephen approves the extra memory (about 2 GB, a paid host-size item). Deviation from D109 as built: a fresh infected upload is refused outright and nothing is stored (stricter than quarantine). A file found infected later, on a scheduler retry, keeps its row (marked infected, with display name and checksum) but its bytes are deleted. In both cases an audit event and an Owner email with no file, dog or customer names are the record.
+- **Robustness:** email transport is provider-neutral and production-capable (SMTP host, TLS, credentials validated in production; no provider chosen, D102); health endpoint checks the database and migrations; no overlapping queries on a transaction (pg 9 safe); jobs store the error name only; Stripe webhook signature and concurrent-duplicate tests; refund boundary tests; nodemailer 10.1.4.
+- **Deployment:** `docs/deployment.md` runbook for a Node container or VPS (D107), a Dockerfile (runtime and tools targets, pnpm pinned), production alerting notes, scheduler tick interval note (15 minutes works; 10 or less preferred). Hosting shortlist and Airbnb layout research in `docs/research/`.
+- **Design:** Airbnb-style direction with Luna's K9 Club brand (D111, plan approved D112: tab bar Book, Bookings, Dogs, Account; trust facts off the public site until supplied). Design blocks (radius tokens, ListingCard, CardGrid, PlaceholderMedia) are merged but no page uses them yet.
 
-- **Month-end in one tap (Developer 1, branch dev1/month-end-approve, 27 Oct 2026, local only):** “Approve all unchanged drafts” on Invoices, through the existing approval (D54 total check per draft); drafts that changed or need attention are listed separately and left out (D95, Proposed). Also: setting a dog's days again before its membership has started (same or earlier start date) now changes that membership in place, so no “ended” row that never ran is left covering its start date (it was still counted by pricing and the monthly confirmation), and an invoice's “email sent at” uses the app clock. No migration. D77 one Owner inbox approved (Dev1: membership and record-review side; shown on Dev4's Today screen); D59 auto-pay stays parked (see `drizzle/NOTES.md`).
+Also merged 9 Nov: D30 part 3 (the Owner opens a held file only after a warning, with an audit entry), the `document_held` inbox item, the customer shell with header, phone bottom tab bar and Dogs page (#136), an enforcing CSP, finish-signup hardening, auth log fixes and the esbuild override. In progress: the POST acknowledgement fix for opening a held file (#147) and retry guards (#146); small shell accessibility fixes (#145); then one PR per customer page (home, sign-in, dogs, bookings, book, membership, invoices, overview) and the ended-booking lines on the account overview. Then the tester's remaining checks (the `document_held` Today row in a browser, forgot-password and verify-email rate limits, real-browser zoom) and a final `pnpm verify` after the last merge.
+
+Last full `pnpm verify` on main (tester, 9 Nov 2026, f5f1f87): OVERALL PASS in 4m04s, plus container builds (both targets), 24 migrations from zero, seed, `/api/health` 200, a local backup/restore drill and production-build rate-limit checks (sign-in, register, magic link). Not yet exercised: document bucket restore, RPO/RTO timing, managed-database restore, forgot-password and verify-email rate limits, a real Stripe test-mode run. Re-run `pnpm verify` after the last merges before calling the phase done.
+
+Process note: #85, #131 and #132 were merged before the tester's gate had finished (the tester reviewed #131 and #132 afterwards and passed them; main's CI was green after #85). Merges now wait for the tester's explicit PASS and green CI.
 
 ## Decisions
-- See `docs/decisions.md`. Open: O6 (hosting before launch), O11 (overdue handling — default proposed), D71 (web-form consent as written consent).
+- See `docs/decisions.md` (latest D112). Awaiting the Owner: D91 (decision notes shown only in the customer's account), D85 sub-defaults (unapproved dogs only, one dog and one date per request, ad hoc trial price), D71 (web-form consent as written consent), O11 (overdue handling – default proposed), the trust-block facts for the public site (D108), the midnight cut-off timing (see Risks), and the scanner memory cost (D109).
 
 ## Risks / known issues
-- Nothing calls the scheduler in production yet (O12) – decide with hosting (O6).
-- Card payments tested against the simulated provider and Stripe’s SDK types only; needs a run with real Stripe test keys (O13).
-- Checking in a dog whose Owner-made booking is still awaiting payment isn’t possible – the customer pays first (or the Owner cancels and rebooks at £0 with a customer rate).
-- No virus scanning of uploads (D30) — decide before launch.
-- Terms are a placeholder (D34) — solicitor-reviewed text needed.
+- **Production email cannot work yet:** the SMTP code is ready, but no provider is chosen (D102), and `EMAIL_FROM` needs a verified sender domain and a safe test send.
+- **Hosting is not chosen** (D107: a Node container or VPS with managed EU Postgres; shortlist in `docs/research/hosting-shortlist.md`; every option is paid). Nothing is signed up or deployed. Some hosts' schedulers run every 15 minutes at best.
+- Nothing calls the scheduler in production yet (O12): needs a 10–15 minute caller with the bearer secret once hosting exists.
+- Booking requests close at the first scheduler tick after midnight, so up to one tick after the 23:59 cut-off, and the approve path doesn't stop an approval in that window (low risk; Owner to decide if it matters).
+- Card payments are tested against the simulated provider and Stripe's SDK, plus signature tests; a run with real Stripe **test** keys is still needed (O13).
+- Terms are a placeholder (D34): solicitor-reviewed text needed.
+- Virus scanning is built but off (see Current).
+- Checking in a dog whose Owner-made booking is still awaiting payment isn't possible: the customer pays first (or the Owner cancels and rebooks at £0 with a customer rate).
 - CI skips the S3 adapter test (no S3 server in CI); covered locally.
-- Vercel Hobby is non-commercial (O6) — decide before public launch.
-- Server logs show occasional "destination stream closed early" when a client navigation aborts an in-flight page stream; no test impact. Investigate in Phase 8.
-- Sessions list shows IP/user agent columns (Better Auth defaults); retention rule for sessions to be set in Phase 7.
-- Staff Manager/Staff roles not created (D13) — permission map ready.
-- Web-form consent as “written consent” not yet confirmed by the Owner and council (D71).
-- Register answers are overwritten (with when/who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72, brief recommendation 1).
-- D85: trial requests via approve-then-pay are confirmed; the sub-defaults (unapproved dogs only, one dog-day per request, ad hoc trial price) are Proposed – confirm with the Owner.
-- D96: one trial day per dog (requested, approved or taken counts; withdrawn, declined or cancelled don't), enforced in `createMyBookings` under a dog-row lock; branch `dev2/book-page-fixes` (PR #72).
+- The "destination stream closed early" server log on aborted navigations looks like harmless dev noise; not reproduced.
+- Staff Manager/Staff roles are not created (D13); the permission map is ready.
+- Web-form consent as "written consent" is not yet confirmed by the Owner and council (D71).
+- Register answers are overwritten (with when and who for consents); append-only, effective-dated register history and an inspector register export are a later phase (D72).
+- Developer note: after a production `pnpm build`, delete `.next` before running `pnpm dev` in the same checkout, or dev can loop. Parallel e2e runs need distinct `E2E_PORT` values.
 
 - Follow-ups from the vaccination compliance work: (1) licence guidance 23.1 / brief D42 note – require a screening (meet-and-greet) record at check-in, not built yet; (2) titre certificates for DHP not supported (O16); (3) the retention job clears the reminder log after 90 days, so an "expired" reminder can be sent again ~90 days later – assigned to Developer 3; (4) the customer data download doesn't include vaccination record details.
 - `storage.test.ts` now skips cleanly when `moto_server` (local S3) isn't installed (PR #1, merged into main and into this branch's base); it no longer fails `pnpm test:int` on the shared build box.
 
 ## Next
-- Phase 8: hardening and launch – security review, backups and a tested restore, error monitoring, performance and accessibility pass, hosting decision (O6, O12, O13), go-live checklist.
+- Finish D30 part 3 and the customer page PRs (D111, D112), then the final verification and deploy-readiness pass (verify, container build, migrations from zero, backup and restore drill, rate-limit run).
+- Owner decisions and approvals listed above; hosting, email provider and scanner memory are paid items for Stephen to approve before any use.
+- Go-live checklist (not before the Owner approves): hosting and domain, production email, Stripe test-key run and then live keys, solicitor-reviewed terms, real photos.

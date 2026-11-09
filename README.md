@@ -64,6 +64,8 @@ Leave out `OWNER_PASSWORD` to have one generated and shown once. Scripts refuse 
 
 First E2E run on a new machine: `pnpm exec playwright install chromium`.
 
+After a production `pnpm build`, delete the `.next` folder before running `pnpm dev` in the same checkout, or the dev server can loop.
+
 E2E tests start `pnpm start` on port **3100** by default. Set `E2E_PORT` to use another port, for example when several checkouts share a machine: `E2E_PORT=3103 pnpm verify`. They always start a fresh server and won't reuse one already on the port. For local dev only, set `E2E_REUSE_SERVER=1` to reuse it (this is ignored on CI).
 
 ## Card payments
