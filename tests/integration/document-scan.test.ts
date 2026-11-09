@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +8,12 @@ import { setEmailProvider } from '@/infra/email/providers';
 import { auditEvents, complianceSubmissions, documents } from '@/infra/db/schema';
 import { FsStorageProvider } from '@/infra/storage/fs';
 import { createMyDog, saveMyDogVet, submitMyOnboardingForm } from '@/server/services/dogs';
-import { authoriseDocumentDownload, uploadVaccinationRecord } from '@/server/services/documents';
+import {
+  authoriseDocumentDownload,
+  UnscannedAcknowledgementRequired,
+  uploadVaccinationRecord,
+} from '@/server/services/documents';
+import { setStorage } from '@/infra/storage';
 import { scanHeldDocuments, setScannerOverride, BLOCKED_FILE_MESSAGE } from '@/server/services/document-scan';
 import { ValidationError } from '@/server/errors';
 import { NotFoundError } from '@/server/errors';
@@ -18,6 +23,10 @@ import { FAKE_VIRUS_MARKER, startFakeClamd } from '../support/fake-clamd';
 import { MemoryEmailProvider } from '../support/memory-email';
 import { readyCustomer } from '../support/onboard';
 import { makeUser, PDF, validDog, validOnboarding, type TestUser } from '../support/factories';
+
+// The download route reads the signed-in person from the session; tests choose who that is.
+const current: { actor: unknown } = { actor: { kind: 'anonymous' } };
+vi.mock('@/server/session', () => ({ getActor: async () => current.actor }));
 
 const db = () => getDb();
 const mail = new MemoryEmailProvider();
@@ -58,6 +67,7 @@ async function scannerDown() {
 
 beforeAll(async () => {
   setEmailProvider(mail);
+  setStorage(storage);
   owner = await makeUser(db(), 'owner', 'Olive Owner');
   uma = await makeUser(db(), 'customer', 'Uma Uploader');
   await readyCustomer(db(), uma);
@@ -72,6 +82,7 @@ afterEach(async () => {
 });
 afterAll(async () => {
   setEmailProvider(undefined);
+  setStorage(undefined);
   await closeDb();
 });
 
@@ -114,7 +125,52 @@ describe('virus scanning of uploads (D30, fake scanner, no real malware)', () =>
     const subs = await db().select().from(complianceSubmissions).where(eq(complianceSubmissions.documentId, id));
     expect(subs[0]!.status).toBe('pending_review');
     await expect(authoriseDocumentDownload(db(), uma, id)).rejects.toBeInstanceOf(NotFoundError);
-    expect((await authoriseDocumentDownload(db(), owner, id)).id).toBe(id);
+    // Not even with the acknowledgement: the customer is never offered a held file.
+    await expect(authoriseDocumentDownload(db(), uma, id, { acknowledgeUnscanned: true })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    // The Owner must acknowledge first; every acknowledged open is audited (D109).
+    await expect(authoriseDocumentDownload(db(), owner, id)).rejects.toBeInstanceOf(UnscannedAcknowledgementRequired);
+    const opened = () =>
+      db()
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.action, 'document.opened_unscanned'), eq(auditEvents.entityId, id)));
+    expect(await opened()).toHaveLength(0);
+    expect((await authoriseDocumentDownload(db(), owner, id, { acknowledgeUnscanned: true })).id).toBe(id);
+    expect((await authoriseDocumentDownload(db(), owner, id, { acknowledgeUnscanned: true })).id).toBe(id);
+    expect(await opened()).toHaveLength(2); // one entry per open
+  });
+
+  it('the download route shows a warning page first, and only "Open anyway" serves the file (audited)', async () => {
+    await scannerDown();
+    const id = await upload(PDF);
+    const { GET } = await import('@/app/api/documents/[documentId]/route');
+    const call = (query = '') =>
+      GET(new Request(`http://localhost:3000/api/documents/${id}${query}`), {
+        params: Promise.resolve({ documentId: id }),
+      });
+    // A customer sees the usual not-found, never the warning.
+    current.actor = uma;
+    expect((await call('?acknowledge=unscanned')).status).toBe(404);
+    // The Owner gets the warning (no file bytes), then the file after acknowledging.
+    current.actor = owner;
+    const warn = await call();
+    expect(warn.status).toBe(409);
+    const html = await warn.text();
+    expect(html).toContain('Open anyway');
+    expect(html).toContain(`acknowledge=unscanned`);
+    expect(html).not.toContain('%PDF');
+    const before = await db().select().from(auditEvents).where(eq(auditEvents.action, 'document.opened_unscanned'));
+    const ok = await call('?acknowledge=unscanned');
+    expect(ok.status).toBe(200);
+    expect(
+      Buffer.from(await ok.arrayBuffer())
+        .subarray(0, 5)
+        .toString(),
+    ).toBe('%PDF-');
+    const after = await db().select().from(auditEvents).where(eq(auditEvents.action, 'document.opened_unscanned'));
+    expect(after.length).toBe(before.length + 1);
   });
 
   it('the scheduler retries held files: clean once the scanner is back, and a second run does nothing', async () => {
@@ -158,8 +214,11 @@ describe('virus scanning of uploads (D30, fake scanner, no real malware)', () =>
     expect(sub).toMatchObject({ status: 'replacement_requested', reviewReason: BLOCKED_FILE_MESSAGE });
     const alert = mail.sent.find((m) => m.template === 'owner.file-blocked')!;
     expect(alert.text).not.toMatch(/secret-name|Scanny|Uma/i);
-    // Nobody can open an infected file, not even the Owner.
+    // Nobody can open an infected file, not even the Owner, and not with the acknowledgement.
     await expect(authoriseDocumentDownload(db(), owner, id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(authoriseDocumentDownload(db(), owner, id, { acknowledgeUnscanned: true })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 
   it('with the scanner off the retry step does nothing', async () => {
