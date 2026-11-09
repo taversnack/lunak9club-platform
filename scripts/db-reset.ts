@@ -1,7 +1,8 @@
-import { assertSafeDatabaseUrl } from './_env';
+import { assertNotProduction, assertSafeDatabaseUrl } from './_env';
 import { Client } from 'pg';
 
 // Drops and recreates the public schema. Local/test databases only (guarded).
+assertNotProduction('reset the database');
 const url = assertSafeDatabaseUrl(process.env.DATABASE_URL);
 const client = new Client({ connectionString: url });
 await client.connect();

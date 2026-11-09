@@ -8,6 +8,23 @@ Status: **not deployed.** Hosting direction (Owner, D107): a **Node container or
 2. Which container host or VPS, which managed Postgres and which S3-compatible bucket: not chosen (all cost money; see section 7).
 3. Virus scanning of uploads (D30, D109) is built in parts and is **off by default** (`SCANNER_MODE=off`). **Do not switch it on (`SCANNER_MODE=clamav`) until parts 2 and 3 are both merged and Stephen has approved the extra memory** (about 2 GB for the scanner container, a paid host-size item). Until part 3 lands, the Owner can open a held file (one waiting for its scan) without the warning, acknowledgement and `document.opened_unscanned` audit entry that D109 requires. See `docs/virus-scanning-options.md`.
 
+## Before go-live checklist
+
+Nothing here may be done with real customer data, live keys or real email until the Owner has approved that step in the conversation (CLAUDE.md rule 7). Tick each box when it is done and write the date in `docs/progress.md`.
+
+- [ ] **Stripe test-mode run.** A real checkout, webhook delivery and refund end to end with Stripe's **test** keys (the simulated provider and the signature tests are not a substitute). Live keys only with the Owner's explicit approval.
+- [ ] **Email provider and sender domain (D102).** The Owner chooses a provider; the sender domain is verified with **SPF and DKIM** (and DMARC) so mail is not marked as spam; a real test send to a safe address works; bounces and complaints reach someone.
+- [ ] **Staging rehearsal.** The container (or VPS) runs behind TLS with the proxy settings (`TRUSTED_PROXIES` or `CLIENT_IP_HEADER`) and the README two-network rate-limit check passes; `/api/health` is 200; the scheduler ticks every 10 to 15 minutes; migrations apply from zero; a Stripe test event is accepted and a replay is ignored.
+- [ ] **Backup and restore drill** (section 6) done once into a throwaway database, with the date, dump age and time taken recorded.
+- [ ] **Alerting configured** (section 8): uptime check on `/api/health`, scheduler-stalled alert, backup-age alert, database alerts, and a tested path to the Owner and a technical contact.
+- [ ] **Seed never run in production.** `pnpm db:seed` and `pnpm db:reset` now refuse to run when `APP_ENV` or `NODE_ENV` is `production` (also in the tools image, which sets `NODE_ENV=production`). Do not work around this. The demo data is fictional and is for local development only.
+- [ ] **First Owner created** with `pnpm owner:create` (see the runbook, step 5), signing in by the emailed link and setting a password.
+- [ ] **Business details filled in** in the Owner area under Settings, Business (registered company name, company number, registered office and the other details the law expects on an invoice). An invoice cannot be approved until they are complete.
+- [ ] **Bank holidays.** Closures for England and Wales bank holidays are loaded by migrations up to **31 December 2031**. A unit test (`tests/unit/bank-holidays.test.ts`) starts failing a year before the list ends, as the reminder to add the next years' dates in a new migration from <https://www.gov.uk/bank-holidays>. Do not ignore it: after the last date, bank holidays would become bookable.
+- [ ] **Security and dependencies.** `pnpm audit --prod` shows no high or critical advisory and `/security-review` has been re-run on the release commit.
+- [ ] **Virus scanning decision (D30).** `SCANNER_MODE` stays `off` unless Stephen has approved the extra memory (about 2 GB) and D30 part 3 is merged.
+- [ ] **Open business questions answered**, for example approving a booking request in the minutes between the 23:59 cut-off and the first tick after midnight.
+
 ## 2. Environment variables
 
 "Prod" = required or constrained when `APP_ENV=production`; the app refuses to start otherwise (names only are reported, never values).

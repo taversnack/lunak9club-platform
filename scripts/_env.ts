@@ -12,3 +12,13 @@ export function assertSafeDatabaseUrl(url: string | undefined): string {
   }
   return url;
 }
+
+/**
+ * Demo data and database resets must never run against a production environment, whatever the host
+ * (ALLOW_REMOTE_DB does not override this). The tools image sets NODE_ENV=production, so these scripts
+ * refuse there too; real data work in production goes through reviewed migrations and `owner:create`.
+ */
+export function assertNotProduction(what: string): void {
+  if (process.env.APP_ENV === 'production' || process.env.NODE_ENV === 'production')
+    throw new Error(`Refusing to ${what} in a production environment.`);
+}
