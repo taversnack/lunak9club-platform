@@ -15,6 +15,9 @@ import { decodeOrNull, safeCallbackPath } from '@/domain/auth/callback-url';
 import { MAGIC_LINK_MAX, MAGIC_LINK_WINDOW_SECONDS, rateLimitedCopy } from '@/domain/auth/rate-limits';
 import { userRoles, auditEvents } from '../db/schema';
 
+/** What to log about a failure: the error's name only. Its text can hold an email address or other personal data. */
+const errName = (err: unknown) => (err instanceof Error ? err.name : 'unknown');
+
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? 'there';
 
 /** Magic links expire after this many minutes and work once. */
@@ -52,7 +55,7 @@ export function createAuth(e: Env = env()) {
         entityType: 'user',
         entityId: userId,
       })
-      .catch((err: unknown) => logger.error({ err: String(err), action }, 'audit write failed'));
+      .catch((err: unknown) => logger.error({ err: errName(err), action }, 'audit write failed'));
 
   /**
    * Magic links are for customers only: an account qualifies if every role it holds is `customer`.
@@ -238,7 +241,7 @@ export function createAuth(e: Env = env()) {
           void getEmailProvider()
             .send(magicLinkMessage(user.email, firstName(user.name), url, MAGIC_LINK_MINUTES))
             .then(() => audit('auth.magic_link_sent', user.id))
-            .catch((err: unknown) => logger.error({ err: String(err) }, 'magic-link email failed'));
+            .catch((err: unknown) => logger.error({ err: errName(err) }, 'magic-link email failed'));
         },
       }),
       nextCookies(), // must stay last

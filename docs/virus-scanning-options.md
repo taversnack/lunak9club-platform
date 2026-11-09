@@ -46,7 +46,11 @@ Use the harmless industry-standard EICAR test string, never a real virus, agains
 2. When the scanner is down: reject (choice 1) or hold for the Owner (choice 2)?
 3. Scan before launch, or launch with D30 as it is and add scanning later?
 
-## Implementation plan (not built)
+## Implementation plan and what is built
+
+**Status (9 Nov):** part 1 (migration 0025, clamd client, fake scanner tests) and part 2 (upload path, held status, scheduler retry, quarantine) are merged. Part 3 (the Owner-open warning, acknowledgement and `document.opened_unscanned` audit) is in review, and the Today `document_held` item follows. **Do not set `SCANNER_MODE=clamav` until part 3 is merged and Stephen has approved the extra ~2 GB of memory.** The default is `off`.
+
+**As built, differing from the plan below:** an infected upload is **refused outright** (nothing is stored and no `infected` row is kept); an audit event (`document.blocked_infected`, no file details) and an Owner email that names no file, customer or dog record it. This is stricter than the plan and is recorded in D109. A file found infected later, while it was held, has its bytes deleted and its row marked `infected`.
 
 **Switch.** `SCANNER_MODE=off|clamav`, default `off`. While off, nothing changes: uploads stay `not_scanned` exactly as D30 says today. The extra memory is a paid host-size item, so the scanner stays off until Stephen approves the cost; production config can then turn it on without a code change.
 
@@ -60,11 +64,11 @@ Existing rows keep `not_scanned`; nothing is rewritten. **Rollback:** `UPDATE do
 **Upload flow** (`uploadVaccinationRecord`, incident photos in `welfare.ts`): after the byte check, scan before the file is committed.
 - clean: store, `scan_status='clean'`.
 - scanner unavailable or timed out: store, `scan_status='held'`, `scan_attempts=1`; the customer sees "Received. We're checking it, and it can't be opened until then."
-- infected: do not keep the bytes. Row (kept for the audit trail with its sha256) is `infected`, the object is deleted, the submission becomes `replacement_requested` with the plain reason "We couldn't accept that file. Please upload a new copy.", an audit event is written, and the Owner is emailed "A file was blocked by the scanner" with a link to the Owner area and no file name, customer or contents.
+- infected (as built: refused outright, see Status above; the next sentence describes the original plan for a file found infected later): do not keep the bytes. Row (kept for the audit trail with its sha256) is `infected`, the object is deleted, the submission becomes `replacement_requested` with the plain reason "We couldn't accept that file. Please upload a new copy.", an audit event is written, and the Owner is emailed "A file was blocked by the scanner" with a link to the Owner area and no file name, customer or contents.
 
 **Retry from the scheduler.** A new every-tick step (`scan-held-documents`): pick `held` rows with `FOR UPDATE SKIP LOCKED` and backoff by `scanned_at`, re-scan, move to `clean` or `infected` as above. Idempotent and safe if two ticks overlap. A document still held after 24 hours stays held and shows on Today until dealt with.
 
-**Opening held files (Owner only, audited).** `authoriseDocumentDownload` already limits downloads to the Owner and the uploader. For `held` files only the Owner (`documents.read_any`) may open it, the uploader gets the same not-found response as for any document they may not open, and the open requires an explicit acknowledgement (a confirm step in the UI sends it; the server refuses without it) and writes `document.opened_unscanned` to the audit log. `infected` files can never be opened (the bytes are gone). Clean and `not_scanned` behave as today.
+**Opening held files (Owner only, audited; part 3, as built).** Opening a held file at `/api/documents/<id>` first shows the Owner a plain warning page (HTTP 409, no file bytes): "This file hasn't been checked yet ... Only open it if you expect it." with an "Open anyway" link to the same address with `?acknowledge=unscanned`. Only that acknowledged request serves the file, and each one writes `document.opened_unscanned` to the audit log (as well as the usual `document.downloaded`). A customer, even the uploader, gets the usual not-found for a held file with or without the acknowledgement, and nobody can open an `infected` file. The original plan text follows. `authoriseDocumentDownload` already limits downloads to the Owner and the uploader. For `held` files only the Owner (`documents.read_any`) may open it, the uploader gets the same not-found response as for any document they may not open, and the open requires an explicit acknowledgement (a confirm step in the UI sends it; the server refuses without it) and writes `document.opened_unscanned` to the audit log. `infected` files can never be opened (the bytes are gone). Clean and `not_scanned` behave as today.
 
 **Owner Today.** `ownerInbox` gets a new kind `document_held` ("A file is waiting for a virus check"), no due date, ordered by age, one item per held document with the customer's name and a link to the dog or review page; it disappears when the file is checked. Frontend wires the item and the "open anyway" confirm step.
 

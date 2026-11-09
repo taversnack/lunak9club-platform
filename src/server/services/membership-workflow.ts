@@ -32,6 +32,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../errors';
 import { appUrl, firstNameOf, ownerEmails, sendSafely } from '../notify';
 import { checkbox, idOrNotFound, isoDate, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
+import { fixedWindowAllowed } from '../rate-limit';
 import { createApprovalRequest } from './approvals';
 import { loadSettings } from './booking-shared';
 import { refreshMembershipDrafts } from './billing';
@@ -280,6 +281,9 @@ const FinishSignupInput = z
   })
   .refine((v) => v.password === v.confirm, { message: 'The passwords don’t match', path: ['confirm'] });
 
+/** Attempts per client address and window for the unauthenticated finish-signup action. */
+const FINISH_SIGNUP_LIMIT = { windowSeconds: 300, max: 10 } as const;
+
 const INVALID_LINK = 'This link has expired or has already been used. Ask Luna’s K9 Club to send a new one.';
 
 /** Is this invite link still usable? (For the finish-signup page; reveals nothing but a first name.) */
@@ -297,8 +301,26 @@ export async function checkInvite(db: Db, token: string, now = new Date()) {
  * The customer chooses a password from the invite link: the link is used up, the email counts as
  * confirmed (they received the link), and they can then sign in (D86). Single use, 7 days.
  */
-export async function finishSignup(db: Db, input: unknown, now = new Date()) {
+export async function finishSignup(
+  db: Db,
+  input: unknown,
+  now = new Date(),
+  /** Who is asking (a hash-keyed rate limit); omitted by internal callers. */
+  opts: { clientAddress?: string } = {},
+) {
+  if (opts.clientAddress !== undefined) {
+    // Unauthenticated, so limit attempts per address: the same message however it fails, and before any work.
+    const ok = await fixedWindowAllowed(db, `finish-signup:${opts.clientAddress}`, FINISH_SIGNUP_LIMIT, now.getTime());
+    if (!ok) throw new ConflictError(INVALID_LINK);
+  }
   const d = parseInput(FinishSignupInput, input);
+  // Look the link up first: only a usable one earns the (deliberately slow) password hash, so a flood of
+  // bad tokens costs almost nothing. The transaction below checks again under a lock.
+  const [pre] = await db
+    .select({ usedAt: customerInvites.usedAt, expiresAt: customerInvites.expiresAt })
+    .from(customerInvites)
+    .where(eq(customerInvites.tokenHash, hashToken(d.token)));
+  if (!pre || pre.usedAt || pre.expiresAt <= now) throw new ConflictError(INVALID_LINK);
   const hash = await hashPassword(d.password);
   return db.transaction(async (tx) => {
     const [inv] = await tx
