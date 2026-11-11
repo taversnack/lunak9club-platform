@@ -49,6 +49,17 @@ export const PERMISSIONS = [
 
 export type Permission = (typeof PERMISSIONS)[number];
 
+/**
+ * Actions anyone may take, signed in or not, each exposing one explicitly named fact and nothing else.
+ * Kept apart from PERMISSIONS (no role holds these; authorize() allows them for every actor) so "anonymous
+ * is denied every permission" stays true of the real ones. Add to this list only for information that is
+ * already public on the website.
+ */
+export const PUBLIC_PERMISSIONS = ['public.cancellation_hours.read'] as const;
+export type PublicPermission = (typeof PUBLIC_PERMISSIONS)[number];
+export const isPublicPermission = (p: string): p is PublicPermission =>
+  (PUBLIC_PERMISSIONS as readonly string[]).includes(p);
+
 export const ROLE_KEYS = ['owner', 'customer'] as const;
 export type RoleKey = (typeof ROLE_KEYS)[number];
 
