@@ -12,7 +12,13 @@ import { logger } from '../logger';
 import { getEmailProvider } from '../email/providers';
 import { magicLinkMessage, resetPasswordMessage, verifyEmailMessage } from '../email/templates';
 import { decodeOrNull, safeCallbackPath } from '@/domain/auth/callback-url';
-import { MAGIC_LINK_MAX, MAGIC_LINK_WINDOW_SECONDS, rateLimitedCopy } from '@/domain/auth/rate-limits';
+import {
+  EMAIL_REQUEST_MAX,
+  EMAIL_REQUEST_WINDOW_SECONDS,
+  MAGIC_LINK_MAX,
+  MAGIC_LINK_WINDOW_SECONDS,
+  rateLimitedCopy,
+} from '@/domain/auth/rate-limits';
 import { userRoles, auditEvents } from '../db/schema';
 
 /** What to log about a failure: the error's name only. Its text can hold an email address or other personal data. */
@@ -24,6 +30,11 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? 'there';
 export const MAGIC_LINK_MINUTES = 10;
 const MAGIC_LINK_PATH = '/sign-in/magic-link';
 const MAGIC_VERIFY_PATH = '/magic-link/verify';
+/** Requests that email a link to an address someone typed: limited per address as well as per client. */
+const EMAIL_REQUEST_PATHS: Record<string, string> = {
+  '/request-password-reset': 'reset-email',
+  '/send-verification-email': 'verify-email',
+};
 
 /** Where a failed magic link (expired, used, refused) lands, keeping the safe way back. */
 const magicErrorPath = (callback: string) => `/sign-in?callbackUrl=${encodeURIComponent(callback)}`;
@@ -121,8 +132,8 @@ export function createAuth(e: Env = env()) {
       customRules: {
         '/sign-in/email': { window: 60, max: 5 },
         '/sign-up/email': { window: 60, max: 3 },
-        '/request-password-reset': { window: 300, max: 3 },
-        '/send-verification-email': { window: 300, max: 3 },
+        '/request-password-reset': { window: EMAIL_REQUEST_WINDOW_SECONDS, max: EMAIL_REQUEST_MAX },
+        '/send-verification-email': { window: EMAIL_REQUEST_WINDOW_SECONDS, max: EMAIL_REQUEST_MAX },
         [MAGIC_LINK_PATH]: { window: MAGIC_LINK_WINDOW_SECONDS, max: MAGIC_LINK_MAX },
         [MAGIC_VERIFY_PATH]: { window: 60, max: 10 },
       },
@@ -131,6 +142,20 @@ export function createAuth(e: Env = env()) {
       // Magic links only ever carry a same-origin path (see #50's safeCallbackPath), whatever the caller
       // sent, both when the link is requested and when it's opened (the link's query can be edited).
       before: createAuthMiddleware(async (ctx) => {
+        // Reset and verification emails: also limited per address across all clients, counted before any
+        // lookup and answered the same way for every address, so a 429 never says whether an account exists.
+        const emailScope = EMAIL_REQUEST_PATHS[ctx.path];
+        if (emailScope) {
+          const body = (ctx.body ?? {}) as Record<string, unknown>;
+          if (
+            e.AUTH_RATE_LIMIT === 'on' &&
+            typeof body.email === 'string' &&
+            !(await addressAllowedFor(db, emailScope, body.email))
+          ) {
+            throw new APIError('TOO_MANY_REQUESTS', { message: rateLimitedCopy(EMAIL_REQUEST_WINDOW_SECONDS) });
+          }
+          return;
+        }
         if (ctx.path === MAGIC_LINK_PATH) {
           const body = (ctx.body ?? {}) as Record<string, unknown>;
           if (
@@ -316,6 +341,29 @@ async function hasLiveLink(db: ReturnType<typeof getDb>, email: string, browser:
     )
     .limit(1);
   return Boolean(row);
+}
+
+/**
+ * A per-address fixed window (EMAIL_REQUEST_MAX per EMAIL_REQUEST_WINDOW_SECONDS) for emails that carry a link,
+ * counted atomically in rate_limits under the hash of the normalised address (never the address itself),
+ * independent of the client's IP, so it also holds when requests come from many addresses.
+ */
+async function addressAllowedFor(db: ReturnType<typeof getDb>, scope: string, email: string, now = Date.now()) {
+  const key = `${scope}:${emailKey(email)}`;
+  const r = schema.rateLimits;
+  const expired = sql`${r.lastRequest} <= ${now - EMAIL_REQUEST_WINDOW_SECONDS * 1000}`;
+  const [row] = await db
+    .insert(r)
+    .values({ id: randomUUID(), key, count: 1, lastRequest: now })
+    .onConflictDoUpdate({
+      target: r.key,
+      set: {
+        count: sql`case when ${expired} then 1 else ${r.count} + 1 end`,
+        lastRequest: sql`case when ${expired} then ${now} else ${r.lastRequest} end`,
+      },
+    })
+    .returning({ count: r.count });
+  return (row?.count ?? 1) <= EMAIL_REQUEST_MAX;
 }
 
 /**

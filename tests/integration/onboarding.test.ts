@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { auditLeaks } from '../support/audit-scan';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -349,10 +350,14 @@ describe('access control and privacy', () => {
   });
 
   it('audit metadata for sensitive actions holds no personal details', async () => {
-    const r = await db().execute<{ metadata: Record<string, unknown> }>(
-      sql`select metadata from audit_events where action like 'dog.%' or action like 'document.%' or action like 'submission.%'`,
+    const r = await db().execute<{ action: string; metadata: Record<string, unknown> }>(
+      sql`select action, metadata from audit_events where action like 'dog.%' or action like 'document.%' or action like 'submission.%'`,
     );
-    const text = JSON.stringify(r.rows);
-    for (const s of ['Friendly', 'spot-on', 'Town Vets', '07700', 'Biscuit', 'cut off']) expect(text).not.toContain(s);
+    expect(r.rows.length).toBeGreaterThan(0);
+    // On failure this lists action.key for each match (never the value), so the writer can be found.
+    expect(
+      auditLeaks(r.rows, ['Friendly', 'spot-on', 'Town Vets', '07700', 'Biscuit', 'cut off']),
+      'audit metadata holds personal details at',
+    ).toEqual([]);
   });
 });
