@@ -8,7 +8,7 @@ import { CONCERN_LABELS, concernsToList } from '@/domain/compliance/welfare';
 import { formatDateTimeLondon } from '@/ui/format';
 import { ATE_LABELS, DRINKING_LABELS, INCIDENT_KIND_LABELS, MOOD_LABELS } from '@/ui/welfare-labels';
 
-import { Alert, buttonClass, Card, Stack, StatusBadge } from '@/ui/components';
+import { Alert, buttonClass, Card, PlaceholderMedia, Stack, StatusBadge } from '@/ui/components';
 import { ITEM_LABELS, OVERALL_LABELS, type ChecklistItem } from '@/domain/compliance/evaluate';
 import { formatUkDate, londonDate } from '@/domain/time';
 import { primaryCourseClearOn } from '@/domain/compliance/attendance';
@@ -61,11 +61,19 @@ export default async function DogPage({
   return (
     <Stack>
       <p className={s.breadcrumb}>
-        <Link href="/account">Your account</Link> › {dog.name}
+        <Link href="/account/dogs">Your dogs</Link> › {dog.name}
       </p>
-      <div className={s.row}>
-        <h1>{dog.name}</h1>
-        <StatusBadge tone={overall.tone}>{overall.text}</StatusBadge>
+      <div className={s.dogHeader}>
+        <div className={s.dogAvatar}>
+          <PlaceholderMedia ratio="1 / 1" initial={dog.name} />
+        </div>
+        <div className={s.dogHeaderText}>
+          <h1>{dog.name}</h1>
+          <p className={s.muted}>{dog.breed}</p>
+          <div>
+            <StatusBadge tone={overall.tone}>{overall.text}</StatusBadge>
+          </div>
+        </div>
       </div>
       {saved && SAVED[saved] ? <Alert tone="success">{SAVED[saved]}</Alert> : null}
       {dog.status === 'suspended' || dog.status === 'rejected' ? (
