@@ -85,7 +85,7 @@
 
 /* Home: search-style card, first-day steps, sections (design plan 4.1). */
 .searchWrap {
-  margin-top: calc(var(--space-6) * -1);
+  margin-top: calc(var(--space-7) * -1);
   position: relative;
   z-index: 1;
 }
@@ -155,5 +155,20 @@
   }
   .stepList {
     grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Hero photo placeholder: beside the text from 900 px (design plan 4.1). */
+.heroMedia {
+  display: none;
+}
+@media (min-width: 900px) {
+  .heroInner {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  }
+  .heroMedia {
+    display: block;
+    overflow: hidden;
+    border-radius: var(--radius-xl);
   }
 }

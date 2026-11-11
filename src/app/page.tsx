@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
 import p from '@/ui/public.module.css';
-import { buttonClass } from '@/ui/components';
+import { buttonClass, PlaceholderMedia } from '@/ui/components';
 import { getActor } from '@/server/session';
 import { authorize } from '@/server/policy/authorize';
 
@@ -74,6 +74,10 @@ export default async function HomePage() {
               )}
             </div>
           </div>
+          <div className={p.heroMedia}>
+            {/* PLACEHOLDER: replace with Stephen's photo when supplied. */}
+            <PlaceholderMedia ratio="4 / 3" />
+          </div>
         </div>
       </section>
       <section className={`${s.container} ${p.searchWrap}`} aria-labelledby="search-title">
@@ -95,7 +99,10 @@ export default async function HomePage() {
               <span className={s.muted}>We approve, then you pay</span>
             </li>
           </ol>
-          <Link href={signedIn ? '/account/book' : '/register'} className={buttonClass('primary')}>
+          <Link
+            href={canBook ? '/account/book' : signedIn ? '/dashboard' : '/register'}
+            className={buttonClass('primary')}
+          >
             Request a day
           </Link>
           <p className={s.hint}>
