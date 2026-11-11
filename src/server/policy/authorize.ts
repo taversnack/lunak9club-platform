@@ -1,4 +1,10 @@
-import { permissionsFor, SELF_SCOPED_PERMISSIONS, type Permission } from './permissions';
+import {
+  isPublicPermission,
+  permissionsFor,
+  SELF_SCOPED_PERMISSIONS,
+  type Permission,
+  type PublicPermission,
+} from './permissions';
 
 export type Actor =
   | { kind: 'anonymous' }
@@ -14,7 +20,9 @@ export type Decision = { allowed: true } | { allowed: false; reason: 'unauthenti
  * The only permission check in the application. Every server action, route handler,
  * query helper, storage URL and job must call this (or assertAuthorized) — never rely on UI hiding.
  */
-export function authorize(actor: Actor, permission: Permission, resource?: OwnedResource): Decision {
+export function authorize(actor: Actor, permission: Permission | PublicPermission, resource?: OwnedResource): Decision {
+  // A public fact (see PUBLIC_PERMISSIONS) is open to every actor, including a signed-out visitor.
+  if (isPublicPermission(permission)) return { allowed: true };
   if (actor.kind === 'system') return { allowed: true };
   if (actor.kind === 'anonymous') return { allowed: false, reason: 'unauthenticated' };
   if (!actor.emailVerified) return { allowed: false, reason: 'unverified' };
@@ -31,7 +39,7 @@ export function authorize(actor: Actor, permission: Permission, resource?: Owned
 export class AuthorizationError extends Error {
   constructor(
     public readonly reason: 'unauthenticated' | 'unverified' | 'forbidden',
-    public readonly permission: Permission,
+    public readonly permission: Permission | PublicPermission,
   ) {
     super(`Not authorised: ${reason}`);
     this.name = 'AuthorizationError';
@@ -45,7 +53,11 @@ export function hasPermission(actor: Actor, permission: Permission): boolean {
   return permissionsFor(actor.roles).has(permission);
 }
 
-export function assertAuthorized(actor: Actor, permission: Permission, resource?: OwnedResource): void {
+export function assertAuthorized(
+  actor: Actor,
+  permission: Permission | PublicPermission,
+  resource?: OwnedResource,
+): void {
   const d = authorize(actor, permission, resource);
   if (!d.allowed) throw new AuthorizationError(d.reason, permission);
 }
