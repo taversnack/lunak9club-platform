@@ -959,3 +959,26 @@
     position: static;
   }
 }
+
+/* Dog page header (design plan 4.7). */
+.dogHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.dogAvatar {
+  flex: 0 0 auto;
+  width: 88px;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+}
+.dogHeaderText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.dogHeaderText h1,
+.dogHeaderText p {
+  margin: 0;
+}
