@@ -5,10 +5,27 @@ import { buttonClass } from '@/ui/components';
 import { getActor } from '@/server/session';
 import { authorize } from '@/server/policy/authorize';
 
-const benefits = [
-  { title: 'Book in seconds', text: 'Pick your days, see the price straight away and pay securely by card.' },
-  { title: 'Everything in one place', text: 'Vaccinations, vet details and emergency contacts, kept up to date.' },
-  { title: 'Peace of mind', text: 'Daily welfare checks and clear incident reports, shared with you.' },
+/** Owner-approved wording (D108, variant 2). No trial price in this block. */
+const FIRST_DAY_STEPS = [
+  { title: 'Say hello', text: 'A relaxed meet-and-greet, no rush.' },
+  {
+    title: 'A trial day',
+    text: 'Your dog spends a day with us so we can see how they get on. It’s one trial day per dog.',
+  },
+  {
+    title: 'Tell us about your dog',
+    text: 'Health, feeding and contact details, plus up-to-date vaccination certificates.',
+  },
+  { title: 'Request your days', text: 'We approve each request, then you pay to secure it.' },
+];
+
+/** Owner-approved checklist (D108); kennel cough may be shown publicly. No titre certificates (D73). */
+const VACCINATIONS = [
+  'A vaccination certificate from your vet showing your dog is protected against distemper, hepatitis and parvovirus (the core vaccines).',
+  'Leptospirosis vaccination up to date.',
+  'Kennel cough vaccination up to date.',
+  'The date each vaccination was given and when it runs out, from the certificate.',
+  'If it’s your dog’s first course of vaccinations, we can only take your dog 14 days after the course finishes.',
 ];
 
 export default async function HomePage() {
@@ -16,6 +33,7 @@ export default async function HomePage() {
   const actor = await getActor();
   const signedIn = actor.kind !== 'anonymous';
   const canBook = signedIn && authorize(actor, 'account.access').allowed;
+  const isOwner = signedIn && authorize(actor, 'admin.access').allowed;
   return (
     <>
       <section className={p.hero} aria-labelledby="hero-title">
@@ -52,17 +70,80 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
-      <section className={`${s.container} ${p.benefits}`} aria-labelledby="why">
-        <h2 id="why">Why owners choose Luna’s K9 Club</h2>
-        <ul className={p.benefitList}>
-          {benefits.map((b) => (
-            <li key={b.title} className={s.card}>
-              <h3>{b.title}</h3>
-              <p className={s.muted}>{b.text}</p>
+      <section className={`${s.container} ${p.searchWrap}`} aria-labelledby="search-title">
+        <div className={p.searchCard}>
+          <h2 id="search-title" className="visually-hidden">
+            Request a day
+          </h2>
+          <ol className={p.searchSteps}>
+            <li>
+              <span className={p.searchLabel}>Pick days</span>
+              <span className={s.muted}>Any weekday</span>
+            </li>
+            <li>
+              <span className={p.searchLabel}>Dog</span>
+              <span className={s.muted}>Your dog</span>
+            </li>
+            <li>
+              <span className={p.searchLabel}>Request</span>
+              <span className={s.muted}>We approve, then you pay</span>
+            </li>
+          </ol>
+          <Link href={signedIn ? '/account/book' : '/register'} className={buttonClass('primary')}>
+            Request a day
+          </Link>
+          <p className={s.hint}>
+            No payment until Luna’s K9 Club approves. You can withdraw a request any time. Once booked, cancel free at
+            least 48 hours before; after that the day is charged.
+          </p>
+        </div>
+      </section>
+      <section className={`${s.container} ${p.section}`} aria-labelledby="first-day">
+        <h2 id="first-day">How your first day works</h2>
+        <ol className={p.stepList}>
+          {FIRST_DAY_STEPS.map((st, i) => (
+            <li key={st.title} className={s.card}>
+              <span className={p.stepNumber} aria-hidden="true">
+                {i + 1}
+              </span>
+              <h3>
+                <span className="visually-hidden">Step {i + 1}: </span>
+                {st.title}
+              </h3>
+              <p className={s.muted}>{st.text}</p>
             </li>
           ))}
-        </ul>
+        </ol>
       </section>
+      <section className={`${s.container} ${p.section}`} aria-labelledby="vaccinations">
+        <h2 id="vaccinations">Vaccinations we ask for</h2>
+        <div className={s.card}>
+          <p>Before your dog can start, we need:</p>
+          <ul>
+            {VACCINATIONS.map((v) => (
+              <li key={v}>{v}</li>
+            ))}
+          </ul>
+          <p className={s.muted}>
+            We check these when you book and on the day. If a vaccination runs out, we can’t take your dog until a new
+            certificate is accepted.
+          </p>
+        </div>
+      </section>
+      {isOwner ? (
+        <section className={`${s.container} ${p.section}`} aria-labelledby="trust-owner">
+          {/* Trust facts are NOT supplied by the Owner, so none are published (Stephen, 4 Nov). This block is
+              visible only to the signed-in Owner as a reminder; customers and visitors never see it. */}
+          <div className={s.card}>
+            <h2 id="trust-owner">Trust block: Owner to confirm</h2>
+            <p className={s.muted}>
+              Only you can see this. Nothing below is on the public site until you provide it: licence reference,
+              company number, address, insurance, pet first aid and real photos (with consent from owners and anyone
+              shown).
+            </p>
+          </div>
+        </section>
+      ) : null}
     </>
   );
 }
