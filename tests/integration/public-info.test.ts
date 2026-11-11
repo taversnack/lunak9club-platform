@@ -6,21 +6,14 @@ import { publicCancellationHours } from '@/server/services/public-info';
 
 afterAll(closeDb);
 
+// Reads only: other test files run against the same database and read this setting, so this one must
+// never change it (the changed-value case is covered with a stand-in database in tests/unit/public-info.test.ts).
 describe('publicCancellationHours (real database)', () => {
-  it('returns the Owner’s setting as a plain integer for a signed-out visitor, and follows changes', async () => {
+  it('returns the Owner’s current setting as a plain integer for a signed-out visitor', async () => {
     const db = getDb();
-    const [before] = await db.select().from(bookingSettings).where(eq(bookingSettings.id, 1));
-    try {
-      expect(await publicCancellationHours(db)).toBe(before!.freeCancellationHours);
-      await db.update(bookingSettings).set({ freeCancellationHours: 72 }).where(eq(bookingSettings.id, 1));
-      const hours = await publicCancellationHours(db, { kind: 'anonymous' });
-      expect(hours).toBe(72);
-      expect(typeof hours).toBe('number');
-    } finally {
-      await db
-        .update(bookingSettings)
-        .set({ freeCancellationHours: before!.freeCancellationHours })
-        .where(eq(bookingSettings.id, 1));
-    }
+    const [row] = await db.select().from(bookingSettings).where(eq(bookingSettings.id, 1));
+    const hours = await publicCancellationHours(db, { kind: 'anonymous' });
+    expect(hours).toBe(row!.freeCancellationHours);
+    expect(Number.isInteger(hours)).toBe(true);
   });
 });
