@@ -4,6 +4,19 @@ import p from '@/ui/public.module.css';
 import { buttonClass } from '@/ui/components';
 import { getActor } from '@/server/session';
 import { authorize } from '@/server/policy/authorize';
+import { getDb } from '@/infra/db/client';
+import { loadSettings } from '@/server/services/booking-shared';
+
+const DEFAULT_FREE_CANCELLATION_HOURS = 48; // D39, used only if settings can't be read
+
+/** The Owner's free-cancellation hours (the same setting the Book page shows). Not personal data. */
+async function freeCancellationHours(): Promise<number> {
+  try {
+    return (await loadSettings(getDb())).freeCancellationHours;
+  } catch {
+    return DEFAULT_FREE_CANCELLATION_HOURS;
+  }
+}
 
 /** Owner-approved wording (D108, variant 2). No trial price in this block. */
 const FIRST_DAY_STEPS = [
@@ -33,6 +46,7 @@ export default async function HomePage() {
   const actor = await getActor();
   const signedIn = actor.kind !== 'anonymous';
   const canBook = signedIn && authorize(actor, 'account.access').allowed;
+  const hours = await freeCancellationHours();
   const isOwner = signedIn && authorize(actor, 'admin.access').allowed;
   return (
     <>
@@ -94,7 +108,7 @@ export default async function HomePage() {
           </Link>
           <p className={s.hint}>
             No payment until Luna’s K9 Club approves. You can withdraw a request any time. Once booked, cancel free at
-            least 48 hours before; after that the day is charged.
+            least {hours} hours before; after that the day is charged.
           </p>
         </div>
       </section>
