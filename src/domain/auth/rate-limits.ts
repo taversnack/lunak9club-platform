@@ -14,3 +14,11 @@ export function waitFor(seconds: number): string {
 }
 
 export const rateLimitedCopy = (seconds: number) => `Too many requests. Please wait ${waitFor(seconds)} and try again.`;
+
+/**
+ * Password-reset and verification-email requests are limited per client address by better-auth and, so that
+ * many addresses can't be used to flood one person's inbox, also per email address: this many per window across
+ * every client. The same numbers as the per-address limit above and the per-client rule.
+ */
+export const EMAIL_REQUEST_WINDOW_SECONDS = 300;
+export const EMAIL_REQUEST_MAX = 3;
