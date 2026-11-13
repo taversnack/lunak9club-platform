@@ -242,7 +242,7 @@ export default async function BookingsPage({
                   : b.status === 'pending_payment' && b.offerExpiresAt
                     ? `Pay by ${formatDateTimeLondon(b.offerExpiresAt)} to secure this day.`
                     : b.status === 'waitlisted'
-                      ? 'We’ll email you if a place opens up.'
+                      ? 'A place isn’t guaranteed. If Luna’s K9 Club gives you one, we’ll email you.'
                       : undefined;
               return (
                 <ListingCard
