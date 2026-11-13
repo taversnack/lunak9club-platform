@@ -352,15 +352,15 @@ export function paymentLinkMessage(
       ),
     };
   }
-  const title = 'Please pay to confirm your booking';
+  const title = 'Please pay to secure your booking';
   return {
     to,
     template: 'payment.link',
-    subject: `${BRAND}: please pay to confirm your booking`,
-    text: `Hi ${firstName},\n\nWe’ve held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to confirm it – after that the place is released.\n\n${url}`,
+    subject: `${BRAND}: please pay to secure your booking`,
+    text: `Hi ${firstName},\n\nWe’ve held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to secure your booking – after that the place is released.\n\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to confirm it. After that the place is released.</p>${button(url, 'Pay by card')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to secure your booking. After that the place is released.</p>${button(url, 'Pay by card')}`,
       '',
     ),
   };
@@ -532,7 +532,10 @@ export function approvalRequestedOwnerMessage(to: string, p: { noun: string }, u
 
 export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn' | 'expired';
 
-const APPROVAL_COPY: Record<ApprovalOutcome, { title: (noun: string) => string; body: string }> = {
+const APPROVAL_COPY: Record<
+  ApprovalOutcome,
+  { title: (noun: string) => string; body: string | ((noun: string) => string) }
+> = {
   approved: {
     title: (l) => `Your ${l} has been approved`,
     body: 'Good news – we’ve approved your request.',
@@ -547,7 +550,11 @@ const APPROVAL_COPY: Record<ApprovalOutcome, { title: (noun: string) => string; 
   },
   expired: {
     title: (l) => `Your ${l} is no longer open`,
-    body: 'We’re sorry we couldn’t answer your request in time, so it has closed and nothing has been charged. You’re welcome to send a new one.',
+    // A booking request closes at the cut-off (D79, D117): neutral, no apology and no promise of availability.
+    body: (noun) =>
+      noun === 'booking request'
+        ? 'This request wasn’t approved before booking closed at 23:59 the day before, so it has closed at no charge. You can send a new request for another day.'
+        : 'This request wasn’t answered in time, so it has closed at no charge. You can send a new one.',
   },
 };
 
@@ -559,14 +566,15 @@ export function approvalDecisionMessage(
 ): EmailMessage {
   const copy = APPROVAL_COPY[p.outcome];
   const title = copy.title(p.noun);
+  const bodyText = typeof copy.body === 'function' ? copy.body(p.noun) : copy.body;
   return {
     to,
     template: `approval.${p.outcome}`,
     subject: `${BRAND}: ${title.charAt(0).toLowerCase()}${title.slice(1)}`,
-    text: `Hi ${firstName},\n\n${copy.body}\n\n${p.summary}\n\nSee the details in your account:\n${url}`,
+    text: `Hi ${firstName},\n\n${bodyText}\n\n${p.summary}\n\nSee the details in your account:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(copy.body)}</p><p>${escapeHtml(p.summary)}</p>${button(url, 'See the details')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(bodyText)}</p><p>${escapeHtml(p.summary)}</p>${button(url, 'See the details')}`,
       '',
     ),
   };
