@@ -80,3 +80,60 @@ describe('overviewTimeline', () => {
     expect(out.filter((r) => !r.state.ended).length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('what the timeline says about cancelling and the waitlist (D18, D39, D58, D81, D106)', () => {
+  const next = (o: Partial<TimelineRow>) => timelineState(row({ status: 'confirmed', ...o }), ctx)!.next;
+  it('a card-paid day: free at least 48 hours ahead and refunded to the card', () => {
+    expect(next({ kind: 'standard', paymentState: 'paid', late: false })).toBe(
+      'You’re booked. Cancel at least 48 hours ahead and the day is refunded to your card.',
+    );
+  });
+  it('a member day: we review the refund request, and if approved the money goes back to the card (D106, D117)', () => {
+    expect(next({ kind: 'membership', late: false })).toBe(
+      'Cancel at least 48 hours before and we’ll review your refund request. If it’s approved, the money goes back to your card.',
+    );
+    expect(next({ kind: 'membership', late: false })).not.toMatch(/full refund|is refunded to your card/);
+  });
+  it('inside the notice period it says so, whoever paid how', () => {
+    for (const kind of ['standard', 'membership', 'trial'] as const)
+      expect(next({ kind, late: true, paymentState: 'paid' })).toBe(
+        'You’re booked. It’s less than 48 hours until it starts, so cancelling now is still charged.',
+      );
+  });
+  it('without the extra facts it stays neutral and still true', () => {
+    expect(next({})).toBe('You’re booked. Cancelling at least 48 hours ahead is free; later than that it is charged.');
+    expect(next({ kind: 'standard', paymentState: 'none', late: false })).toContain('is free; later than that');
+  });
+  it('the waitlist promises nothing automatic', () => {
+    const t = timelineState(row({ status: 'waitlisted' }), ctx)!.next;
+    expect(t).toBe('A place isn’t guaranteed. If Luna’s K9 Club gives you one, we’ll email you.');
+  });
+});
+
+describe('the notice period in the timeline follows the Owner’s setting, not a fixed 48', () => {
+  const confirmed = (hours: number, o: Partial<TimelineRow>) =>
+    timelineState(row({ status: 'confirmed', ...o }), { ...ctx, freeCancelHours: hours })!.next;
+  it.each([24, 72])('%i hours appears in every confirmed-day line and no 48 does', (hours) => {
+    for (const o of [
+      { kind: 'standard', paymentState: 'paid', late: false },
+      { kind: 'membership', late: false },
+      { kind: 'trial', paymentState: 'paid', late: true },
+      {},
+    ] as Partial<TimelineRow>[]) {
+      const t = confirmed(hours, o);
+      expect(t).toContain(`${hours} hours`);
+      expect(t).not.toContain('48');
+    }
+  });
+  it('a customer’s own late cancellation also names the configured hours', () => {
+    const t = timelineState(
+      row({ status: 'cancelled', endedReason: 'cancelled_by_customer', lateCancellation: true, cancelledAt: ago(1) }),
+      {
+        ...ctx,
+        freeCancelHours: 72,
+      },
+    )!.next;
+    expect(t).toContain('72 hours');
+    expect(t).not.toContain('48');
+  });
+});

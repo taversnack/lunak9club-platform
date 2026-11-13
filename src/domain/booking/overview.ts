@@ -4,6 +4,7 @@
  */
 import type { BookingStatus } from './rules';
 import type { EndedReason } from './ended-reason';
+import type { PaymentState } from './payment-state';
 
 type IsoDate = string;
 
@@ -41,6 +42,10 @@ export type TimelineRow = {
   endedReason: EndedReason | null;
   lateCancellation: boolean;
   updatedAt: Date;
+  /** What kind of day it is, whether a cancellation now would be late (the existing 48-hour terms) and how it was paid; all supplied by myBookings. Without them the wording stays neutral. */
+  kind?: 'standard' | 'membership' | 'trial';
+  late?: boolean;
+  paymentState?: PaymentState;
 };
 
 export type TimelineState = {
@@ -58,6 +63,21 @@ export type TimelineState = {
 export const RECENT_DAYS = 14;
 
 const RELEASED = 'Not paid in time, so the place was released. You’re welcome to request another day.';
+
+/**
+ * What cancelling a confirmed day means, true for each case (D18, D39, D56, D58, D106): inside the notice period it is
+ * charged; a member day sends a refund request for Luna’s K9 Club to approve; a day paid by card is refunded to the card;
+ * anything we can't tell keeps to what is always true (free at least that many hours ahead, charged after).
+ */
+export function confirmedNext(b: Pick<TimelineRow, 'kind' | 'late' | 'paymentState'>, hours: number): string {
+  if (b.late)
+    return `You’re booked. It’s less than ${hours} hours until it starts, so cancelling now is still charged.`;
+  if (b.kind === 'membership')
+    return `Cancel at least ${hours} hours before and we’ll review your refund request. If it’s approved, the money goes back to your card.`;
+  if (b.paymentState === 'paid')
+    return `You’re booked. Cancel at least ${hours} hours ahead and the day is refunded to your card.`;
+  return `You’re booked. Cancelling at least ${hours} hours ahead is free; later than that it is charged.`;
+}
 
 export function timelineState(
   b: TimelineRow,
@@ -92,11 +112,16 @@ export function timelineState(
       return {
         tone: 'success',
         text: 'Confirmed',
-        next: `You’re booked. Cancel at least ${ctx.freeCancelHours} hours ahead for a full refund.`,
+        next: confirmedNext(b, ctx.freeCancelHours),
         ended: false,
       };
     case 'waitlisted':
-      return { tone: 'info', text: 'On the waitlist', next: 'We’ll email you if a place opens up.', ended: false };
+      return {
+        tone: 'info',
+        text: 'On the waitlist',
+        next: 'A place isn’t guaranteed. If Luna’s K9 Club gives you one, we’ll email you.',
+        ended: false,
+      };
     case 'rejected':
       return {
         tone: 'danger',
