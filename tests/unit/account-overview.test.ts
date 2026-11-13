@@ -88,11 +88,11 @@ describe('what the timeline says about cancelling and the waitlist (D18, D39, D5
       'You’re booked. Cancel at least 48 hours ahead and the day is refunded to your card.',
     );
   });
-  it('a member day: a refund request for the Owner to approve, never "a full refund"', () => {
-    const t = next({ kind: 'membership', late: false });
-    expect(t).toContain('refund request goes to Luna’s K9 Club');
-    expect(t).toContain('approve member refunds');
-    expect(t).not.toMatch(/full refund|refunded to your card/);
+  it('a member day: we review the refund request, and if approved the money goes back to the card (D106, D117)', () => {
+    expect(next({ kind: 'membership', late: false })).toBe(
+      'Cancel at least 48 hours before and we’ll review your refund request. If it’s approved, the money goes back to your card.',
+    );
+    expect(next({ kind: 'membership', late: false })).not.toMatch(/full refund|is refunded to your card/);
   });
   it('inside the notice period it says so, whoever paid how', () => {
     for (const kind of ['standard', 'membership', 'trial'] as const)

@@ -73,7 +73,7 @@ export function confirmedNext(b: Pick<TimelineRow, 'kind' | 'late' | 'paymentSta
   if (b.late)
     return `You’re booked. It’s less than ${hours} hours until it starts, so cancelling now is still charged.`;
   if (b.kind === 'membership')
-    return `You’re booked. Cancel at least ${hours} hours ahead and a refund request goes to Luna’s K9 Club, who approve member refunds.`;
+    return `Cancel at least ${hours} hours before and we’ll review your refund request. If it’s approved, the money goes back to your card.`;
   if (b.paymentState === 'paid')
     return `You’re booked. Cancel at least ${hours} hours ahead and the day is refunded to your card.`;
   return `You’re booked. Cancelling at least ${hours} hours ahead is free; later than that it is charged.`;
