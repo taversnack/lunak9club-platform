@@ -116,7 +116,7 @@ test('Owner checks the membership invoice draft and sends it', async ({ page }, 
   await page.getByRole('button', { name: 'Save business details' }).click();
   await expect(page.getByText('Business details saved.')).toBeVisible();
 
-  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Invoices' }).click();
+  await navTo(page, 'Owner', 'Invoices');
   await expect(page.getByRole('heading', { name: 'Invoices', level: 1 })).toBeVisible();
   await page.getByRole('button', { name: 'Update drafts and send anything due now' }).click();
   await expect(page.getByText(/Billing updated/)).toBeVisible();

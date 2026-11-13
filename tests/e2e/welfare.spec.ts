@@ -23,7 +23,7 @@ test('Owner reports an incident and records a daily check that must be shared', 
   const { dog, label } = who(info.project.name);
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Incidents' }).click();
+  await navTo(page, 'Owner', 'Incidents');
   await expect(page.getByRole('heading', { name: 'Incidents', level: 1 })).toBeVisible();
   await axe(page);
   await page.getByRole('link', { name: 'Report an incident' }).click();
