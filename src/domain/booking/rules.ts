@@ -110,6 +110,12 @@ export { londonInstant };
 export type DateCheck = { ok: true } | { ok: false; reason: string };
 
 /** Can a customer still book this date? Until 23:59 the day before, up to maxAdvanceDays ahead, when open. */
+/**
+ * Bookings close at 23:59 the day before (D8, D79): a service date that is today or earlier, in London, has
+ * passed its cut-off. One rule for the customer's Book page, the Owner approving a request, and the scheduler.
+ */
+export const cutOffPassed = (date: IsoDate, today: IsoDate): boolean => date <= today;
+
 export function checkBookableDate(input: {
   date: IsoDate;
   today: IsoDate;
@@ -117,7 +123,7 @@ export function checkBookableDate(input: {
   closedReason?: string | null;
 }): DateCheck {
   const { date, today, settings } = input;
-  if (date <= today) return { ok: false, reason: 'Bookings close at 23:59 the day before.' };
+  if (cutOffPassed(date, today)) return { ok: false, reason: 'Bookings close at 23:59 the day before.' };
   if (daysBetween(today, date) > settings.maxAdvanceDays) {
     return { ok: false, reason: `You can book up to ${settings.maxAdvanceDays} days ahead.` };
   }

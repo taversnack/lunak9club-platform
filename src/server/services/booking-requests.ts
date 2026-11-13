@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import { approvalRequests, bookingDogs, customers, dogs, priceSnapshots, users } from '@/infra/db/schema';
-import { formatPounds, PLACE_STATUSES, remainingFor, SESSION_LABELS } from '@/domain/booking/rules';
+import { cutOffPassed, formatPounds, PLACE_STATUSES, remainingFor, SESSION_LABELS } from '@/domain/booking/rules';
 import { subjectKey } from '@/domain/approvals';
 import { describeBookingRequest } from '@/domain/booking/describe-request';
 import { allBlocks, blocksForEvaluation } from '@/domain/compliance/attendance';
@@ -115,6 +115,15 @@ registerApprovalType<BookingRequestPayload>({
     if (!rows.length)
       throw new ConflictError('Every day in this request has been declined or cancelled. Decline the request instead.');
     await lockDays(ctx.tx, [...new Set(rows.map((r) => r.serviceDate))], settings, ctx.now);
+    // Bookings close at 23:59 the day before (D8, D79). The scheduler closes unanswered requests at its first run
+    // after midnight; until then the Owner can't approve one whose day has already closed (same date rule as the
+    // customer's Book page). Decline that day first, or leave it: it closes at no charge.
+    const today = londonDate(ctx.now);
+    const closed = rows.find((r) => cutOffPassed(r.serviceDate, today));
+    if (closed)
+      throw new ConflictError(
+        `${closed.dogName} on ${formatUkDate(closed.serviceDate)}: bookings for that day have closed (they close at 23:59 the day before). Decline that day first.`,
+      );
     // Vaccinations may have run out since the request was sent (D40).
     // evaluateDogs reads only; the transaction handle offers the same query API as Db.
     const evals = await evaluateDogs(ctx.tx as unknown as Db, [...new Set(rows.map((r) => r.dogId))], ctx.now);
