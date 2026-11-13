@@ -348,6 +348,16 @@ describe('refunds and credit notes (D18, D54, D55)', () => {
     await expect(decideRefund(db(), owner, req!.id, true, {})).rejects.toBeInstanceOf(ConflictError);
   });
 
+  it('an invoiced member day cancelled exactly 48 h ahead is free (refund request); one minute inside 48 h is not (D18, D39)', async () => {
+    const [free, late] = await lastMemberDay();
+    const exactly48 = (date: string) => new Date(londonInstant(date, '07:30').getTime() - 48 * 3_600_000);
+    expect((await cancelMyBooking(db(), mia, free!.id, exactly48(free!.serviceDate))).late).toBe(false);
+    expect(await db().select().from(refundRequests).where(eq(refundRequests.bookingDogId, free!.id))).toHaveLength(1);
+    const inside = new Date(exactly48(late!.serviceDate).getTime() + 60_000);
+    expect((await cancelMyBooking(db(), mia, late!.id, inside)).late).toBe(true);
+    expect(await db().select().from(refundRequests).where(eq(refundRequests.bookingDogId, late!.id))).toHaveLength(0);
+  });
+
   it('records a manual payment (card only for customers; Owner can record by hand with a reason)', async () => {
     const d = await ownerInvoice(db(), owner, invoiceId);
     await expect(
