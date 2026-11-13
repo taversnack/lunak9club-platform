@@ -1,6 +1,6 @@
 # Options note for Stephen: the booking cut-off gap (D8, D79)
 
-Status: **for decision. No code is changed until Stephen chooses.**
+Status: **decided: option B, chosen by Stephen on 13 Nov 2026.** Built in PR #171 (the approve path refuses once the request's day has passed its cut-off). The text below is kept as the record of the options.
 
 ## The situation
 
@@ -40,4 +40,4 @@ The opposite effect of closing the gap: a request still waiting just after midni
 
 B if D79 should hold exactly as confirmed (it is the smallest change that makes the system do what the rule says). A if the Owner values being able to approve in the first minutes after midnight. Either way C helps. Stephen's call; this is a business rule.
 
-Backend will not change code until Stephen chooses. If B: one small PR with the tests above, gated by the tester.
+Decision (Stephen, 13 Nov 2026): **B**. Implemented in PR #171 with the tests listed above.
