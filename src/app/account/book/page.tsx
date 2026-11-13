@@ -10,7 +10,7 @@ import { isoWeekday } from '@/domain/booking/rules';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 import { bookPageState, dogCantBookReasons, nothingToBookReasons } from '@/domain/booking/book-page';
 
-export const metadata: Metadata = { title: 'Book day care' };
+export const metadata: Metadata = { title: 'Request a day' };
 export const dynamic = 'force-dynamic';
 
 const AVAIL = {

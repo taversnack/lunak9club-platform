@@ -71,7 +71,7 @@ export default async function BookingsPage({
       <div className={s.row}>
         <h1>Your bookings</h1>
         <Link href="/account/book" className={buttonClass('primary')}>
-          Book day care
+          Request a day
         </Link>
       </div>
       {sp.requested !== undefined ? (

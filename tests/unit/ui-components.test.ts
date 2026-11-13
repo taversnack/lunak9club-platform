@@ -42,11 +42,11 @@ describe('shared UI components', () => {
 
   it('EmptyState announces politely and shows an action', () => {
     const out = html(
-      h(EmptyState, { title: 'No bookings yet', action: h('a', { href: '/account/book' }, 'Book day care') }),
+      h(EmptyState, { title: 'No bookings yet', action: h('a', { href: '/account/book' }, 'Request a day') }),
     );
     expect(out).toContain('role="status"');
     expect(out).toContain('No bookings yet');
-    expect(out).toContain('Book day care');
+    expect(out).toContain('Request a day');
   });
 
   it('DataTable always has a caption and a focusable labelled scroll region', () => {

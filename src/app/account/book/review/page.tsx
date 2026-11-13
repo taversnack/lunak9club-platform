@@ -68,7 +68,7 @@ export default async function ReviewPage({
   return (
     <Stack>
       <p className={s.breadcrumb}>
-        <Link href="/account/book">Book day care</Link> › Check your booking
+        <Link href="/account/book">Request a day</Link> › Check your booking
       </p>
       <h1>Check your booking request</h1>
       <Card aria-labelledby="summary">

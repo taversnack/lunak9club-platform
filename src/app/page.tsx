@@ -45,7 +45,7 @@ export default async function HomePage() {
             <p className={p.eyebrow}>Doggie day care · Central Bedfordshire</p>
             <h1 id="hero-title">A luxury retreat for country dogs</h1>
             <p className={p.lead}>
-              Book day care, keep your dog&apos;s details up to date and pay invoices in one place.
+              Request days, keep your dog&apos;s details up to date and pay invoices in one place.
             </p>
             <div className={p.heroActions}>
               {signedIn ? (
@@ -55,7 +55,7 @@ export default async function HomePage() {
                   </Link>
                   {canBook ? (
                     <Link href="/account/book" className={`${buttonClass('secondary')} ${p.onDark}`}>
-                      Book day care
+                      Request a day
                     </Link>
                   ) : null}
                 </>
