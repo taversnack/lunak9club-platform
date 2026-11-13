@@ -11,7 +11,7 @@ test('a signed-out visitor on the 404 page is offered sign-in and home, not acco
   await expect(main.getByRole('link', { name: 'Sign in', exact: true })).toHaveAttribute('href', '/sign-in');
   await expect(main.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('href', '/');
   await expect(main.getByRole('link', { name: 'Go to your dashboard' })).toHaveCount(0);
-  await expect(main.getByRole('link', { name: 'Book day care' })).toHaveCount(0);
+  await expect(main.getByRole('link', { name: 'Request a day' })).toHaveCount(0);
 });
 
 test('a signed-in customer on the 404 page keeps the dashboard and booking links', async ({ page }) => {
@@ -21,6 +21,6 @@ test('a signed-in customer on the 404 page keeps the dashboard and booking links
   expect(r?.status()).toBe(404);
   const main = page.locator('main');
   await expect(main.getByRole('link', { name: 'Go to your dashboard' })).toHaveAttribute('href', '/dashboard');
-  await expect(main.getByRole('link', { name: 'Book day care' })).toHaveAttribute('href', '/account/book');
+  await expect(main.getByRole('link', { name: 'Request a day' })).toHaveAttribute('href', '/account/book');
   await expect(main.getByRole('link', { name: 'Sign in', exact: true })).toHaveCount(0);
 });

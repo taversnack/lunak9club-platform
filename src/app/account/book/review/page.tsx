@@ -61,14 +61,14 @@ export default async function ReviewPage({
   const { lines, request } = preview;
   const confirmed = lines.filter((l) => l.outcome === 'requested');
   const outcome = {
-    requested: { tone: 'success' as const, text: 'Place available – will be requested' },
+    requested: { tone: 'success' as const, text: 'Available – will be requested' },
     waitlisted: { tone: 'warning' as const, text: 'Full – waitlist' },
     skipped: { tone: 'info' as const, text: 'Won’t be booked' },
   };
   return (
     <Stack>
       <p className={s.breadcrumb}>
-        <Link href="/account/book">Book day care</Link> › Check your booking
+        <Link href="/account/book">Request a day</Link> › Check your booking
       </p>
       <h1>Check your booking request</h1>
       <Card aria-labelledby="summary">
@@ -117,7 +117,7 @@ export default async function ReviewPage({
         <p className={s.hint}>
           Prices are fixed when you send the request. Nothing is charged now: once Luna’s K9 Club approves, we email you
           a link to pay by card, and the place is held until the time shown in that email. Waitlisted days are only
-          charged if we give you a place. Cancel {preview.freeCancellationHours} hours or more before the session starts
+          charged if we give you a place. Cancel at least {preview.freeCancellationHours} hours before the day starts
           for a full refund to your card; later cancellations and no-shows are charged in full.
         </p>
       </Card>

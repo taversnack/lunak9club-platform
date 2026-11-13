@@ -10,12 +10,12 @@ import { isoWeekday } from '@/domain/booking/rules';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
 import { bookPageState, dogCantBookReasons, nothingToBookReasons } from '@/domain/booking/book-page';
 
-export const metadata: Metadata = { title: 'Book day care' };
+export const metadata: Metadata = { title: 'Request a day' };
 export const dynamic = 'force-dynamic';
 
 const AVAIL = {
   available: { tone: 'success' as const, text: 'Available' },
-  // Customers never see how many places are left, so "nearly full" reads as plain "Available" (D100).
+  // Customers never see how many places are left, so "nearly full" reads as plain "Available" (D101).
   nearly_full: { tone: 'success' as const, text: 'Available' },
   full: { tone: 'danger' as const, text: 'Full – join the waitlist' },
   closed: { tone: 'info' as const, text: 'Closed' },
@@ -43,9 +43,9 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
 
   return (
     <Stack>
-      <h1>Book day care</h1>
+      <h1>Request a day</h1>
       <p className={s.hint}>
-        Members: extra days are booked here and charged at your membership day rate.{' '}
+        Members: you can request extra days here at your membership day rate.{' '}
         <Link href="/account/faq#faq-extra">How extra days work</Link>
       </p>
       {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -86,7 +86,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
                   Which dogs?
                 </legend>
                 {dogs.map((d) => (
-                  <label key={d.id} className={s.choice}>
+                  <label key={d.id} className={`${s.choice} ${s.choiceCard}`}>
                     <input
                       type="checkbox"
                       name="dog"
