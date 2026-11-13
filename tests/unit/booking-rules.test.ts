@@ -8,6 +8,7 @@ import {
   PLACE_STATUSES,
   cancellationTerms,
   checkBookableDate,
+  cutOffPassed,
   fits,
   isoWeekday,
   londonInstant,
@@ -15,6 +16,7 @@ import {
   usage,
   type Settings,
 } from '@/domain/booking/rules';
+import { londonDate } from '@/domain/time';
 import { vaccinationBlocksForDate } from '@/domain/compliance/attendance';
 
 const settings: Settings = {
@@ -183,5 +185,24 @@ describe('vaccinations by date', () => {
     expect(vaccinationBlocksForDate(v, '2026-10-16', null).hard).toEqual([
       'Core vaccinations runs out before this date.',
     ]);
+  });
+});
+
+describe('cut-off date rule (D8, D79) across the clock changes', () => {
+  const closedAt = (service: string, london: string, time: string) =>
+    cutOffPassed(service, londonDate(londonInstant(london, time)));
+  it('open at 23:58 the day before, closed from 00:00 on the day', () => {
+    expect(closedAt('2026-06-10', '2026-06-09', '23:58')).toBe(false);
+    expect(closedAt('2026-06-10', '2026-06-10', '00:00')).toBe(true);
+    expect(closedAt('2026-06-10', '2026-06-10', '00:05')).toBe(true);
+  });
+  it('holds on the day the clocks go forward (29 Mar 2026) and back (25 Oct 2026)', () => {
+    expect(closedAt('2026-03-30', '2026-03-29', '23:58')).toBe(false); // BST evening: 22:58 UTC
+    expect(closedAt('2026-03-30', '2026-03-30', '00:00')).toBe(true);
+    expect(closedAt('2026-10-26', '2026-10-25', '23:58')).toBe(false); // GMT evening after the clocks go back
+    expect(closedAt('2026-10-26', '2026-10-26', '00:00')).toBe(true);
+    // The day the clocks change: a Monday service day is unaffected, and a Sunday service day closes at midnight too.
+    expect(closedAt('2026-03-29', '2026-03-28', '23:58')).toBe(false);
+    expect(closedAt('2026-03-29', '2026-03-29', '00:00')).toBe(true);
   });
 });
