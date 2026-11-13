@@ -80,3 +80,32 @@ describe('overviewTimeline', () => {
     expect(out.filter((r) => !r.state.ended).length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('what the timeline says about cancelling and the waitlist (D18, D39, D58, D81, D106)', () => {
+  const next = (o: Partial<TimelineRow>) => timelineState(row({ status: 'confirmed', ...o }), ctx)!.next;
+  it('a card-paid day: free at least 48 hours ahead and refunded to the card', () => {
+    expect(next({ kind: 'standard', paymentState: 'paid', late: false })).toBe(
+      'You’re booked. Cancel at least 48 hours ahead and the day is refunded to your card.',
+    );
+  });
+  it('a member day: a refund request for the Owner to approve, never "a full refund"', () => {
+    const t = next({ kind: 'membership', late: false });
+    expect(t).toContain('refund request goes to Luna’s K9 Club');
+    expect(t).toContain('approve member refunds');
+    expect(t).not.toMatch(/full refund|refunded to your card/);
+  });
+  it('inside the notice period it says so, whoever paid how', () => {
+    for (const kind of ['standard', 'membership', 'trial'] as const)
+      expect(next({ kind, late: true, paymentState: 'paid' })).toBe(
+        'You’re booked. It’s less than 48 hours until it starts, so cancelling now is still charged.',
+      );
+  });
+  it('without the extra facts it stays neutral and still true', () => {
+    expect(next({})).toBe('You’re booked. Cancelling at least 48 hours ahead is free; later than that it is charged.');
+    expect(next({ kind: 'standard', paymentState: 'none', late: false })).toContain('is free; later than that');
+  });
+  it('the waitlist promises nothing automatic', () => {
+    const t = timelineState(row({ status: 'waitlisted' }), ctx)!.next;
+    expect(t).toBe('A place isn’t guaranteed. If Luna’s K9 Club gives you one, we’ll email you.');
+  });
+});
