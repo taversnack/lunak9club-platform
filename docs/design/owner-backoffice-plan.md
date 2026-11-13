@@ -1,6 +1,6 @@
 # Owner back office: restyle plan (proposal)
 
-Status: **proposal for approval.** Author: frontend agent, 13 Nov 2026. Follows `docs/design/airbnb-style-plan.md` (customer side, approved 4 Nov) and D111: the Owner back office keeps its efficient layout and adopts the same cards, spacing and rounded style afterwards. Inputs: researcher's Owner back-office reference (`docs/research/owner-backoffice-design-reference.md`, PR #162) when merged, D77 (one inbox, decisions final), D100 and D101.
+Status: **approved by Stephen, 13 Nov 2026 (answers in section 6).** Author: frontend agent, 13 Nov 2026. Follows `docs/design/airbnb-style-plan.md` (customer side, approved 4 Nov) and D111: the Owner back office keeps its efficient layout and adopts the same cards, spacing and rounded style afterwards. Inputs: researcher's Owner back-office reference (`docs/research/owner-backoffice-design-reference.md`, PR #162) when merged, D77 (one inbox, decisions final), D100 and D101.
 
 ## 1. Principles
 
@@ -80,8 +80,10 @@ Costs: none (no new fonts, icons, images or services). Each PR: typecheck, lint,
 - Keyboard: every inline action reachable in a sensible order; focus visible; no focus lost after an approval redirect.
 - No capacity counts shown to customers anywhere (D101) and no half-day wording added (D100).
 
-## 6. Questions for Stephen
+## 6. Decisions (answered by Stephen, 13 Nov 2026)
 
-1. Sidebar groups as in section 2: fine, or different grouping?
-2. Is a phone tab bar wanted for the Owner too, or is the drawer enough?
-3. Any Owner screen you use on a phone daily (so it gets done first)?
+1. Plan, order and the sidebar grouping: **approved as written** (shell and `ResponsiveTable`, then Today, Bookings, Invoices, Customers, Requests, then the rest). No cost.
+2. Phone navigation: **Menu drawer only; no bottom tab bar on the Owner side.**
+3. Screens used on the phone every day: **the Bookings day view and the Today inbox.** They are polished first for small screens, keeping one-tap approvals and check-in/out efficient.
+
+Order of work: O1 (shell and `ResponsiveTable`), O2 Today, O3 Bookings (day view first), then the rest as in section 4, interleaved with the remaining customer pages by pm's priority.
