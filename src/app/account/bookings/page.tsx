@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { Route } from 'next';
 import Link from 'next/link';
 import s from '@/ui/ui.module.css';
-import { Alert, buttonClass, Card, Muted, Stack, StatusBadge } from '@/ui/components';
+import { Alert, buttonClass, Card, CardGrid, ListingCard, Muted, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, SubmitButton } from '@/ui/form';
 import { FocusOnShow } from '@/ui/focus-on-show';
 import { requirePermission } from '@/server/session';
@@ -233,71 +233,57 @@ export default async function BookingsPage({
         {upcoming.length === 0 ? (
           <Muted>No bookings yet.</Muted>
         ) : (
-          <div className={s.tableWrap} role="region" aria-label="Upcoming bookings" tabIndex={0}>
-            <table className={s.table}>
-              <thead>
-                <tr>
-                  <th scope="col">Date</th>
-                  <th scope="col">Dog</th>
-                  <th scope="col">Session</th>
-                  <th scope="col">Price</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">
-                    <span className="visually-hidden">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {upcoming.map((b) => (
-                  <tr key={b.id}>
-                    <td>{formatUkDate(b.serviceDate)}</td>
-                    <td>{b.dogName}</td>
-                    <td>
-                      {SESSION_LABELS[b.session]}
+          <CardGrid>
+            {upcoming.map((b) => {
+              const who = `${b.dogName} on ${formatUkDate(b.serviceDate)}`;
+              const note =
+                b.status === 'requested'
+                  ? 'Waiting for approval. Nothing to pay yet.'
+                  : b.status === 'pending_payment' && b.offerExpiresAt
+                    ? `Pay by ${formatDateTimeLondon(b.offerExpiresAt)} to secure this day.`
+                    : b.status === 'waitlisted'
+                      ? 'We’ll email you if a place opens up.'
+                      : undefined;
+              return (
+                <ListingCard
+                  key={b.id}
+                  title={formatUkDate(b.serviceDate)}
+                  meta={
+                    <>
+                      {b.dogName} · {SESSION_LABELS[b.session]}
                       {b.taxi ? ' + taxi' : ''}
-                      {b.kind === 'membership' ? <div className={s.hint}>Membership day</div> : null}
-                    </td>
-                    <td>{b.pricePence != null ? formatPounds(b.pricePence) : '–'}</td>
-                    <td>
-                      <StatusBadge tone={STATUS[b.status]!.tone}>{STATUS[b.status]!.text}</StatusBadge>
-                    </td>
-                    <td>
+                      {b.kind === 'membership' ? ' · Membership day' : ''}
+                      {b.pricePence != null ? ` · ${formatPounds(b.pricePence)}` : ''}
+                    </>
+                  }
+                  badge={<StatusBadge tone={STATUS[b.status]!.tone}>{STATUS[b.status]!.text}</StatusBadge>}
+                  note={note}
+                  action={
+                    <span className={s.cardActions}>
                       {b.kind === 'membership' && b.status === 'confirmed' && !b.late && !moving.has(b.id) ? (
-                        <>
-                          <Link
-                            href={`/account/bookings/${b.id}/move`}
-                            style={{ display: 'inline-block', minHeight: 24, minWidth: 24, marginInlineEnd: 12 }}
-                          >
-                            Move{' '}
-                            <span className="visually-hidden">{`${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
-                          </Link>{' '}
-                        </>
+                        <Link href={`/account/bookings/${b.id}/move`} className={buttonClass('secondary')}>
+                          Move <span className="visually-hidden">{who}</span>
+                        </Link>
                       ) : null}
                       {b.cancellable ? (
-                        <Link
-                          href={`/account/bookings/${b.id}/cancel`}
-                          style={{ display: 'inline-block', minHeight: 24, minWidth: 24 }}
-                        >
-                          Cancel{' '}
-                          <span className="visually-hidden">{`${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
+                        <Link href={`/account/bookings/${b.id}/cancel`} className={buttonClass('secondary')}>
+                          Cancel <span className="visually-hidden">{who}</span>
                         </Link>
                       ) : b.withdrawable ? (
-                        <Link href={`/account/bookings/${b.id}/cancel`}>
-                          Withdraw day{' '}
-                          <span className="visually-hidden">{`${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
+                        <Link href={`/account/bookings/${b.id}/cancel`} className={buttonClass('secondary')}>
+                          Withdraw day <span className="visually-hidden">{who}</span>
                         </Link>
                       ) : b.leavable ? (
-                        <Link href={`/account/bookings/${b.id}/leave` as Route}>
-                          Leave waitlist{' '}
-                          <span className="visually-hidden">{`for ${b.dogName} on ${formatUkDate(b.serviceDate)}`}</span>
+                        <Link href={`/account/bookings/${b.id}/leave` as Route} className={buttonClass('secondary')}>
+                          Leave waitlist <span className="visually-hidden">{`for ${who}`}</span>
                         </Link>
                       ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </span>
+                  }
+                />
+              );
+            })}
+          </CardGrid>
         )}
       </Card>
       <Card aria-labelledby="past">
