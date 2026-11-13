@@ -90,4 +90,4 @@ The Owner menu has: **Dashboard**, **Bookings**, **Requests**, **Memberships**, 
 - Exact label of the button on "Payment links that couldn't be created".
 - Whether the day view's Morning and Afternoon headings are removed (D100).
 - Any screen not listed above (for example Customers and settings details): I read headings only, not every field.
-- Quiet hours, notification emails to you and other automatic emails are described in `docs/decisions.md` (D57, D66, D88); this guide does not repeat every rule.
+- Automatic emails (reminders, summaries and notices to you) are described in `docs/decisions.md` (D57, D66, D88); this guide does not repeat every rule.
