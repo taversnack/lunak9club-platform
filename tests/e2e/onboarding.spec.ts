@@ -205,7 +205,7 @@ test('another customer cannot open this dog or its document', async ({ page }) =
 test('owner reviews records, records assessments and approves the dog', async ({ page }) => {
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Reviews' }).click();
+  await navTo(page, 'Owner', 'Reviews');
   await page.getByRole('link', { name: dogName }).first().click();
   await expect(page.getByRole('heading', { name: dogName, level: 1 })).toBeVisible();
   await expect(page.getByText('Very friendly, loves fetch')).toBeVisible();

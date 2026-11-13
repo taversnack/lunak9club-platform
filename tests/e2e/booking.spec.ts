@@ -66,7 +66,7 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   // The Owner approves on the Requests page, with a note that only shows in the portal.
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await page.getByRole('navigation', { name: 'Owner' }).getByRole('link', { name: 'Requests', exact: true }).click();
+  await navTo(page, 'Owner', 'Requests', true);
   await expect(page.getByRole('heading', { name: 'Requests', level: 1 })).toBeVisible();
   await axe(page);
   const item = page
