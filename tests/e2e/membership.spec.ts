@@ -80,7 +80,7 @@ test('Owner approves and the days are booked at the member rate', async ({ page 
   await signIn(page, user.email, user.password);
   await expect(page).toHaveURL(/\/account$/);
   await page.goto('/account/bookings');
-  const row = page.getByRole('row').filter({ hasText: 'Membership day' }).first();
+  const row = page.getByRole('listitem').filter({ hasText: 'Membership day' }).first();
   await expect(row).toContainText(dog);
   await expect(row).toContainText('£48.00');
   await page.goto('/account/membership');

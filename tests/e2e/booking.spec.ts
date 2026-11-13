@@ -126,11 +126,11 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   await expect(page.getByText('Paid on', { exact: true })).toBeVisible();
   await page.goto('/account/bookings');
 
-  const row = page.getByRole('row').filter({ hasText: 'Biscuit' }).first();
-  bookedDateLabel = (await row.getByRole('cell').first().textContent())!;
+  const row = page.getByRole('listitem').filter({ hasText: 'Biscuit' }).first();
+  bookedDateLabel = (await row.getByRole('heading').first().textContent())!;
   // One of the two days just paid for (other tests may leave Biscuit with unpaid days too).
   await page
-    .getByRole('row')
+    .getByRole('listitem')
     .filter({ hasText: 'Biscuit' })
     .filter({ hasText: 'Booked' })
     .last()
