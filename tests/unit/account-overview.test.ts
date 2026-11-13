@@ -109,3 +109,31 @@ describe('what the timeline says about cancelling and the waitlist (D18, D39, D5
     expect(t).toBe('A place isn’t guaranteed. If Luna’s K9 Club gives you one, we’ll email you.');
   });
 });
+
+describe('the notice period in the timeline follows the Owner’s setting, not a fixed 48', () => {
+  const confirmed = (hours: number, o: Partial<TimelineRow>) =>
+    timelineState(row({ status: 'confirmed', ...o }), { ...ctx, freeCancelHours: hours })!.next;
+  it.each([24, 72])('%i hours appears in every confirmed-day line and no 48 does', (hours) => {
+    for (const o of [
+      { kind: 'standard', paymentState: 'paid', late: false },
+      { kind: 'membership', late: false },
+      { kind: 'trial', paymentState: 'paid', late: true },
+      {},
+    ] as Partial<TimelineRow>[]) {
+      const t = confirmed(hours, o);
+      expect(t).toContain(`${hours} hours`);
+      expect(t).not.toContain('48');
+    }
+  });
+  it('a customer’s own late cancellation also names the configured hours', () => {
+    const t = timelineState(
+      row({ status: 'cancelled', endedReason: 'cancelled_by_customer', lateCancellation: true, cancelledAt: ago(1) }),
+      {
+        ...ctx,
+        freeCancelHours: 72,
+      },
+    )!.next;
+    expect(t).toContain('72 hours');
+    expect(t).not.toContain('48');
+  });
+});
