@@ -128,7 +128,7 @@ export default async function BookingsPage({
           ) : null}
           {sp.payment === 'booking-cancelled' ? (
             <Alert tone="info" title="This booking was cancelled">
-              There’s nothing to pay for it. You can book again whenever you like.
+              There’s nothing to pay for it. You can send a new request whenever you like.
             </Alert>
           ) : null}
           {sp.payment === 'processing' ? (
@@ -144,7 +144,7 @@ export default async function BookingsPage({
           ) : null}
           {sp.payment === 'expired' ? (
             <Alert tone="info" title="That payment link has ended">
-              The time to pay ran out, so the places were released. You can book again.
+              The time to pay ran out, so the places were released. You can send a new request.
             </Alert>
           ) : null}
           {sp.payment === 'preparing' ? (
@@ -163,8 +163,8 @@ export default async function BookingsPage({
       {unlinked.map((u) => (
         <Alert key={u.bookingId} tone="warning" title={`Waiting for payment: ${pounds(u.amountPence)}`}>
           <p>
-            Day care for {u.dogs} ({u.days} {u.days === 1 ? 'session' : 'sessions'}). You need to pay to secure this
-            booking. Held until {formatDateTimeLondon(u.holdUntil)}, then released.
+            Day care for {u.dogs} ({u.days} {u.days === 1 ? 'day' : 'days'}). You need to pay to secure this booking.
+            Held until {formatDateTimeLondon(u.holdUntil)}, then released.
           </p>
           <p>
             <a className={buttonClass('primary')} href={`/api/payments/pay-booking/${u.bookingId}`}>
