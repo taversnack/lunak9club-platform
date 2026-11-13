@@ -352,15 +352,15 @@ export function paymentLinkMessage(
       ),
     };
   }
-  const title = 'Please pay to confirm your booking';
+  const title = 'Please pay to secure your booking';
   return {
     to,
     template: 'payment.link',
-    subject: `${BRAND}: please pay to confirm your booking`,
-    text: `Hi ${firstName},\n\nWe’ve held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to confirm it – after that the place is released.\n\n${url}`,
+    subject: `${BRAND}: please pay to secure your booking`,
+    text: `Hi ${firstName},\n\nWe’ve held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to secure your booking – after that the place is released.\n\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to confirm it. After that the place is released.</p>${button(url, 'Pay by card')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to secure your booking. After that the place is released.</p>${button(url, 'Pay by card')}`,
       '',
     ),
   };
