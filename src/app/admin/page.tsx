@@ -149,7 +149,7 @@ export default async function AdminHome({
                       ) : null}
                     </span>
                     {a ? (
-                      <span className={s.two}>
+                      <span className={s.inboxActions}>
                         <ActionForm action={approveRequestAction}>
                           <input type="hidden" name="id" value={a.id} />
                           <input type="hidden" name="from" value="today" />
@@ -253,28 +253,31 @@ export default async function AdminHome({
           </section>
         ) : null}
       </Card>
-      <Grid>
-        <Card aria-labelledby="approvals">
-          <h2 id="approvals">Requests waiting</h2>
-          <p className={s.bigNumber}>{approvalItems.length}</p>
-          <Link href="/admin/approvals">Open requests</Link>
-        </Card>
-        <Card aria-labelledby="records">
-          <h2 id="records">Records to review</h2>
-          <p className={s.bigNumber}>{queue.pending.length}</p>
-          <Link href="/admin/reviews">Open reviews</Link>
-        </Card>
-        <Card aria-labelledby="ready">
-          <h2 id="ready">Dogs ready to approve</h2>
-          <p className={s.bigNumber}>{queue.ready.length}</p>
-          <Link href="/admin/reviews#ready">See dogs</Link>
-        </Card>
-        <Card aria-labelledby="assess">
-          <h2 id="assess">Waiting for meet and greet or trial</h2>
-          <p className={s.bigNumber}>{queue.awaitingAssessment.length}</p>
-          <Link href="/admin/reviews#assessments">See dogs</Link>
-        </Card>
-      </Grid>
+      <section aria-labelledby="glance">
+        <h2 id="glance" className="visually-hidden">
+          At a glance
+        </h2>
+        <ul className={s.statGrid}>
+          <li>
+            <Link href="/admin/reviews" className={s.statTile}>
+              <span className={s.bigNumber}>{queue.pending.length}</span>
+              <span>Records to review</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/admin/reviews#ready" className={s.statTile}>
+              <span className={s.bigNumber}>{queue.ready.length}</span>
+              <span>Dogs ready to approve</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/admin/reviews#assessments" className={s.statTile}>
+              <span className={s.bigNumber}>{queue.awaitingAssessment.length}</span>
+              <span>Waiting for meet and greet or trial</span>
+            </Link>
+          </li>
+        </ul>
+      </section>
       <Grid>
         <Card aria-labelledby="today">
           <h2 id="today">Dogs today</h2>
