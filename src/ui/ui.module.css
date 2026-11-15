@@ -982,3 +982,25 @@
 .dogHeaderText p {
   margin: 0;
 }
+
+/* Owner day view on a phone: Check in / No-show / Check out / Undo are big, side-by-side, one tap each. */
+.dayActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: var(--space-2);
+}
+.dayActions form {
+  display: contents;
+}
+.dayActions button {
+  width: 100%;
+}
+@media (min-width: 720px) {
+  .dayActions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .dayActions button {
+    width: auto;
+  }
+}

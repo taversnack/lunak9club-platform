@@ -184,7 +184,7 @@ export default async function DayPage({ searchParams }: { searchParams: Promise<
               ) : null}
               {r.overrideReason ? <p className={s.hint}>Override: {r.overrideReason}</p> : null}
               {r.customerNote ? <p className={s.hint}>Customer note: {r.customerNote}</p> : null}
-              <div className={s.row} style={{ justifyContent: 'flex-start' }}>
+              <div className={s.dayActions}>
                 {r.status === 'confirmed' ? (
                   <>
                     {r.checkInBlocked ? null : r.checkInNeedsReason ? (
