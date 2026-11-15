@@ -4,11 +4,19 @@
 
 ## The menu
 
-The Owner menu has: **Dashboard**, **Bookings**, **Requests**, **Memberships**, **Invoices**, **Refunds**, **Reviews**, **Incidents**, **Customers**, **Opening**, **Prices**, **Requirements**, **Terms**, **Business**, **Data requests**.
+**Status of this section.** The menu is changing in PR #176 (Owner shell, D115). The text below describes the **new** layout. If you still see one long row of links across the top, #176 has not been merged yet; the same pages exist either way.
+
+- **Wide screens (1024 px and wider):** a sidebar on the left with four groups.
+  - **Today:** Today, Requests, Reviews.
+  - **Day care:** Bookings, Memberships, Customers, Incidents.
+  - **Money:** Invoices, Refunds.
+  - **Settings:** Opening, Prices, Requirements, Terms, Business, Data requests.
+- **Phones and narrow screens:** a **Menu** button opens a drawer with the same list. There is **no bottom tab bar** in the Owner area (D115). The two screens designed for daily phone use are the **Bookings day view** and the **Today** inbox.
+- The first page is now called **Today** in the menu (it was "Dashboard").
 
 ## A normal day
 
-1. **Start at the Dashboard.** The page heading is "Today". Look at **Needs you**. It lists everything waiting for you, with a due label, and says "All clear" with "Nothing is waiting for you" when there is nothing. Under it are small summaries: Requests waiting, Records to review, Dogs ready to approve, Waiting for meet and greet or trial, Dogs today, Invoices, Incidents, Vaccinations expiring (30 days), Membership days not confirmed, and Data requests. Each has a link to the full page. "Recent activity" at the bottom shows what has been done.
+1. **Start at Today.** The page heading is "Today". Look at **Needs you**. It lists everything waiting for you, with a due label, and says "All clear" with "Nothing is waiting for you" when there is nothing. Under it are small summaries: Requests waiting, Records to review, Dogs ready to approve, Waiting for meet and greet or trial, Dogs today, Invoices, Incidents, Vaccinations expiring (30 days), Membership days not confirmed, and Data requests. Each has a link to the full page. "Recent activity" at the bottom shows what has been done.
 2. **Answer requests** (see section 1).
 3. **Check dogs in and out** on the day (section 2).
 4. **Handle records and vaccinations** when they appear (section 4).
@@ -22,7 +30,7 @@ The Owner menu has: **Dashboard**, **Bookings**, **Requests**, **Memberships**, 
 - **What happens when you approve:** the customer is emailed a link to pay to secure the booking. Their place is held for up to 24 hours (or until the day starts if that is sooner), and the hold deadline is in the email (D78, D80). Days that cost £0, and membership days, are confirmed without payment (D83).
 - **What happens when you decline:** the places are released and the customer gets the standard email (D80). You can also decline a single day of a request from the day view.
 - **If the customer doesn't pay in time**, the place is released automatically and they get a "booking not completed" email (D78).
-- **If you don't answer before the booking cut-off** (23:59 the day before), the request closes by itself at no charge (D79).
+- **If you don't answer before the booking cut-off** (23:59 London time the day before), the request closes by itself at no charge (D79). Since D116 the cut-off is also **enforced when you approve**: if the day's cut-off has passed, approving that request is refused, even in the few minutes before the scheduler closes it. If you see a refusal, the customer can send a new request for another day.
 - A section called **Payment links that couldn't be created (n)** appears if a pay link failed. The screen has a button for each. **Check:** I did not confirm the exact button label.
 
 ## 2. The day view: dogs today, check in and check out
@@ -88,6 +96,16 @@ The Owner menu has: **Dashboard**, **Bookings**, **Requests**, **Memberships**, 
 ## Things to check with the team (not confirmed from the screens)
 
 - Exact label of the button on "Payment links that couldn't be created".
-- Whether the day view's Morning and Afternoon headings are removed (D100).
+- Whether the day view's Morning and Afternoon headings are gone. D117 says Morning and Afternoon stay **only on old half-day bookings**; new bookings never show them (D100, D105).
 - Any screen not listed above (for example Customers and settings details): I read headings only, not every field.
 - Automatic emails (reminders, summaries and notices to you) are described in `docs/decisions.md` (D57, D66, D88); this guide does not repeat every rule.
+
+## After the open pull requests merge: what to re-check in this guide
+
+This guide was written against `main` on 13 Nov 2026. When these merge, check the sections named:
+- **#176 (Owner shell):** "The menu" above; confirm the group names and that the page is called Today.
+- **Today changes (O2 in the Owner plan, `docs/design/owner-backoffice-plan.md`):** step 1 of "A normal day". The plan adds a two-column layout on wide screens, a held-document row in "Needs you", and removes the duplicate "Requests waiting" card, so the list of small summaries in step 1 will change.
+- **Bookings changes (O3, day view as cards on phones; #158 upcoming bookings as cards for customers):** section 2. Labels like **Check in**, **No-show**, **Check out** and **Undo** should stay; re-check them and the "Dogs (n)" heading.
+- **#171 (approval refused after the cut-off, D116):** section 1; the text above already describes it, so confirm the error message wording.
+- **#167 (D115 to D117 recorded):** this guide cites D115 to D117 by number; confirm the numbers after merge.
+- **Invoices, Customers and Requests restyles (O4 to O6):** sections 1 and 3; headings and button labels may change.
