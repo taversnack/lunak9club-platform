@@ -61,7 +61,7 @@ export default async function ReviewPage({
   const { lines, request } = preview;
   const confirmed = lines.filter((l) => l.outcome === 'requested');
   const outcome = {
-    requested: { tone: 'success' as const, text: 'Available – will be requested' },
+    requested: { tone: 'success' as const, text: 'Available – ready to request' },
     waitlisted: { tone: 'warning' as const, text: 'Full – waitlist' },
     skipped: { tone: 'info' as const, text: 'Won’t be booked' },
   };

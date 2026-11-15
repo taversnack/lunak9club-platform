@@ -48,7 +48,7 @@ test('customer books two days with the taxi, sees the estimate first, and cancel
   // The request form says plainly that a request does not secure the booking (D76).
   await expect(page.getByRole('heading', { name: 'Check your booking request' })).toBeVisible();
   await expect(page.getByText('£100.00', { exact: true })).toBeVisible();
-  await expect(page.getByText('Available – will be requested')).toHaveCount(2);
+  await expect(page.getByText('Available – ready to request')).toHaveCount(2);
   await expect(page.getByTestId('request-not-secured')).toHaveText(REQUEST_NOT_SECURED);
   await expect(page.getByTestId('request-not-secured')).toContainText(REQUEST_NOT_SECURED_KEY);
   await axe(page);
