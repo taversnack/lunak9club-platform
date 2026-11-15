@@ -67,6 +67,12 @@ The app sends a Content-Security-Policy on every page (`src/domain/security/csp.
 
 For each pay path, open the browser console (Developers tools, Console) before clicking and watch for `Refused to send form data ... because it violates the following Content Security Policy directive: "form-action ..."` or any `Content-Security-Policy` message. Expected: none. If the invoice button is blocked, the fix is in `CARD_CHECKOUT_ORIGIN` / the `form-action` list in `src/domain/security/csp.ts` (Stripe could redirect through a different host), with a unit test; record the exact blocked address.
 
+## 5b. Notes to settle during the run
+
+- **Stripe's own receipts.** In the Stripe dashboard (test mode), Settings, Customer emails, check whether "successful payments" receipts are on. The app sends its own receipt, so if Stripe's is on customers would get two. Record the setting; the Owner chooses which to keep.
+- **API version.** The app sets no Stripe API version, so it uses the installed SDK's default. Note the version the dashboard shows (Developers, API version, and on each event) in the results table, because event names such as `refund.created` depend on it.
+- **One scenario at a time.** Run the scenarios one by one and let each finish (watch `stripe listen` show 200 for its events) before starting the next. Test keys are rate limited like live ones, and each scenario's audit and data checks are easier to read in isolation. Use a fresh dog and date per scenario.
+
 ## 6. After the run
 
 - Fill in a results table (scenario, pass/fail, notes, any Stripe event id) and add it to `docs/progress.md` with the date.
