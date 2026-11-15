@@ -66,7 +66,10 @@ export const DogDetailsInput = z.object({
   name: requiredText('your dog’s name', 60),
   breed: requiredText('the breed (or “cross breed”)', 80),
   sex,
-  dateOfBirth: isoDate('the date of birth'),
+  dateOfBirth: isoDate('the date of birth').refine(
+    (d) => d <= londonDate(new Date()),
+    'The date of birth can’t be in the future',
+  ),
   weightKg: z.coerce
     .number({ message: 'Enter the weight in kilograms' })
     .gt(0, 'Enter the weight in kilograms')
