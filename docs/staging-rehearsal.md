@@ -22,7 +22,7 @@ Time: about half a day for the rehearsal, plus the drill.
 `APP_ENV=production` with every setting in `docs/deployment.md` section 2. Staging-specific:
 - `APP_URL=https://<staging hostname>`.
 - `EMAIL_TRANSPORT=smtp`, `EMAIL_SANDBOX=0`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` (`starttls` or `tls`), `SMTP_USER`, `SMTP_PASSWORD` (the provider's, for a mailbox you own).
-- `PAYMENTS_DRIVER=stripe`, `STRIPE_SECRET_KEY=sk_test_...`, `STRIPE_WEBHOOK_SECRET=whsec_...` (test; live keys are refused unless production *and* live, so use test keys here).
+- `PAYMENTS_DRIVER=stripe`, `STRIPE_SECRET_KEY=sk_test_...`, `STRIPE_WEBHOOK_SECRET=whsec_...` (test keys only). Staging runs `APP_ENV=production`, and production accepts live keys too, so the app will not stop you here: step 0 below is the only guard.
 - `STORAGE_DRIVER=s3` plus the four `S3_...` settings.
 - `TRUSTED_PROXIES=<the proxy's address or subnet>` **or** `CLIENT_IP_HEADER=<header the edge always overwrites>`.
 - `CRON_SECRET` (32+ characters) and `AUTH_RATE_LIMIT=on`.
@@ -33,6 +33,7 @@ Time: about half a day for the rehearsal, plus the drill.
 
 Record the result and the time of each step; a step that fails is a finding, not something to work around.
 
+0. **Check the Stripe key before anything runs (rule 7).** `STRIPE_SECRET_KEY` must start with `sk_test_` (or `rk_test_` for a restricted key); look at the first eight characters only and never paste the key anywhere. `sk_live_` or `rk_live_` means stop, run nothing, and tell the Owner. `STRIPE_WEBHOOK_SECRET` must come from the test-mode endpoint.
 1. **Build** the image: `docker build -t lunak9-club .` and `docker build --target tools -t lunak9-club-tools .`
 2. **Refusal check:** start the runtime image with only `APP_ENV=production` and a database address. Expect it to exit with "Refusing to start" naming the missing settings and **no secret values**.
 3. **Migrate from zero** against the empty staging database with the tools image (`pnpm db:migrate`). Expect "Migrations applied." and, on a second run, nothing to do. Compare the number of applied migrations with the files in `drizzle/`.
