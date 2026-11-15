@@ -4,16 +4,16 @@ import { cancelledAheadReason, noticeHoursText, refundApprovedReason } from '@/d
 
 describe('refund and credit-note reasons name the configured notice period', () => {
   it.each([24, 72, 48])('%i hours', (hours) => {
-    expect(cancelledAheadReason('Biscuit', hours)).toBe(`Cancelled ${hours} hours or more ahead: Biscuit`);
+    expect(cancelledAheadReason('Biscuit', hours)).toBe(`Cancelled at least ${hours} hours before: Biscuit`);
     expect(refundApprovedReason('Biscuit on Tue 3 Nov', hours)).toBe(
-      `Refund: Biscuit on Tue 3 Nov cancelled ${hours} hours or more ahead`,
+      `Refund: Biscuit on Tue 3 Nov cancelled at least ${hours} hours before`,
     );
     for (const t of [cancelledAheadReason('Rex', hours), refundApprovedReason('Rex on Mon 2 Nov', hours)])
       if (hours !== 48) expect(t).not.toContain('48');
   });
   it('says "1 hour", not "1 hours"', () => {
     expect(noticeHoursText(1)).toBe('1 hour');
-    expect(cancelledAheadReason('Rex', 1)).toContain('1 hour or more');
+    expect(cancelledAheadReason('Rex', 1)).toContain('at least 1 hour before');
   });
   it('the services build the text from the setting, never a literal 48 (guard for new records)', () => {
     for (const file of ['src/server/services/bookings.ts', 'src/server/services/billing.ts']) {

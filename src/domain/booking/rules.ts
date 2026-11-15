@@ -184,9 +184,9 @@ export const noticeHoursText = (hours: number): string => (hours === 1 ? '1 hour
 
 /** Reasons written on new refunds and credit notes (never on existing ones): they name the configured notice. */
 export const cancelledAheadReason = (dogName: string, hours: number): string =>
-  `Cancelled ${noticeHoursText(hours)} or more ahead: ${dogName}`;
+  `Cancelled at least ${noticeHoursText(hours)} before: ${dogName}`;
 export const refundApprovedReason = (dayText: string, hours: number): string =>
-  `Refund: ${dayText} cancelled ${noticeHoursText(hours)} or more ahead`;
+  `Refund: ${dayText} cancelled at least ${noticeHoursText(hours)} before`;
 
 /** Free cancellation if the session starts at least `freeCancellationHours` from now (D39). */
 export function cancellationTerms(
