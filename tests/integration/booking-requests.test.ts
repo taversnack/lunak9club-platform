@@ -928,3 +928,69 @@ describe('One trial day per dog (D96)', () => {
     expect((err as ValidationError).fields.dogIds).toMatch(/already approved/);
   });
 });
+
+describe('approving after the booking cut-off (D8, D79)', () => {
+  // Days far enough out not to disturb other files; the clock is simulated by passing `now`.
+  const cutoffDay = weekdayPicker({ base: 15 });
+  const eveningBefore = (date: string) => londonInstant(addDays(date, -1), '23:58');
+  const midnightOf = (date: string) => londonInstant(date, '00:00');
+  const requestFor = (user: TestUser, dogId: string, dates: string[]) =>
+    createMyBookings(db(), user, { dogIds: [dogId], dates, session: 'full', taxi: false });
+
+  it('approves up to 23:58 the evening before, and refuses from midnight with "Decline that day first"; nothing changes on refusal', async () => {
+    const [d1, d2] = [cutoffDay(0), cutoffDay(1)];
+    const ok = await requestFor(alice, aliceDog, [d1]);
+    await approveApprovalRequest(db(), owner, ok.requestId!, {}, eveningBefore(d1));
+    expect((await rowOf(aliceDog, d1)).status).toBe('pending_payment');
+
+    const late = await requestFor(carol, carolDog, [d2]);
+    mail.sent.length = 0;
+    const err = (await approveApprovalRequest(db(), owner, late.requestId!, {}, midnightOf(d2)).catch(
+      (e: unknown) => e,
+    )) as Error;
+    expect(err).toBeInstanceOf(ConflictError);
+    expect(err.message).toContain(formatUkDate(d2));
+    expect(err.message).toMatch(/have closed.*Decline that day first/);
+    // Nothing changed: still a request holding its place, no hold, no pay link, no email, the request still waiting.
+    expect((await rowOf(carolDog, d2)).status).toBe('requested');
+    expect(
+      await db().select().from(checkoutAttempts).where(eq(checkoutAttempts.bookingId, late.bookingId)),
+    ).toHaveLength(0);
+    expect(mail.sent.filter((m) => m.to === carol.email)).toHaveLength(0);
+    const [req] = await db().select().from(approvalRequests).where(eq(approvalRequests.id, late.requestId!));
+    expect(req!.status).toBe('pending');
+    expect(req!.lastError).toMatch(/have closed/);
+
+    // The scheduler's first run after midnight still closes it at no charge, with one email.
+    const closed = await expireBookingRequests(db(), system, londonInstant(d2, '00:10'));
+    expect(closed.expired).toBeGreaterThanOrEqual(1);
+    expect((await rowOf(carolDog, d2)).status).toBe('cancelled');
+    expect((await rowOf(carolDog, d2)).lateCancellation).toBe(false);
+    expect(mail.sent.filter((m) => m.to === carol.email)).toHaveLength(1);
+
+    // The Owner's own booking for a day that has closed to customers still works (audited override path, D42).
+    const id = await ownerCreateBooking(
+      db(),
+      owner,
+      { dogId: aliceDog2, date: d2, session: 'full', overrideReason: 'test: Owner books the same morning' },
+      midnightOf(d2),
+    );
+    expect((await db().select().from(bookingDogs).where(eq(bookingDogs.id, id)))[0]!.status).toBe('pending_payment');
+  });
+
+  it('a request with several days: refused naming the closed day, then fine once that day is declined', async () => {
+    const [d1, d2] = [cutoffDay(2), cutoffDay(3)];
+    const r = await requestFor(bob, bobDog, [d1, d2]);
+    const now = londonInstant(d1, '00:05'); // d1 has closed, d2 has not
+    const err = (await approveApprovalRequest(db(), owner, r.requestId!, {}, now).catch((e: unknown) => e)) as Error;
+    expect(err).toBeInstanceOf(ConflictError);
+    expect(err.message).toContain(formatUkDate(d1));
+    expect((await rowOf(bobDog, d1)).status).toBe('requested');
+    expect((await rowOf(bobDog, d2)).status).toBe('requested'); // nothing partly approved
+    const closedDay = await rowOf(bobDog, d1);
+    await ownerCancel(db(), owner, closedDay.id, { version: closedDay.version, reason: 'closed' }, now);
+    await approveApprovalRequest(db(), owner, r.requestId!, {}, now);
+    expect((await rowOf(bobDog, d1)).status).toBe('rejected');
+    expect((await rowOf(bobDog, d2)).status).toBe('pending_payment');
+  });
+});
