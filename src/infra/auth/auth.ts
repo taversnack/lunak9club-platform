@@ -12,6 +12,7 @@ import { logger } from '../logger';
 import { getEmailProvider } from '../email/providers';
 import { magicLinkMessage, resetPasswordMessage, verifyEmailMessage } from '../email/templates';
 import { decodeOrNull, safeCallbackPath } from '@/domain/auth/callback-url';
+import { MAGIC_LINK_MINUTES, RESET_PASSWORD_HOURS, SESSION_DAYS, VERIFY_EMAIL_HOURS } from '@/domain/auth/expiry';
 import {
   EMAIL_REQUEST_MAX,
   EMAIL_REQUEST_WINDOW_SECONDS,
@@ -27,7 +28,7 @@ const errName = (err: unknown) => (err instanceof Error ? err.name : 'unknown');
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? 'there';
 
 /** Magic links expire after this many minutes and work once. */
-export const MAGIC_LINK_MINUTES = 10;
+export { MAGIC_LINK_MINUTES };
 const MAGIC_LINK_PATH = '/sign-in/magic-link';
 const MAGIC_VERIFY_PATH = '/magic-link/verify';
 /** Requests that email a link to an address someone typed: limited per address as well as per client. */
@@ -99,7 +100,7 @@ export function createAuth(e: Env = env()) {
       maxPasswordLength: 128,
       autoSignIn: false,
       revokeSessionsOnPasswordReset: true,
-      resetPasswordTokenExpiresIn: 60 * 60,
+      resetPasswordTokenExpiresIn: RESET_PASSWORD_HOURS * 60 * 60,
       sendResetPassword: async ({ user, url }) => {
         await getEmailProvider().send(resetPasswordMessage(user.email, firstName(user.name), url));
       },
@@ -111,7 +112,7 @@ export function createAuth(e: Env = env()) {
       sendOnSignUp: true,
       sendOnSignIn: true,
       autoSignInAfterVerification: true,
-      expiresIn: 60 * 60,
+      expiresIn: VERIFY_EMAIL_HOURS * 60 * 60,
       sendVerificationEmail: async ({ user, url }) => {
         await getEmailProvider().send(verifyEmailMessage(user.email, firstName(user.name), url));
       },
@@ -120,7 +121,7 @@ export function createAuth(e: Env = env()) {
       },
     },
     session: {
-      expiresIn: 60 * 60 * 24 * 7, // 7 days
+      expiresIn: SESSION_DAYS * 60 * 60 * 24,
       updateAge: 60 * 60 * 24, // refresh daily
       cookieCache: { enabled: false }, // always re-check the DB so revoked sessions end immediately
     },

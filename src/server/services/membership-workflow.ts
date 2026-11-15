@@ -32,6 +32,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../errors';
 import { appUrl, firstNameOf, ownerEmails, sendSafely } from '../notify';
 import { checkbox, idOrNotFound, isoDate, parseInput, requiredText } from '../validation';
 import { asUser, getMyCustomer } from './customers';
+import { INVITE_DAYS } from '@/domain/auth/expiry';
 import { fixedWindowAllowed } from '../rate-limit';
 import { createApprovalRequest } from './approvals';
 import { loadSettings } from './booking-shared';
@@ -58,7 +59,6 @@ import {
  * dog names, weekdays and dates only (D33).
  */
 
-const INVITE_DAYS = 7;
 const SYSTEM = { kind: 'system', job: 'membership-workflow' } as const;
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const weekdaysField = z.preprocess(
