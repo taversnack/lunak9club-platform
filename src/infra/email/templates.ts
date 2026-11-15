@@ -372,10 +372,10 @@ export function holdReleasedMessage(to: string, firstName: string, forText: stri
     to,
     template: 'payment.hold-released',
     subject: `${BRAND}: booking not completed`,
-    text: `Hi ${firstName},\n\nWe didn’t receive payment in time for ${forText}, so the place has been released. You can book again here:\n${url}`,
+    text: `Hi ${firstName},\n\nWe didn’t receive payment in time for ${forText}, so the place has been released. You can send a new request here:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We didn’t receive payment in time for ${escapeHtml(forText)}, so the place has been released.</p>${button(url, 'Book again')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We didn’t receive payment in time for ${escapeHtml(forText)}, so the place has been released.</p>${button(url, 'Send a new request')}`,
       '',
     ),
   };

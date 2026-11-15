@@ -116,6 +116,7 @@ describe('customer emails do not over-promise (D76, D79, D80, D81, D106)', () =>
     ],
     [/your booking is (now )?confirmed(?! once)/i, 'D76: a request is not a confirmed booking until approved and paid'],
     [/sorry we couldn[’']t answer/i, 'D79/D117: a closed request is neutral, not an apology'],
+    [/book again/i, 'D76/D117: customers send a request; nothing is booked until approved and paid'],
   ];
   it.each(files)('%s keeps clear of them', (file) => {
     const text = readFileSync(file, 'utf8');
@@ -151,5 +152,18 @@ describe('the closed-request email (D79, D117)', () => {
     );
     expect(m.text).toContain('This request wasn’t answered in time, so it has closed at no charge.');
     expect(m.text).not.toContain('23:59');
+  });
+});
+
+describe('hold-released email (D76, D117)', () => {
+  it('invites a new request, not a booking', async () => {
+    const { holdReleasedMessage } = await import('@/infra/email/templates');
+    const m = holdReleasedMessage('a@example.test', 'Alice', 'Biscuit on Tue 3 Nov', 'https://app.test/account/book');
+    for (const part of [m.text, m.html]) {
+      expect(part).toContain(
+        'send a new request'.slice(0, 1) === 's' ? (part === m.text ? 'send a new request' : 'Send a new request') : '',
+      );
+      expect(part.toLowerCase()).not.toContain('book again');
+    }
   });
 });
