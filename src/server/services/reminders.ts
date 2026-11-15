@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/infra/db/client';
 import {
   bookingDogs,
+  businessSettings,
   complianceRequirements,
   complianceSubmissions,
   customers,
@@ -11,6 +12,7 @@ import {
   users,
 } from '@/infra/db/schema';
 import { bookingReminderMessage, ownerBillingMessage, vaccinationReminderMessage } from '@/infra/email/templates';
+import { isLicenceVaccination } from '@/domain/compliance/attendance';
 import { vaccinationReminderDue } from '@/domain/compliance/welfare';
 import type { Session } from '@/domain/booking/rules';
 import { addDays, formatUkDate, londonDate } from '@/domain/time';
@@ -86,7 +88,12 @@ export async function sendVaccinationReminders(db: Db, actor: Actor, now = new D
       vaccinationReminderMessage(
         r.email,
         firstNameOf(r.name),
-        { dogName: r.dogName, expired: due === 'expired', dateText: formatUkDate(r.expiresOn) },
+        {
+          dogName: r.dogName,
+          expired: due === 'expired',
+          dateText: formatUkDate(r.expiresOn),
+          licence: isLicenceVaccination(r.requirementKey),
+        },
         appUrl(`/account/dogs/${r.dogId}`),
       ),
     );
@@ -129,6 +136,9 @@ export async function sendBookingReminders(db: Db, actor: Actor, now = new Date(
     .where(
       and(eq(bookingDogs.serviceDate, tomorrow), eq(bookingDogs.status, 'confirmed'), isNull(customers.anonymisedAt)),
     );
+  // "or call us" only when the business has a phone number set (D118).
+  const [biz] = await db.select({ phone: businessSettings.contactPhone }).from(businessSettings).limit(1);
+  const canCall = (biz?.phone ?? '').trim() !== '';
   const byCustomer = new Map<string, typeof rows>();
   for (const r of rows) byCustomer.set(r.customerId, [...(byCustomer.get(r.customerId) ?? []), r]);
   let sent = 0;
@@ -141,9 +151,12 @@ export async function sendBookingReminders(db: Db, actor: Actor, now = new Date(
         list.map((r) => ({
           dogName: r.dogName,
           ...describeSession(tomorrow, r.session as Session),
-          outcome: r.taxi ? 'with taxi – we’ll confirm collection times this evening' : 'booked',
+          outcome: r.taxi
+            ? 'with taxi – we’ll let you know your collection time once the taxi run is planned'
+            : 'booked',
         })),
         appUrl('/account/bookings'),
+        canCall,
       ),
     );
     sent++;

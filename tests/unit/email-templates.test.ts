@@ -150,7 +150,7 @@ describe('the closed-request email (D79, D117)', () => {
       { noun: 'membership days request', summary: 'Biscuit', outcome: 'expired' },
       'https://app.test/account/requests',
     );
-    expect(m.text).toContain('This request wasn’t answered in time, so it has closed at no charge.');
+    expect(m.text).toContain('This request has closed at no charge. You can send a new request for another day.');
     expect(m.text).not.toContain('23:59');
   });
 });
@@ -162,5 +162,60 @@ describe('hold-released email (D76, D117)', () => {
     expect(m.text).toContain('send a new request');
     expect(m.html).toContain('Send a new request');
     for (const part of [m.text, m.html]) expect(part.toLowerCase()).not.toContain('book again');
+  });
+});
+
+describe('Owner wording answers (D118)', () => {
+  it('booking reminder says how to change or cancel, and only offers a call when a phone number is set', async () => {
+    const { bookingReminderMessage } = await import('@/infra/email/templates');
+    const ls = [{ dogName: 'Biscuit', dateText: 'Tue 3 Nov', sessionText: 'full day', outcome: 'booked' }] as never;
+    const a = bookingReminderMessage('a@example.test', 'Alice', ls, 'https://app.test/b');
+    const b = bookingReminderMessage('a@example.test', 'Alice', ls, 'https://app.test/b', true);
+    for (const part of [a.text, a.html]) {
+      expect(part).toContain('To change or cancel, sign in here:');
+      expect(part).not.toMatch(/call us|Please call/);
+    }
+    for (const part of [b.text, b.html]) expect(part).toContain('To change or cancel, sign in here or call us:');
+  });
+
+  it('vaccination expiry: core and leptospirosis "may not" be accepted; kennel cough is never a hard block', async () => {
+    const { vaccinationReminderMessage } = await import('@/infra/email/templates');
+    const core = vaccinationReminderMessage(
+      'a@example.test',
+      'Alice',
+      { dogName: 'Biscuit', expired: true, dateText: '1 Oct 2026' },
+      'u',
+    );
+    expect(core.text).toContain('we may not be able to accept bookings after that date until a new record is uploaded');
+    expect(core.text).not.toMatch(/can[’']t accept/);
+    const kc = vaccinationReminderMessage(
+      'a@example.test',
+      'Alice',
+      { dogName: 'Biscuit', expired: true, dateText: '1 Oct 2026', licence: false },
+      'u',
+    );
+    expect(kc.text).toContain('Please upload a new record so Biscuit can keep coming to day care.');
+    expect(kc.text).not.toMatch(/accept bookings|can[’']t|blocked/);
+  });
+
+  it('a closed membership request uses the neutral line', async () => {
+    const { approvalDecisionMessage } = await import('@/infra/email/templates');
+    const m = approvalDecisionMessage(
+      'a@example.test',
+      'Alice',
+      { noun: 'membership request', summary: 's', outcome: 'expired' },
+      'u',
+    );
+    expect(m.text).toContain('This request has closed at no charge. You can send a new request for another day.');
+    expect(m.text).not.toMatch(/in time|send a new one/);
+  });
+
+  it('source never brings back the retired phrasings', () => {
+    for (const f of ['src/infra/email/templates.ts', 'src/server/services/reminders.ts']) {
+      const t = readFileSync(f, 'utf8');
+      expect(t).not.toMatch(/Please call us\./);
+      expect(t).not.toMatch(/confirm collection times this evening/);
+      expect(t).not.toMatch(/we can[’']t accept bookings after/);
+    }
   });
 });

@@ -406,12 +406,16 @@ export function cardRefundMessage(
 export function vaccinationReminderMessage(
   to: string,
   firstName: string,
-  p: { dogName: string; expired: boolean; dateText: string },
+  p: { dogName: string; expired: boolean; dateText: string; licence?: boolean },
   url: string,
 ): EmailMessage {
   const title = p.expired ? `${p.dogName}’s records need updating` : `Please update ${p.dogName}’s records`;
   const body = p.expired
-    ? `A vaccination record for ${p.dogName} expired on ${p.dateText}, so we can’t accept bookings after that date until a new record is uploaded.`
+    ? p.licence === false
+      ? // Kennel cough can be overridden by the Owner (D11, D73): never word it as a hard block.
+        `A vaccination record for ${p.dogName} expired on ${p.dateText}. Please upload a new record so ${p.dogName} can keep coming to day care.`
+      : // Core and leptospirosis are licence rules (D73), but say "may not" and leave the decision to us (D118).
+        `A vaccination record for ${p.dogName} expired on ${p.dateText}, so we may not be able to accept bookings after that date until a new record is uploaded.`
     : `A vaccination record for ${p.dogName} runs out on ${p.dateText}. Please upload the new record before then so ${p.dogName} can keep coming to day care.`;
   return {
     to,
@@ -427,16 +431,24 @@ export function vaccinationReminderMessage(
   };
 }
 
-export function bookingReminderMessage(to: string, firstName: string, ls: BookingLine[], url: string): EmailMessage {
+/** `canCall`: the business has a phone number in its settings (D118), so we may say "or call us". */
+export function bookingReminderMessage(
+  to: string,
+  firstName: string,
+  ls: BookingLine[],
+  url: string,
+  canCall = false,
+): EmailMessage {
   const l = lines(ls);
+  const change = `To change or cancel, sign in here${canCall ? ' or call us' : ''}:`;
   return {
     to,
     template: 'booking.reminder',
     subject: `${BRAND}: see you tomorrow`,
-    text: `Hi ${firstName},\n\nA reminder of tomorrow’s day care:\n${l.text}\n\nNeed to change something? Please call us.\n${url}`,
+    text: `Hi ${firstName},\n\nA reminder of tomorrow’s day care:\n${l.text}\n\n${change}\n${url}`,
     html: layout(
       'See you tomorrow',
-      `<p>Hi ${escapeHtml(firstName)},</p><p>A reminder of tomorrow’s day care:</p>${l.html}<p>Need to change something? Please call us.</p>${button(url, 'See your bookings')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>A reminder of tomorrow’s day care:</p>${l.html}<p>${change}</p>${button(url, 'See your bookings')}`,
       '',
     ),
   };
@@ -554,7 +566,7 @@ const APPROVAL_COPY: Record<
     body: (noun) =>
       noun === 'booking request'
         ? 'This request wasn’t approved before booking closed at 23:59 the day before, so it has closed at no charge. You can send a new request for another day.'
-        : 'This request wasn’t answered in time, so it has closed at no charge. You can send a new one.',
+        : 'This request has closed at no charge. You can send a new request for another day.',
   },
 };
 
