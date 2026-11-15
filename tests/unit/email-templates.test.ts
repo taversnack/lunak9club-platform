@@ -159,11 +159,8 @@ describe('hold-released email (D76, D117)', () => {
   it('invites a new request, not a booking', async () => {
     const { holdReleasedMessage } = await import('@/infra/email/templates');
     const m = holdReleasedMessage('a@example.test', 'Alice', 'Biscuit on Tue 3 Nov', 'https://app.test/account/book');
-    for (const part of [m.text, m.html]) {
-      expect(part).toContain(
-        'send a new request'.slice(0, 1) === 's' ? (part === m.text ? 'send a new request' : 'Send a new request') : '',
-      );
-      expect(part.toLowerCase()).not.toContain('book again');
-    }
+    expect(m.text).toContain('send a new request');
+    expect(m.html).toContain('Send a new request');
+    for (const part of [m.text, m.html]) expect(part.toLowerCase()).not.toContain('book again');
   });
 });
