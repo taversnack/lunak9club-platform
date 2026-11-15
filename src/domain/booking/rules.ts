@@ -179,6 +179,15 @@ export function availabilityLabel(remaining: number, closed: boolean): Availabil
   return 'available';
 }
 
+/** "48 hours", "1 hour": the Owner's free-cancellation notice (booking_settings.free_cancellation_hours) as words. */
+export const noticeHoursText = (hours: number): string => (hours === 1 ? '1 hour' : `${hours} hours`);
+
+/** Reasons written on new refunds and credit notes (never on existing ones): they name the configured notice. */
+export const cancelledAheadReason = (dogName: string, hours: number): string =>
+  `Cancelled at least ${noticeHoursText(hours)} before: ${dogName}`;
+export const refundApprovedReason = (dayText: string, hours: number): string =>
+  `Refund: ${dayText} cancelled at least ${noticeHoursText(hours)} before`;
+
 /** Free cancellation if the session starts at least `freeCancellationHours` from now (D39). */
 export function cancellationTerms(
   now: Date,

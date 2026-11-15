@@ -1,7 +1,13 @@
 import 'server-only';
 import { endedReason } from '@/domain/booking/ended-reason';
 import { paymentState } from '@/domain/booking/payment-state';
-import { formatPounds, LIVE_STATUSES, OPEN_STATUSES, PRICED_PLACE_STATUSES } from '@/domain/booking/rules';
+import {
+  cancelledAheadReason,
+  formatPounds,
+  LIVE_STATUSES,
+  OPEN_STATUSES,
+  PRICED_PLACE_STATUSES,
+} from '@/domain/booking/rules';
 import { trialAlreadyUsed } from '@/domain/booking/wording';
 import { raiseRefundRequests } from './billing';
 import { submitPendingRefunds } from './card-refunds';
@@ -591,7 +597,12 @@ export async function cancelMyBooking(db: Db, actor: Actor, rawId: string, now =
     if (!updated.length) throw new ConflictError('This booking changed. Please reload.');
     if (!late) {
       await raiseRefundRequests(tx, { bookingDogIds: [bd.id] });
-      refundedPence = await refundBookingDayTx(tx, bd.id, `Cancelled 48 hours or more ahead: ${dogName}`, now);
+      refundedPence = await refundBookingDayTx(
+        tx,
+        bd.id,
+        cancelledAheadReason(dogName, settings.freeCancellationHours),
+        now,
+      );
     }
     await recordAudit(tx, {
       actor: me,

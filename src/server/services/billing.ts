@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Db } from '@/infra/db/client';
 import {
   bookingDogs,
+  bookingSettings,
   businessSettings,
   creditNoteLines,
   creditNotes,
@@ -35,6 +36,7 @@ import {
   type Balance,
   type Month,
 } from '@/domain/billing/rules';
+import { refundApprovedReason } from '@/domain/booking/rules';
 import { pounds } from '@/domain/pricing/engine';
 import { formatUkDate, isIsoDate, londonDate } from '@/domain/time';
 import {
@@ -1095,6 +1097,9 @@ export async function decideRefund(
       .where(eq(bookingDogs.id, r.bookingDogId));
     const dayText = `${day?.dogName ?? 'your dog'} on ${day ? formatUkDate(day.date) : 'that day'}`;
     if (approve) {
+      // The notice period the Owner has set now, named on the new credit note (existing ones are never rewritten).
+      const [setting] = await tx.select({ hours: bookingSettings.freeCancellationHours }).from(bookingSettings);
+      const noticeHours = setting?.hours ?? 48;
       const inv = await lockIssued(tx, r.invoiceId);
       const cn = await createCreditNoteTx(
         tx,
@@ -1103,7 +1108,7 @@ export async function decideRefund(
         {
           lines: r.amountPence > 0 ? [{ id: r.invoiceLineId, amountPence: r.amountPence }] : [],
           amountPence: r.amountPence,
-          reason: `Refund: ${dayText} cancelled 48 hours or more ahead`,
+          reason: refundApprovedReason(dayText, noticeHours),
         },
         now,
       );
