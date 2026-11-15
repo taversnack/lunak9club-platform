@@ -24,6 +24,8 @@ STRIPE_WEBHOOK_SECRET=whsec_...        # from stripe listen, below
 EMAIL_TRANSPORT=smtp                    # Mailpit at http://localhost:8025 (pay-link emails land here)
 ```
 
+**Check the key first (rule 7).** Before anything runs, confirm `STRIPE_SECRET_KEY` starts with `sk_test_` (or `rk_test_` for a restricted key). Look at the first eight characters only; never paste the key anywhere. The app refuses live keys outside production, but a staging host runs `APP_ENV=production`, where the app accepts live keys too, so on staging nothing else protects you. A key starting `sk_live_` or `rk_live_` means stop: nothing in this runbook may run with it, and the Owner must be told. Same check for `STRIPE_WEBHOOK_SECRET`: it must come from the test-mode endpoint or `stripe listen`.
+
 Then `pnpm db:seed` (demo data, local only), `pnpm dev`. Sign in as the demo Owner and customer shown in the README. For a staging host use `docs/deployment.md` section 2 plus the settings above.
 
 ## 3. Webhooks with the Stripe CLI
