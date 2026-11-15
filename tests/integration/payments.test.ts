@@ -610,8 +610,9 @@ describe('automatic refunds (D20, D58)', () => {
         refundStatus: 'succeeded',
         refundReference: r!.id,
       });
-    await handleWebhook(db(), body(1), 'valid');
-    await handleWebhook(db(), body(2), 'valid'); // a second event with the same news
+    // Five events with the same news arrive at once (Stripe can deliver duplicates in parallel): money moves once.
+    await Promise.all([1, 2, 3, 4, 5].map((n) => handleWebhook(db(), body(n), 'valid')));
+    await handleWebhook(db(), body(6), 'valid'); // and a late one afterwards
     const [settled] = await db().select().from(cardRefunds).where(eq(cardRefunds.id, r!.id));
     expect(settled).toMatchObject({ status: 'succeeded', failureReason: null });
     const settledBy = await db()
