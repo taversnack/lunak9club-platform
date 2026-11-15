@@ -206,3 +206,12 @@ describe('cut-off date rule (D8, D79) across the clock changes', () => {
     expect(closedAt('2026-03-29', '2026-03-29', '00:00')).toBe(true);
   });
 });
+
+describe('the cut-off is the date rule, so the last minute of the evening still counts as open', () => {
+  it('23:59:59 the day before is still before the day; midnight is not (the "23:59" wording is the date rule, D79)', () => {
+    const at = (london: string, hhmmss: string) =>
+      londonDate(new Date(londonInstant(london, '23:59').getTime() + (hhmmss === '23:59:59' ? 59_000 : 0)));
+    expect(cutOffPassed('2026-06-10', at('2026-06-09', '23:59:59'))).toBe(false);
+    expect(cutOffPassed('2026-06-10', londonDate(new Date(londonInstant('2026-06-10', '00:00').getTime())))).toBe(true);
+  });
+});
