@@ -79,9 +79,23 @@ export function weekdayPicker(
     while (!open(offset) || taken(offset)) {
       offset += 1;
       if (!opts.beyondWindow && offset > last) {
-        // Nothing unclaimed left: share a day, but still never an unbookable one.
+        // Nothing unclaimed left: share a day, but still never an unbookable one. Prefer one this picker
+        // has not handed out; if it has used them all too (the window is short around Christmas), reuse
+        // one rather than run past the booking window.
         offset = start;
-        while (!open(offset)) offset += 1;
+        while (offset <= last && !open(offset)) offset += 1;
+        if (offset > last) {
+          offset = start;
+          while (
+            offset <= last &&
+            !(
+              isoWeekday(addDays(today, offset)) <= 5 &&
+              !BANK_HOLIDAYS.has(addDays(today, offset)) &&
+              !opts.never?.has(addDays(today, offset))
+            )
+          )
+            offset += 1;
+        }
         break;
       }
     }
