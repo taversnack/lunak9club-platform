@@ -4,6 +4,13 @@ import { createReadStream, createWriteStream, existsSync, mkdtempSync, readFileS
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { Client } from 'pg';
+import {
+  existingTablesProblem,
+  invoiceNumberingCheck,
+  migrationCountProblem,
+  missingDumpProblem,
+  restoreTargetProblem,
+} from '../src/infra/db/restore-drill-checks';
 
 /**
  * Safe local restore drill (docs/deployment.md section 6).
@@ -15,7 +22,7 @@ import { Client } from 'pg';
  *
  * Safety: local hosts only (same guard as the other scripts); never in production; the target name must
  * contain "test" and differ from the source; the target is created fresh and the script refuses if it
- * already has tables. It never drops or overwrites anything: remove an old throwaway database yourself.
+ * already has tables. It never removes or overwrites anything: remove an old throwaway database yourself.
  * It uses pg_dump / pg_restore from PATH, or from the local Postgres container when they are not installed
  * (set PG_CONTAINER to name it). Nothing is printed that comes from customer data, only counts.
  */
@@ -29,10 +36,8 @@ const flag = (name: string): string | undefined => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const target = flag('--target') ?? 'lunak9_restore_test';
-if (!/^[a-z0-9_]+$/.test(target)) fail('The target name may only use lowercase letters, digits and underscores.');
-if (!/(^|_)test(_|$)/.test(target))
-  fail('The target database name must contain "test" (for example lunak9_restore_test).');
-if (target === sourceDb) fail('The target must not be the database you are restoring from.');
+const targetProblem = restoreTargetProblem(sourceDb, target);
+if (targetProblem) fail(targetProblem);
 
 const targetUrl = new URL(sourceUrl.toString());
 targetUrl.pathname = `/${target}`;
@@ -80,11 +85,12 @@ const started = Date.now();
 let dump = flag('--dump');
 if (dump) {
   dump = resolve(dump);
-  if (!existsSync(dump)) fail(`No dump at ${dump}.`);
+  const dumpProblem = missingDumpProblem(dump, existsSync(dump));
+  if (dumpProblem) fail(dumpProblem);
 } else {
   dump = join(mkdtempSync(join(tmpdir(), 'lunak9-drill-')), 'drill.dump');
   console.log(`Dumping ${sourceDb} (read-only) to ${dump} ...`);
-  // -Fc custom format, as docs/deployment.md section 6 says. No -c: the dump never contains DROP statements.
+  // -Fc custom format, as docs/deployment.md section 6 says. No -c: the dump never clears anything first.
   await run(toolRunner('pg_dump', ['-Fc', '--no-owner', ...connArgs(sourceDb)]), { stdout: dump });
 }
 const dumpAgeMinutes = Math.round((Date.now() - statSync(dump).mtimeMs) / 60000);
@@ -108,11 +114,10 @@ const tables = Number(
   (await t.query("select count(*)::int as n from information_schema.tables where table_schema in ('public','drizzle')"))
     .rows[0].n,
 );
-if (tables > 0) {
+const tablesProblem = existingTablesProblem(target, tables);
+if (tablesProblem) {
   await t.end();
-  fail(
-    `${target} already has tables. Pick another --target, or remove that throwaway database yourself first; this script never overwrites.`,
-  );
+  fail(tablesProblem);
 }
 await t.end();
 
@@ -130,10 +135,8 @@ const count = async (table: string) => Number((await c.query(`select count(*)::i
 const journal = (JSON.parse(readFileSync('./drizzle/meta/_journal.json', 'utf8')) as { entries: unknown[] }).entries
   .length;
 const applied = await count('drizzle.__drizzle_migrations');
-if (applied !== journal)
-  problems.push(
-    `Migrations: the dump has ${applied} applied, the code has ${journal}. Run pnpm db:migrate against the restored copy before using it.`,
-  );
+const migProblem = migrationCountProblem(applied, journal);
+if (migProblem) problems.push(migProblem);
 
 const invoiceNumbers = (await c.query('select number from invoices where number is not null')).rows.map((r) =>
   String(r.number),
@@ -141,22 +144,8 @@ const invoiceNumbers = (await c.query('select number from invoices where number 
 const nextInvoice = Number(
   (await c.query("select next_value from document_sequences where key = 'invoice'")).rows[0]?.next_value ?? 1,
 );
-// Numbers are gap-free (one prefix; the prefix cannot change after the first invoice), so the count issued
-// is one less than the next number to take, and the suffixes are exactly 1..N.
-const prefixes = new Set(invoiceNumbers.map((n) => n.replace(/\d+$/, '')));
-let numbering = 'gap-free';
-if (invoiceNumbers.length !== nextInvoice - 1) {
-  numbering = 'COUNT MISMATCH';
-  problems.push(`${invoiceNumbers.length} numbered invoices but the sequence says ${nextInvoice - 1} were issued.`);
-} else if (prefixes.size > 1) {
-  numbering = 'several prefixes (test data), suffix check skipped';
-} else {
-  const seq = invoiceNumbers.map((n) => Number(/(\d+)$/.exec(n)?.[1])).sort((a, b) => a - b);
-  if (seq.some((n, i) => n !== i + 1)) {
-    numbering = 'GAPS';
-    problems.push('Invoice numbers are not 1..N without gaps.');
-  }
-}
+const { label: numbering, problem: numberingProblem } = invoiceNumberingCheck(invoiceNumbers, nextInvoice);
+if (numberingProblem) problems.push(numberingProblem);
 const docs = (await c.query("select storage_key from documents where scan_status <> 'infected'")).rows.map((r) =>
   String(r.storage_key),
 );
