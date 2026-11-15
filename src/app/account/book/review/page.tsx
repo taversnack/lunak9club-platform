@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import s from '@/ui/ui.module.css';
 import { Alert, Card, Stack, StatusBadge } from '@/ui/components';
 import { ActionForm, SubmitButton, TextArea } from '@/ui/form';
@@ -7,7 +8,7 @@ import { FocusOnShow } from '@/ui/focus-on-show';
 import { requirePermission } from '@/server/session';
 import { getDb } from '@/infra/db/client';
 import { previewMyBookings } from '@/server/services/bookings';
-import { ValidationError } from '@/server/errors';
+import { NotFoundError, ValidationError } from '@/server/errors';
 import { formatPounds, SESSION_LABELS } from '@/domain/booking/rules';
 import { formatUkDate } from '@/domain/time';
 import { REQUEST_NOT_SECURED } from '@/domain/booking/wording';
@@ -56,6 +57,8 @@ export default async function ReviewPage({
         </Stack>
       );
     }
+    // A dog that isn't yours (or doesn't exist) is a missing page, like everywhere else, not a crash.
+    if (e instanceof NotFoundError) notFound();
     throw e;
   }
   const { lines, request } = preview;
