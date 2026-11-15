@@ -60,7 +60,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
       root="/account"
       navLabel="Your account"
       userName={actor.name}
-      cta={{ href: '/account/book', label: 'Book a day' }}
+      cta={{ href: '/account/book', label: 'Request a day' }}
       tabs={tabs}
       groups={groups}
     >

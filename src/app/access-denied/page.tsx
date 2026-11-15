@@ -26,7 +26,7 @@ export default async function AccessDenied() {
                 Go to your dashboard
               </Link>
               <Link href="/account/book" className={buttonClass('secondary')}>
-                Book day care
+                Request a day
               </Link>
             </div>
           </Stack>

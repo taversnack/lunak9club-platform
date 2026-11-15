@@ -28,7 +28,7 @@ export default async function NotFound() {
                     Go to your dashboard
                   </Link>
                   <Link href="/account/book" className={buttonClass('secondary')}>
-                    Book day care
+                    Request a day
                   </Link>
                 </>
               ) : (
