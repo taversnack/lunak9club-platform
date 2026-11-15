@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   cardRefundMessage,
@@ -80,5 +81,141 @@ describe('email templates', () => {
     expect(m.subject).toMatch(/– all confirmed$/);
     expect(m.text).not.toContain('Not confirmed');
     expect(m.text).not.toContain('Confirmed late');
+  });
+});
+
+describe('payment-link email wording (D76, D80)', () => {
+  const args = { amountText: '£50.00', forText: 'day care for Biscuit (1 session)', untilText: '3 Nov 2026, 08:00' };
+  it('says pay to SECURE the booking, never "confirm", with the deadline and the link', async () => {
+    const { paymentLinkMessage } = await import('@/infra/email/templates');
+    const m = paymentLinkMessage('a@example.test', 'Alice', args, 'https://app.test/pay/abc');
+    expect(m.template).toBe('payment.link');
+    for (const part of [m.subject, m.text, m.html]) {
+      expect(part.toLowerCase()).toContain('secure your booking');
+      expect(part.toLowerCase()).not.toMatch(/pay[^.]*to confirm/);
+    }
+    for (const part of [m.text, m.html]) {
+      expect(part).toContain('3 Nov 2026, 08:00');
+      expect(part).toContain('https://app.test/pay/abc');
+    }
+  });
+});
+
+describe('customer emails do not over-promise (D76, D79, D80, D81, D106)', () => {
+  // A cheap guard over the source: phrases the Owner's decisions rule out must not come back.
+  const files = [
+    'src/infra/email/templates.ts',
+    'src/server/services/bookings.ts',
+    'src/server/services/booking-requests.ts',
+  ];
+  const banned: [RegExp, string][] = [
+    [/pay[^'`.]*to confirm (it|your booking)/i, 'D80: it is "pay to secure the booking"'],
+    [
+      /we[’']ll be in touch if a place comes up/i,
+      'D81: nothing about the waitlist is automatic; a place is not guaranteed',
+    ],
+    [/your booking is (now )?confirmed(?! once)/i, 'D76: a request is not a confirmed booking until approved and paid'],
+    [/sorry we couldn[’']t answer/i, 'D79/D117: a closed request is neutral, not an apology'],
+    [/book again/i, 'D76/D117: customers send a request; nothing is booked until approved and paid'],
+  ];
+  it.each(files)('%s keeps clear of them', (file) => {
+    const text = readFileSync(file, 'utf8');
+    for (const [re, why] of banned) expect(text, why).not.toMatch(re);
+  });
+});
+
+describe('the closed-request email (D79, D117)', () => {
+  it('is neutral: not approved before the 23:59 cut-off, closed at no charge, no apology, no promise of availability', async () => {
+    const { approvalDecisionMessage } = await import('@/infra/email/templates');
+    const m = approvalDecisionMessage(
+      'a@example.test',
+      'Alice',
+      { noun: 'booking request', summary: 'Biscuit – Tue 3 Nov, full day', outcome: 'expired' },
+      'https://app.test/account/requests',
+    );
+    const body =
+      'This request wasn’t approved before booking closed at 23:59 the day before, so it has closed at no charge. You can send a new request for another day.';
+    expect(m.template).toBe('approval.expired');
+    expect(m.text).toContain(body);
+    expect(m.html).toContain(body.replace('’', '’')); // html-escaped apostrophes are left as typographic characters
+    for (const part of [m.text, m.html]) {
+      expect(part.toLowerCase()).not.toMatch(/sorry|couldn.t answer|nothing has been charged|available|space/);
+    }
+  });
+  it('other kinds of request that expire get the same neutral tone without the cut-off sentence', async () => {
+    const { approvalDecisionMessage } = await import('@/infra/email/templates');
+    const m = approvalDecisionMessage(
+      'a@example.test',
+      'Alice',
+      { noun: 'membership days request', summary: 'Biscuit', outcome: 'expired' },
+      'https://app.test/account/requests',
+    );
+    expect(m.text).toContain('This request has closed at no charge. You can send a new request for another day.');
+    expect(m.text).not.toContain('23:59');
+  });
+});
+
+describe('hold-released email (D76, D117)', () => {
+  it('invites a new request, not a booking', async () => {
+    const { holdReleasedMessage } = await import('@/infra/email/templates');
+    const m = holdReleasedMessage('a@example.test', 'Alice', 'Biscuit on Tue 3 Nov', 'https://app.test/account/book');
+    expect(m.text).toContain('send a new request');
+    expect(m.html).toContain('Send a new request');
+    for (const part of [m.text, m.html]) expect(part.toLowerCase()).not.toContain('book again');
+  });
+});
+
+describe('Owner wording answers (D118)', () => {
+  it('booking reminder says how to change or cancel, and only offers a call when a phone number is set', async () => {
+    const { bookingReminderMessage } = await import('@/infra/email/templates');
+    const ls = [{ dogName: 'Biscuit', dateText: 'Tue 3 Nov', sessionText: 'full day', outcome: 'booked' }] as never;
+    const a = bookingReminderMessage('a@example.test', 'Alice', ls, 'https://app.test/b');
+    const b = bookingReminderMessage('a@example.test', 'Alice', ls, 'https://app.test/b', true);
+    for (const part of [a.text, a.html]) {
+      expect(part).toContain('To change or cancel, sign in here:');
+      expect(part).not.toMatch(/call us|Please call/);
+    }
+    for (const part of [b.text, b.html]) expect(part).toContain('To change or cancel, sign in here or call us:');
+  });
+
+  it('vaccination expiry: core and leptospirosis "may not" be accepted; kennel cough is never a hard block', async () => {
+    const { vaccinationReminderMessage } = await import('@/infra/email/templates');
+    const core = vaccinationReminderMessage(
+      'a@example.test',
+      'Alice',
+      { dogName: 'Biscuit', expired: true, dateText: '1 Oct 2026' },
+      'u',
+    );
+    expect(core.text).toContain('we may not be able to accept bookings after that date until a new record is uploaded');
+    expect(core.text).not.toMatch(/can[’']t accept/);
+    const kc = vaccinationReminderMessage(
+      'a@example.test',
+      'Alice',
+      { dogName: 'Biscuit', expired: true, dateText: '1 Oct 2026', licence: false },
+      'u',
+    );
+    expect(kc.text).toContain('Please upload a new record so Biscuit can keep coming to day care.');
+    expect(kc.text).not.toMatch(/accept bookings|can[’']t|blocked/);
+  });
+
+  it('a closed membership request uses the neutral line', async () => {
+    const { approvalDecisionMessage } = await import('@/infra/email/templates');
+    const m = approvalDecisionMessage(
+      'a@example.test',
+      'Alice',
+      { noun: 'membership request', summary: 's', outcome: 'expired' },
+      'u',
+    );
+    expect(m.text).toContain('This request has closed at no charge. You can send a new request for another day.');
+    expect(m.text).not.toMatch(/in time|send a new one/);
+  });
+
+  it('source never brings back the retired phrasings', () => {
+    for (const f of ['src/infra/email/templates.ts', 'src/server/services/reminders.ts']) {
+      const t = readFileSync(f, 'utf8');
+      expect(t).not.toMatch(/Please call us\./);
+      expect(t).not.toMatch(/confirm collection times this evening/);
+      expect(t).not.toMatch(/we can[’']t accept bookings after/);
+    }
   });
 });

@@ -352,15 +352,15 @@ export function paymentLinkMessage(
       ),
     };
   }
-  const title = 'Please pay to confirm your booking';
+  const title = 'Please pay to secure your booking';
   return {
     to,
     template: 'payment.link',
-    subject: `${BRAND}: please pay to confirm your booking`,
-    text: `Hi ${firstName},\n\nWe’ve held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to confirm it – after that the place is released.\n\n${url}`,
+    subject: `${BRAND}: please pay to secure your booking`,
+    text: `Hi ${firstName},\n\nWe’ve held ${p.forText} for you. Please pay ${p.amountText} by card by ${p.untilText} to secure your booking – after that the place is released.\n\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to confirm it. After that the place is released.</p>${button(url, 'Pay by card')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We’ve held ${escapeHtml(p.forText)} for you. Please pay <strong>${escapeHtml(p.amountText)}</strong> by card by ${escapeHtml(p.untilText)} to secure your booking. After that the place is released.</p>${button(url, 'Pay by card')}`,
       '',
     ),
   };
@@ -372,10 +372,10 @@ export function holdReleasedMessage(to: string, firstName: string, forText: stri
     to,
     template: 'payment.hold-released',
     subject: `${BRAND}: booking not completed`,
-    text: `Hi ${firstName},\n\nWe didn’t receive payment in time for ${forText}, so the place has been released. You can book again here:\n${url}`,
+    text: `Hi ${firstName},\n\nWe didn’t receive payment in time for ${forText}, so the place has been released. You can send a new request here:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>We didn’t receive payment in time for ${escapeHtml(forText)}, so the place has been released.</p>${button(url, 'Book again')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>We didn’t receive payment in time for ${escapeHtml(forText)}, so the place has been released.</p>${button(url, 'Send a new request')}`,
       '',
     ),
   };
@@ -406,12 +406,16 @@ export function cardRefundMessage(
 export function vaccinationReminderMessage(
   to: string,
   firstName: string,
-  p: { dogName: string; expired: boolean; dateText: string },
+  p: { dogName: string; expired: boolean; dateText: string; licence?: boolean },
   url: string,
 ): EmailMessage {
   const title = p.expired ? `${p.dogName}’s records need updating` : `Please update ${p.dogName}’s records`;
   const body = p.expired
-    ? `A vaccination record for ${p.dogName} expired on ${p.dateText}, so we can’t accept bookings after that date until a new record is uploaded.`
+    ? p.licence === false
+      ? // Kennel cough can be overridden by the Owner (D11, D73): never word it as a hard block.
+        `A vaccination record for ${p.dogName} expired on ${p.dateText}. Please upload a new record so ${p.dogName} can keep coming to day care.`
+      : // Core and leptospirosis are licence rules (D73), but say "may not" and leave the decision to us (D118).
+        `A vaccination record for ${p.dogName} expired on ${p.dateText}, so we may not be able to accept bookings after that date until a new record is uploaded.`
     : `A vaccination record for ${p.dogName} runs out on ${p.dateText}. Please upload the new record before then so ${p.dogName} can keep coming to day care.`;
   return {
     to,
@@ -427,16 +431,24 @@ export function vaccinationReminderMessage(
   };
 }
 
-export function bookingReminderMessage(to: string, firstName: string, ls: BookingLine[], url: string): EmailMessage {
+/** `canCall`: the business has a phone number in its settings (D118), so we may say "or call us". */
+export function bookingReminderMessage(
+  to: string,
+  firstName: string,
+  ls: BookingLine[],
+  url: string,
+  canCall = false,
+): EmailMessage {
   const l = lines(ls);
+  const change = `To change or cancel, sign in here${canCall ? ' or call us' : ''}:`;
   return {
     to,
     template: 'booking.reminder',
     subject: `${BRAND}: see you tomorrow`,
-    text: `Hi ${firstName},\n\nA reminder of tomorrow’s day care:\n${l.text}\n\nNeed to change something? Please call us.\n${url}`,
+    text: `Hi ${firstName},\n\nA reminder of tomorrow’s day care:\n${l.text}\n\n${change}\n${url}`,
     html: layout(
       'See you tomorrow',
-      `<p>Hi ${escapeHtml(firstName)},</p><p>A reminder of tomorrow’s day care:</p>${l.html}<p>Need to change something? Please call us.</p>${button(url, 'See your bookings')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>A reminder of tomorrow’s day care:</p>${l.html}<p>${change}</p>${button(url, 'See your bookings')}`,
       '',
     ),
   };
@@ -532,7 +544,10 @@ export function approvalRequestedOwnerMessage(to: string, p: { noun: string }, u
 
 export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn' | 'expired';
 
-const APPROVAL_COPY: Record<ApprovalOutcome, { title: (noun: string) => string; body: string }> = {
+const APPROVAL_COPY: Record<
+  ApprovalOutcome,
+  { title: (noun: string) => string; body: string | ((noun: string) => string) }
+> = {
   approved: {
     title: (l) => `Your ${l} has been approved`,
     body: 'Good news – we’ve approved your request.',
@@ -547,7 +562,11 @@ const APPROVAL_COPY: Record<ApprovalOutcome, { title: (noun: string) => string; 
   },
   expired: {
     title: (l) => `Your ${l} is no longer open`,
-    body: 'We’re sorry we couldn’t answer your request in time, so it has closed and nothing has been charged. You’re welcome to send a new one.',
+    // A booking request closes at the cut-off (D79, D117): neutral, no apology and no promise of availability.
+    body: (noun) =>
+      noun === 'booking request'
+        ? 'This request wasn’t approved before booking closed at 23:59 the day before, so it has closed at no charge. You can send a new request for another day.'
+        : 'This request has closed at no charge. You can send a new request for another day.',
   },
 };
 
@@ -559,14 +578,15 @@ export function approvalDecisionMessage(
 ): EmailMessage {
   const copy = APPROVAL_COPY[p.outcome];
   const title = copy.title(p.noun);
+  const bodyText = typeof copy.body === 'function' ? copy.body(p.noun) : copy.body;
   return {
     to,
     template: `approval.${p.outcome}`,
     subject: `${BRAND}: ${title.charAt(0).toLowerCase()}${title.slice(1)}`,
-    text: `Hi ${firstName},\n\n${copy.body}\n\n${p.summary}\n\nSee the details in your account:\n${url}`,
+    text: `Hi ${firstName},\n\n${bodyText}\n\n${p.summary}\n\nSee the details in your account:\n${url}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(copy.body)}</p><p>${escapeHtml(p.summary)}</p>${button(url, 'See the details')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(bodyText)}</p><p>${escapeHtml(p.summary)}</p>${button(url, 'See the details')}`,
       '',
     ),
   };

@@ -374,7 +374,7 @@ export async function expireBookingRequests(db: Db, actor: Actor, now = new Date
       const lines: BookingLine[] = closed.map((r) => ({
         dogName: r.dogName,
         ...describeSession(r.serviceDate, r.session),
-        outcome: 'request closed – bookings for this day have closed, nothing charged',
+        outcome: 'not approved before booking closed at 23:59 the day before – closed at no charge',
       }));
       await sendSafely(bookingSummaryMessage(who.email, firstNameOf(who.name), lines, appUrl('/account/bookings')));
     }

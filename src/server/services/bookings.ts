@@ -417,7 +417,7 @@ export async function createMyBookings(db: Db, actor: Actor, input: unknown, now
     outcome:
       o.outcome === 'requested'
         ? `requested${o.price ? ` – ${formatPounds(o.price.totalPence)}` : ''}`
-        : 'on the waitlist – we’ll be in touch if a place comes up',
+        : 'on the waitlist – a place isn’t guaranteed. If Luna’s K9 Club gives you one, we’ll email you.',
   });
   const requestedLines = outcomes.filter((o) => o.outcome === 'requested');
   const waitlisted = outcomes.filter((o) => o.outcome === 'waitlisted');
