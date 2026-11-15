@@ -106,15 +106,20 @@ Daily and monthly jobs (nightly membership drafts and book-ahead, month-end send
 
 What holds data: PostgreSQL (everything except documents) and the S3-compatible bucket (vaccination certificates, incident photos). Both are needed to restore. Invoices PDFs are generated on demand from the database.
 
+Layout to back up and check against:
+- **Database:** the `public` schema (every table) and the `drizzle` schema (`drizzle.__drizzle_migrations`, the record of applied migrations). `pg_dump -Fc` takes both. Today that is 24 applied migrations: files 0000 to 0025, with 0017 and 0021 deliberately never used (see `drizzle/NOTES.md`), so a restored copy should show 24 rows there, not 26.
+- **Documents:** one object per `documents.storage_key`. Keys are `customers/<customer id>/dogs/<dog id>/<uuid>` for vaccination records and `customers/<customer id>/dogs/<dog id>/incidents/<uuid>` for incident photos, in the bucket (production) or under `STORAGE_DIR` (local). Files held for a scan (D30) are stored under the same keys and are not special. A file found infected has its bytes deleted on purpose; its row stays, so it is not a missing file.
+- Documents and database must come from the same point in time: a database row without its object, or the reverse, is the failure to look for.
+
 Backups (provider choice and cost are undecided, so ask the Owner):
 - Database: choose a managed Postgres whose automated daily backups and point-in-time recovery are on, kept at least 30 days; check the plan includes them (some cheaper tiers do not). Also take a manual `pg_dump -Fc` before every migration. Store the dump somewhere other than the database host, encrypted.
 - Bucket: enable object versioning or a scheduled copy to a second bucket. Retention rules still apply (D64): a backup must not keep data the retention job or an approved deletion has removed for longer than the agreed backup window. Record that window with the Owner.
 - Secrets: keep `BETTER_AUTH_SECRET`, Stripe and S3 keys in the host's secret store and in the Owner's password manager; losing `BETTER_AUTH_SECRET` signs everyone out but loses no data.
 
 Restore drill (do before go-live and then every quarter, into a throwaway database, never over production):
-1. Create an empty database. `pg_restore --no-owner -d <new database> <dump>`.
-2. Point a local or staging copy at it (`DATABASE_URL`), run `pnpm db:migrate` (should report nothing to do), then check `/api/health`.
-3. Check: customer and dog counts, the newest invoice number is gap-free, a document opens from the restored bucket.
+1. Locally, `pnpm db:restore-drill` does steps 1 to 3 for you: it dumps the local database (read-only), creates a **new** throwaway database (default `lunak9_restore_test`; `--target <name>` to choose, the name must contain `test`), restores into it with `pg_restore --no-owner --no-privileges`, then checks the migration count against `drizzle/meta/_journal.json`, that invoice numbers are gap-free and agree with the sequence, and the table counts. With `STORAGE_DIR` set it also checks every document that should have bytes exists on disk. To drill a real dump use `--dump <file>`. It refuses production, a non-local database host, a target without `test` in the name, the source database itself, and any target that already has tables; it never drops or overwrites anything, so remove an old throwaway database yourself. It uses `pg_dump`/`pg_restore` from the PATH, or from the local Postgres container (`PG_CONTAINER` to name it).
+2. For a dump from the managed host, do it by hand: create an empty database whose name contains `test`, then `pg_restore --no-owner --no-privileges -d <new database> <dump>` (`--no-privileges` because the host's roles will not exist in the throwaway copy). Point a local or staging copy at it (`DATABASE_URL`), run `pnpm db:migrate` (should report nothing to do), then check `/api/health`.
+3. Check: customer and dog counts, the newest invoice number is gap-free, a document opens from the restored bucket (for S3, open one of each kind: a vaccination record and an incident photo).
 4. Record the date, the dump age (RPO) and the time taken (RTO) in `docs/progress.md`.
 
 Real restore: put the site in maintenance (stop the app and scheduler), restore database and bucket to the same point in time, run migrations if the code is newer than the backup, start, check health, then run the scheduler once. Jobs and webhooks are idempotent, so the host re-sending recent Stripe events after a restore is safe; reconcile payments from the Stripe dashboard for the gap.
