@@ -2,6 +2,14 @@ import type { EmailMessage } from './types';
 import type { FaqItem } from '../../domain/membership/faq';
 
 import { APPROVED_PAY_TO_SECURE, REQUEST_NOT_SECURED } from '@/domain/booking/wording';
+import {
+  daysText,
+  hoursText,
+  INVITE_DAYS,
+  minutesText,
+  RESET_PASSWORD_HOURS,
+  VERIFY_EMAIL_HOURS,
+} from '@/domain/auth/expiry';
 
 const BRAND = 'Luna’s K9 Club';
 
@@ -35,10 +43,10 @@ export function verifyEmailMessage(to: string, firstName: string, url: string): 
     to,
     template: 'auth.verify-email',
     subject: `${BRAND}: confirm your email`,
-    text: `Hi ${firstName},\n\nPlease confirm your email address to finish setting up your ${BRAND} account:\n${url}\n\nThis link expires in 1 hour.`,
+    text: `Hi ${firstName},\n\nPlease confirm your email address to finish setting up your ${BRAND} account:\n${url}\n\nThis link expires in ${hoursText(VERIFY_EMAIL_HOURS)}.`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>Please confirm your email address to finish setting up your account. This link expires in 1 hour.</p>${button(url, 'Confirm email')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Please confirm your email address to finish setting up your account. This link expires in ${hoursText(VERIFY_EMAIL_HOURS)}.</p>${button(url, 'Confirm email')}`,
     ),
   };
 }
@@ -49,10 +57,10 @@ export function magicLinkMessage(to: string, firstName: string, url: string, min
     to,
     template: 'auth.magic-link',
     subject: `${BRAND}: your sign-in link`,
-    text: `Hi ${firstName},\n\nUse this link to sign in to your ${BRAND} account:\n${url}\n\nIt works once and expires in ${minutes} minutes.`,
+    text: `Hi ${firstName},\n\nUse this link to sign in to your ${BRAND} account:\n${url}\n\nIt works once and expires in ${minutesText(minutes)}.`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>Use the button below to sign in. It works once and expires in ${minutes} minutes.</p>${button(url, 'Sign in')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Use the button below to sign in. It works once and expires in ${minutesText(minutes)}.</p>${button(url, 'Sign in')}`,
     ),
   };
 }
@@ -63,10 +71,10 @@ export function resetPasswordMessage(to: string, firstName: string, url: string)
     to,
     template: 'auth.reset-password',
     subject: `${BRAND}: reset your password`,
-    text: `Hi ${firstName},\n\nUse this link to choose a new password:\n${url}\n\nThis link expires in 1 hour.`,
+    text: `Hi ${firstName},\n\nUse this link to choose a new password:\n${url}\n\nThis link expires in ${hoursText(RESET_PASSWORD_HOURS)}.`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>Use the button below to choose a new password. This link expires in 1 hour.</p>${button(url, 'Choose a new password')}`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>Use the button below to choose a new password. This link expires in ${hoursText(RESET_PASSWORD_HOURS)}.</p>${button(url, 'Choose a new password')}`,
     ),
   };
 }
@@ -607,10 +615,10 @@ export function customerInviteMessage(
     to,
     template: 'customer.invite',
     subject: `${BRAND}: finish setting up your account`,
-    text: `Hi ${firstName},\n\n${ownerFirstName} at ${BRAND} has created an account for you.\n\n${cover}\n\nFinish setting up (choose a password): ${url}\n\nThis link works once and expires in 7 days.${faqText(faqs)}\n\nThanks,\n${ownerFirstName}`,
+    text: `Hi ${firstName},\n\n${ownerFirstName} at ${BRAND} has created an account for you.\n\n${cover}\n\nFinish setting up (choose a password): ${url}\n\nThis link works once and expires in ${daysText(INVITE_DAYS)}.${faqText(faqs)}\n\nThanks,\n${ownerFirstName}`,
     html: layout(
       title,
-      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(ownerFirstName)} at ${BRAND} has created an account for you.</p>${coverHtml}${button(url, 'Finish setting up')}<p style="font-size:13px;color:#4f5660">This link works once and expires in 7 days.</p>${faqHtml(faqs)}<p>Thanks,<br>${escapeHtml(ownerFirstName)}</p>`,
+      `<p>Hi ${escapeHtml(firstName)},</p><p>${escapeHtml(ownerFirstName)} at ${BRAND} has created an account for you.</p>${coverHtml}${button(url, 'Finish setting up')}<p style="font-size:13px;color:#4f5660">This link works once and expires in ${daysText(INVITE_DAYS)}.</p>${faqHtml(faqs)}<p>Thanks,<br>${escapeHtml(ownerFirstName)}</p>`,
       'If you weren’t expecting this, you can ignore this email.',
     ),
   };
