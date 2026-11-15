@@ -919,7 +919,7 @@ export async function releaseOverchargingCheckouts(db: Db, invoiceId: string, no
       if (!r.paid) closed++;
     } catch (err) {
       logger.warn(
-        { err, checkoutAttemptId: a.id },
+        { err: err instanceof Error ? err.name : 'unknown', checkoutAttemptId: a.id },
         'could not close an invoice checkout after the amount owed changed',
       );
     }
