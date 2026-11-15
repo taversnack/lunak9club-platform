@@ -55,7 +55,9 @@ test('Owner declines a request with a note: polite email, note in the portal onl
 
   await signIn(page, DEMO_OWNER.email, DEMO_OWNER.password);
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole('heading', { name: 'Requests waiting' })).toBeVisible();
+  // Today is the one inbox (D77): the request is listed there with Approve and Decline.
+  await expect(page.getByRole('heading', { name: /Needs you/ })).toBeVisible();
+  await expect(page.getByTestId('today-approval').first()).toBeVisible();
   await page.goto(`/admin/bookings?date=${dayIso}`);
   await expect(page.getByRole('heading', { name: /Requests waiting \(1\)/ })).toBeVisible();
   await axe(page);
