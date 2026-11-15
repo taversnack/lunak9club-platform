@@ -25,7 +25,7 @@
 
 ## 1. Requests (customers asking for days)
 
-- Open **Requests** from the menu, or the link on the Dashboard. The heading is "Waiting for you (n)". When there are none it says "No requests waiting."
+- Open **Requests** from the menu, or the link on Today. The heading is "Waiting for you (n)". When there are none it says "No requests waiting."
 - Each request has an **Approve** and a **Decline** button. Each has an optional note box. The note is **shown in the customer's account only**, not in the email (D91). Decline sends the customer a polite standard email with no note (D80).
 - **What happens when you approve:** the customer is emailed a link to pay to secure the booking. Their place is held for up to 24 hours (or until the day starts if that is sooner), and the hold deadline is in the email (D78, D80). Days that cost £0, and membership days, are confirmed without payment (D83).
 - **What happens when you decline:** the places are released and the customer gets the standard email (D80). You can also decline a single day of a request from the day view.
@@ -61,13 +61,13 @@
 
 ## 4. Vaccinations and approving dogs
 
-- **Records waiting for review (n)** (on the Dashboard under "Records to review", and on the **Reviews** page): customers' uploaded vaccination records.
+- **Records waiting for review (n)** (on Today under "Records to review", and on the **Reviews** page): customers' uploaded vaccination records.
 - Open the dog. The dog page has **Checklist**, **Day care approval**, **Records waiting for review**, and **Meet and greet and trial day**.
 - For each record, check the date given and valid-until date, and the answer to "First course of vaccinations finished on" if it is a first course. **Decision** options: **Accept**, **Ask for a new copy**, **Reject**. Add a **Message to the customer** (needed if you ask for a new copy or reject). Then **Save decision**.
 - A dog can't be booked or checked in within 14 days of a first course finishing (D74).
 - **Record an assessment** after a meet and greet or a trial day: Assessment, Outcome, Date and Internal notes (only you can see these), then **Record assessment**.
 - **Day care approval**: **Change status to** one of **Approved for day care** (only offered when every required item is done), **Suspended (pause bookings)**, **Not accepted**, **Back to onboarding**. Add a **Reason shown to the customer** when suspending or not accepting. Then **Update status**.
-- The Dashboard also lists **Vaccinations expiring (30 days)** with dates. Customers get reminders at 60, 30, 14 and 7 days and when a vaccination expires (D75).
+- Today also lists **Vaccinations expiring (30 days)** with dates. Customers get reminders at 60, 30, 14 and 7 days and when a vaccination expires (D75).
 
 ## 5. Refunds
 
@@ -81,7 +81,7 @@
 ## 6. Memberships
 
 - Open **Memberships**. **Active (n)** lists active memberships. Each has **End this membership** with a **Last day** box. **Older requests (n)** holds requests made under the old flow; newer ones are under **Requests**.
-- Dog and customer pages let you set or change days directly (D89). Members confirm their days each month; the Dashboard lists **Membership days not confirmed** (D88, D92).
+- Dog and customer pages let you set or change days directly (D89). Members confirm their days each month; Today lists **Membership days not confirmed** (D88, D92).
 
 ## 7. Incidents and daily checks
 
