@@ -53,8 +53,8 @@ Record the result and the time of each step; a step that fails is a finding, not
 
 1. Confirm the managed database's automated backup ran (the provider's console) and note the time.
 2. Take a manual dump too: `pg_dump -Fc` to a location off the database host (encrypted).
-3. Restore into a **throwaway** database (never over staging or production): `pg_restore --no-owner -d <throwaway> <dump>`.
-4. Point a local or second instance at it, run `pnpm db:migrate` (nothing to do), check `/api/health` is 200, and check: customer and dog counts match staging, the newest invoice number is the expected one, a document opens from the bucket.
+3. Restore into a **throwaway** database whose name contains `test` (never over staging or production): `pg_restore --no-owner --no-privileges -d <throwaway> <dump>`. `pnpm db:restore-drill --dump <file>` does this against a local database and checks the result (migration count, gap-free invoice numbers, counts, document files); see `docs/deployment.md` section 6. Expect 24 applied migrations, not 26 (0017 and 0021 are unused).
+4. Point a local or second instance at it, run `pnpm db:migrate` (nothing to do), check `/api/health` is 200, and check: customer and dog counts match staging, the newest invoice number is the expected one, a document opens from the bucket (open one vaccination record and one incident photo; keys are `customers/<id>/dogs/<id>/<uuid>` and `.../incidents/<uuid>`).
 5. Record the dump's age (RPO) and the elapsed time (RTO) in `docs/progress.md`. Repeat quarterly.
 
 ## 5. Rollback rehearsal
